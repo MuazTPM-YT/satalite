@@ -1,5 +1,19 @@
-// viewer placeholder. real 3D/2D canvas goes here in phase 3
+// 3D viewer. R3F canvas with extruded T-beam heatmap
+"use client";
+
+import { useMemo } from "react";
+import { Canvas } from "@react-three/fiber";
+import { OrbitControls } from "@react-three/drei";
+import TBeamMesh from "@/components/TBeamMesh";
+import { generateMockThermalSimulation } from "@/lib/mockThermalField";
+
+// default at t=0 matching TimeScrubber initial state
+const DEFAULT_TIME_INDEX = 0;
+
 export default function Viewer() {
+  // generate sim data once on mount
+  const sim = useMemo(() => generateMockThermalSimulation(), []);
+
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* toolbar row */}
@@ -42,19 +56,37 @@ export default function Viewer() {
         </button>
       </div>
 
-      {/* canvas placeholder */}
-      <div className="flex-1 relative flex items-center justify-center bg-bg-primary">
-        <div className="text-text-muted text-sm select-none">
-          3D Viewer — Phase 3
-        </div>
+      {/* 3D canvas */}
+      <div className="flex-1 relative bg-bg-primary">
+        <Canvas
+          camera={{
+            position: [0, 0, 5],
+            fov: 40,
+            near: 0.01,
+            far: 100,
+          }}
+          gl={{ antialias: true }}
+          style={{ background: "#0d1117" }}
+        >
+          <ambientLight intensity={0.6} />
+          <directionalLight position={[5, 8, 5]} intensity={0.8} />
+          <directionalLight position={[-3, -2, -4]} intensity={0.3} />
+          <TBeamMesh sim={sim} timeIndex={DEFAULT_TIME_INDEX} />
+          <OrbitControls
+            enableDamping
+            dampingFactor={0.12}
+            minDistance={0.5}
+            maxDistance={20}
+          />
+        </Canvas>
 
         {/* bottom-left annotation */}
-        <div className="absolute bottom-12 left-4 text-[11px] text-text-muted">
+        <div className="absolute bottom-12 left-4 text-[11px] text-text-muted pointer-events-none">
           2D cross-section solution, extruded. End effects not modelled.
         </div>
 
         {/* bottom-right interaction hints */}
-        <div className="absolute bottom-3 right-3 flex flex-col gap-1.5 items-end">
+        <div className="absolute bottom-3 right-3 flex flex-col gap-1.5 items-end pointer-events-none">
           <div className="flex items-center gap-2 text-[11px] text-text-secondary">
             <span className="text-text-muted">⊕</span>
             <span>Orbit</span>
@@ -72,11 +104,11 @@ export default function Viewer() {
           </div>
         </div>
 
-        {/* right-side color legend placeholder */}
-        <div className="absolute top-4 right-4 flex flex-col items-center gap-0.5">
+        {/* right-side color legend */}
+        <div className="absolute top-4 right-4 flex flex-col items-center gap-0.5 pointer-events-none">
           <span className="text-[10px] text-text-muted mb-1">°C</span>
           <div className="w-3 h-32 rounded-sm" style={{
-            background: "linear-gradient(to bottom, #ef4444, #f59e0b, #22c55e, #3b82f6, #1e40af)"
+            background: "linear-gradient(to bottom, #d92718, #f28d0f, #73d926, #268ad9, #1c3fa6)"
           }} />
           <div className="flex flex-col items-end text-[9px] text-text-muted mt-1">
             <span>75</span>
