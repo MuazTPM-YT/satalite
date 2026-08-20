@@ -73,6 +73,9 @@ def solve(
     )
 
     # faces per cell, by kind. adiabatic seals every one of them.
+    # GROUND faces (on_ground=True) are intentionally excluded: the subgrade is a
+    # massive thermal buffer with high contact resistance, so adiabatic is conservative
+    # for peak temperature prediction. this matches the t_eq = 2t convention in the spec.
     n_exposed = np.zeros(mask.shape, dtype=np.float64)
     n_formed = np.zeros(mask.shape, dtype=np.float64)
     if not adiabatic:
@@ -143,12 +146,18 @@ def solve(
             mix.k_w_m_k,
         )
 
-        # solar in, evaporative latent heat out. free surface only.
+        # solar in, evaporative latent heat out, sky radiation deficit. free surface only.
         q_face_w_m2 = np.full(surf_rows.size, float(weather["q_solar_w_m2"][i]))
         if evaporative_cooling:
             q_face_w_m2 = q_face_w_m2 - LATENT_HEAT_VAP * boundary.evaporation_rate_kg_m2_s(
                 surf_temp_c, air_temp_c, float(weather["rh_frac"][i]), float(weather["wind_ms"][i])
             )
+        # h_rad is linearised around T_sky but conduction.step drives h_sum against T_air.
+        # the missing (T_sky - T_air) offset is a fixed flux, like solar. ~37 W/m2 on
+        # clear nights; zero when overcast. formed faces see formwork, not sky directly.
+        q_face_w_m2 += h_rad_b[exposed_in_boundary] * (
+            float(weather["sky_temp_c"][i]) - air_temp_c
+        )
         q_sum[surf_rows, surf_cols] = n_exposed_s * q_face_w_m2
 
         if i % record_every == 0:
@@ -187,7 +196,17 @@ def solve(
     frames_te.append(np.where(mask, t_e_h, np.nan))
     frame_times_h.append(hours)
     core_c.append(float(temp_c[core_ij]))
-    surface_c.append(float(temp_c[surf_rows, surf_cols].mean()))
+    # reconstruct the true face temperature, same as the loop body does, so the last
+    # entry in surface_c is consistent with all the others (cell centre != surface).
+    final_surf_temp_c = conduction.face_temp_c(
+        temp_c[surf_rows, surf_cols],
+        air_temp_c,
+        film_open[exposed_in_boundary],
+        q_face_w_m2,
+        dx_m,
+        mix.k_w_m_k,
+    )
+    surface_c.append(float(final_surf_temp_c.mean()))
 
     core_arr = np.asarray(core_c, dtype=np.float64)
     surface_arr = np.asarray(surface_c, dtype=np.float64)
