@@ -7,4 +7,7 @@ import numpy as np
 # every array in here is float64. named so strict mypy has something to hold.
 FloatArray = np.ndarray[Any, np.dtype[np.float64]]
 
-__all__ = ["FloatArray"]
+# scalar or array. most equations take either.
+Floats = FloatArray | float
+
+__all__ = ["FloatArray", "Floats"]
