@@ -1,5 +1,25 @@
-// pour window comparison table. 3 candidate start times
-export default function PourWindowTable() {
+// pour window table. reads rows from mock data
+"use client";
+
+import type { PourWindowCandidate } from "@/lib/mockThermalField";
+
+interface PourWindowTableProps {
+  candidates: PourWindowCandidate[];
+}
+
+// status icon for each check value
+function statusIcon(pass: boolean | undefined, status?: "pass" | "warn" | "fail") {
+  if (status === "warn")
+    return <span className="ml-1 text-status-amber">⚠</span>;
+  if (pass === false || status === "fail")
+    return <span className="ml-1 text-status-red">✗</span>;
+  return <span className="ml-1 text-status-green">✓</span>;
+}
+
+export default function PourWindowTable({ candidates }: PourWindowTableProps) {
+  // find selected row for summary card
+  const selected = candidates.find((c) => c.selected) ?? candidates[0];
+
   return (
     <div className="border-t border-border-default bg-bg-surface">
       <div className="flex items-start">
@@ -12,7 +32,7 @@ export default function PourWindowTable() {
               Pour Window
             </span>
             <span className="text-[10px] text-text-muted ml-1">
-              · 3 candidate start times · 2026-08-22
+              · {candidates.length} candidate start times · 2026-08-22
             </span>
           </div>
 
@@ -28,99 +48,67 @@ export default function PourWindowTable() {
               </tr>
             </thead>
             <tbody>
-              {/* row 1: 04:00 SELECTED */}
-              <tr className="border border-accent-blue rounded bg-accent-blue-dim">
-                <td className="py-1.5 pr-4">
-                  <span className="font-semibold text-text-primary">04:00</span>
-                  <span className="ml-2 px-1.5 py-0.5 text-[9px] rounded bg-accent-blue text-white font-medium uppercase">
-                    Selected
-                  </span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">58 °C</span>
-                  <span className="ml-1 text-status-green">✓</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">14 °C</span>
-                  <span className="ml-1 text-status-green">✓</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">0.11</span>
-                  <span className="ml-1 text-status-green">✓</span>
-                </td>
-                <td className="py-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-text-primary">62 h</span>
-                    <div className="w-20 h-1.5 rounded-full bg-bg-primary overflow-hidden">
-                      <div className="h-full rounded-full bg-accent-blue" style={{ width: "86%" }} />
-                    </div>
-                  </div>
-                </td>
-              </tr>
+              {candidates.map((c) => {
+                const isFail = !!c.checks_fail_badge;
+                const isSelected = !!c.selected;
+                const rowClass = isFail
+                  ? "border border-status-red rounded bg-status-red-dim"
+                  : isSelected
+                  ? "border border-accent-blue rounded bg-accent-blue-dim"
+                  : "";
 
-              {/* row 2: 09:00 */}
-              <tr>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-secondary">09:00</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">64 °C</span>
-                  <span className="ml-1 text-status-green">✓</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">19 °C</span>
-                  <span className="ml-1 text-status-amber">⚠</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">0.18</span>
-                  <span className="ml-1 text-status-green">✓</span>
-                </td>
-                <td className="py-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-text-primary">57 h</span>
-                    <div className="w-20 h-1.5 rounded-full bg-bg-primary overflow-hidden">
-                      <div className="h-full rounded-full bg-accent-blue" style={{ width: "79%" }} />
-                    </div>
-                  </div>
-                </td>
-              </tr>
-
-              {/* row 3: 14:00 FAIL */}
-              <tr className="border border-status-red rounded bg-status-red-dim">
-                <td className="py-1.5 pr-4">
-                  <span className="font-semibold text-text-primary">14:00</span>
-                  <span className="ml-2 px-1.5 py-0.5 text-[9px] rounded bg-status-red text-white font-medium uppercase">
-                    3 Checks Fail
-                  </span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">71 °C</span>
-                  <span className="ml-1 text-status-red">✗</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">24 °C</span>
-                  <span className="ml-1 text-status-red">✗</span>
-                </td>
-                <td className="py-1.5 pr-4">
-                  <span className="text-text-primary">0.31</span>
-                  <span className="ml-1 text-status-red">✗</span>
-                </td>
-                <td className="py-1.5">
-                  <div className="flex items-center gap-2">
-                    <span className="text-text-primary">51 h</span>
-                    <span className="px-1.5 py-0.5 text-[9px] rounded bg-status-red text-white font-medium uppercase">
-                      Fastest
-                    </span>
-                    <div className="w-20 h-1.5 rounded-full bg-bg-primary overflow-hidden">
-                      <div className="h-full rounded-full bg-status-red" style={{ width: "100%" }} />
-                    </div>
-                  </div>
-                </td>
-              </tr>
+                return (
+                  <tr key={c.start_time} className={rowClass}>
+                    <td className="py-1.5 pr-4">
+                      <span className={`font-semibold ${isSelected || isFail ? "text-text-primary" : "text-text-secondary"}`}>
+                        {c.start_time}
+                      </span>
+                      {isSelected && (
+                        <span className="ml-2 px-1.5 py-0.5 text-[9px] rounded bg-accent-blue text-white font-medium uppercase">
+                          Selected
+                        </span>
+                      )}
+                      {isFail && (
+                        <span className="ml-2 px-1.5 py-0.5 text-[9px] rounded bg-status-red text-white font-medium uppercase">
+                          {c.checks_fail_badge}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 pr-4">
+                      <span className="text-text-primary">{c.peak_core_c} °C</span>
+                      {statusIcon(c.peak_core_pass)}
+                    </td>
+                    <td className="py-1.5 pr-4">
+                      <span className="text-text-primary">{c.delta_t_c} °C</span>
+                      {statusIcon(undefined, c.delta_t_status)}
+                    </td>
+                    <td className="py-1.5 pr-4">
+                      <span className="text-text-primary">{c.evaporation_rate}</span>
+                      {statusIcon(c.evaporation_pass)}
+                    </td>
+                    <td className="py-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-text-primary">{c.strip_ready_h} h</span>
+                        {c.fastest && (
+                          <span className="px-1.5 py-0.5 text-[9px] rounded bg-status-red text-white font-medium uppercase">
+                            Fastest
+                          </span>
+                        )}
+                        <div className="w-20 h-1.5 rounded-full bg-bg-primary overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${isFail ? "bg-status-red" : "bg-accent-blue"}`}
+                            style={{ width: `${c.strip_ready_pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
 
-          {/* footnote */}
+          {/* footnote — exact text from mockup spec */}
           <p className="mt-2 text-[10px] text-text-muted leading-relaxed">
             14:00 strips 11 h earlier than 04:00 but exceeds DEF, cracking and
             evaporation limits — the time saved is bought against three separate
@@ -146,7 +134,7 @@ export default function PourWindowTable() {
           <div className="mt-1 h-1 rounded-full bg-bg-primary overflow-hidden">
             <div
               className="h-full rounded-full bg-accent-blue"
-              style={{ width: "0%" }}
+              style={{ width: `${selected.strip_ready_pct > 100 ? 100 : 0}%` }}
             />
           </div>
         </div>

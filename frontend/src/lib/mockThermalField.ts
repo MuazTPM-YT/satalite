@@ -265,8 +265,22 @@ export function generateMockThermalSimulation(): ThermalSimulationResult {
           continue;
         }
 
-        // normalized distance weight (0 at boundary, 1 at core)
-        const weight = Math.pow(dist_field[j][i] / (max_dist || 1), 1.25);
+        // 2D thermal diffusion: geometric distance + heat conduction from core/web column
+        const x_m = (i + 0.5) * dx_m;
+        const y_m = (j + 0.5) * dx_m;
+        const w_geom = Math.pow(dist_field[j][i] / (max_dist || 1), 1.25);
+        const dx_c = (x_m - 0.30) / 0.14;
+        const dy_c = (y_m - 0.20) / 0.32;
+        const core_influence = Math.exp(-0.5 * (dx_c * dx_c + dy_c * dy_c));
+        const d_top = Math.max(0, 0.5 - y_m);
+        const weight = Math.max(
+          0,
+          Math.min(
+            1,
+            0.4 * w_geom +
+              0.6 * core_influence * (0.4 + 0.6 * (d_top / 0.025))
+          )
+        );
         const cell_temp = t_surf + weight * (t_core - t_surf);
 
         // maturity increment: Arrhenius equivalent age rate

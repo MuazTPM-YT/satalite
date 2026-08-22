@@ -1,7 +1,28 @@
-// time scrubber. horizontal slider 0–72h
+// time scrubber. horizontal slider 0–72h, wired to parent timeIndex
 "use client";
 
-export default function TimeScrubber() {
+interface TimeScrubberProps {
+  times_h: number[];
+  timeIndex: number;
+  onTimeChange: (time_h: number) => void;
+}
+
+// format elapsed hours to clock time string (pour start 04:00)
+function elapsedToClock(elapsed_h: number): string {
+  const totalMinutes = Math.round((4 + elapsed_h) * 60);
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export default function TimeScrubber({
+  times_h,
+  timeIndex,
+  onTimeChange,
+}: TimeScrubberProps) {
+  const current_h = times_h[timeIndex] ?? 0;
+  const max_h = times_h[times_h.length - 1] ?? 72;
+
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-t border-border-default bg-bg-surface">
       <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary shrink-0">
@@ -12,15 +33,19 @@ export default function TimeScrubber() {
         id="time-scrubber"
         type="range"
         min={0}
-        max={72}
-        step={0.1}
-        defaultValue={0}
+        max={max_h}
+        step={0.5}
+        value={current_h}
+        onChange={(e) => onTimeChange(Number(e.target.value))}
         className="flex-1"
       />
-      <span className="text-[11px] text-text-muted shrink-0">72 h</span>
+      <span className="text-[11px] text-text-muted shrink-0">{max_h} h</span>
       <span className="text-xs text-text-secondary shrink-0 ml-2">
-        <span className="font-semibold text-text-primary">0.0 h</span>
-        {" "}after placement · <span className="text-text-primary">04:00</span>
+        <span className="font-semibold text-text-primary">
+          {current_h.toFixed(1)} h
+        </span>
+        {" "}after placement ·{" "}
+        <span className="text-text-primary">{elapsedToClock(current_h)}</span>
       </span>
     </div>
   );
