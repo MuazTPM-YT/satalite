@@ -19,9 +19,12 @@ next-env.d.ts
 .env.local
 .env.*.local
 
-# api response cache
+# api response cache. the demo day is committed on purpose: it is real paid data
+# (4220 credits) and the demo must run with no network.
 backend/data/cache/*
 !backend/data/cache/.gitkeep
+!backend/data/cache/heatmap-73ed3878b2fa10b340a54c677a84397e16526f30862c61b9d176b7bcfdd9ba47.json
+!backend/data/cache/season-analysis.json
 
 # os
 .DS_Store

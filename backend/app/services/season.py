@@ -21,10 +21,36 @@ from typing import Any
 from app.config import Settings, get_settings
 from app.services.cache import cache_path, is_cached
 from app.services.fg_client import build_client, fetch_heatmap
+from app.services.fg_client import tiles as fg_tiles
 
 log = logging.getLogger(__name__)
 
 CACHE_NAME = "heatmap"
+
+# Downtown Phoenix, 1699 x 1487 m (2.53 km2). FIXED - this polygon is part of the cache
+# key, so changing a single digit orphans every cached day and re-buys the season at
+# 4220 credits each. Area does not affect price; it was chosen small so a whole season
+# of cached responses stays committable.
+DOWNTOWN_PHOENIX = {
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [[
+                    [-112.08673519715168, 33.46131041281569],
+                    [-112.06844426969921, 33.46131041281569],
+                    [-112.06844426969921, 33.44790559096451],
+                    [-112.08673519715168, 33.44790559096451],
+                    [-112.08673519715168, 33.46131041281569],
+                ]],
+            },
+        }
+    ],
+}
+
 GRANULARITY_M = 100      # never change: 60 gives identical values and costs the same
 FILTER_TYPE_DAY = 3      # single day, per-tile min/mean/max in one call
 CREDITS_PER_CALL = 4220  # flat, regardless of area or granularity
@@ -56,27 +82,38 @@ def day_params(polygon: dict[str, Any], day: str) -> dict[str, Any]:
 # remaining credits from the usage payload. the response shape is not documented in the
 # vendored client, so search rather than guess a key - and fail loudly if nothing matches,
 # because a silently-assumed balance is how a budget gets spent twice.
-def remaining_credits(usage: dict[str, Any]) -> float:
-    wanted = ("remaining", "available", "balance", "credits_left")
+#
+# Two traps, both hit against the live payload:
+#   bool is a subclass of int, so `api_key_details.api_access_available: True` used to
+#   match and return 1.0 - a balance low enough to block every run.
+#   "available" also matches `total_available_credits`, which is the PLAN SIZE, not the
+#   balance. So the words are tried in priority order and "remaining" wins outright.
+WANTED_CREDIT_KEYS = ("remaining", "credits_left", "balance", "available")
 
-    def walk(node: Any) -> float | None:
-        if isinstance(node, dict):
-            for key, value in node.items():
-                if isinstance(value, int | float) and any(w in key.lower() for w in wanted):
-                    return float(value)
-            for value in node.values():
-                found = walk(value)
-                if found is not None:
-                    return found
+
+# first numeric value under a key containing `word`. bools are not numbers here.
+def _find_number(node: Any, word: str) -> float | None:
+    if not isinstance(node, dict):
         return None
+    for key, value in node.items():
+        if isinstance(value, int | float) and not isinstance(value, bool) and word in key.lower():
+            return float(value)
+    for value in node.values():
+        found = _find_number(value, word)
+        if found is not None:
+            return found
+    return None
 
-    found = walk(usage)
-    if found is None:
-        raise QuotaTooLowError(
-            "cannot read remaining credits from the usage payload "
-            f"(top-level keys: {sorted(usage)}). Refusing to spend quota blind."
-        )
-    return found
+
+def remaining_credits(usage: dict[str, Any]) -> float:
+    for word in WANTED_CREDIT_KEYS:
+        found = _find_number(usage, word)
+        if found is not None:
+            return found
+    raise QuotaTooLowError(
+        "cannot read remaining credits from the usage payload "
+        f"(top-level keys: {sorted(usage)}). Refusing to spend quota blind."
+    )
 
 
 # current balance, straight from the API. not cached: a stale balance is worse than none.
@@ -180,16 +217,63 @@ def fetch_season(
         )
 
 
-# cached heatmaps in, the daily records season_exposure wants out.
+# one cached day in, the single min/mean/max triple season_exposure wants out.
+#
+# Written against the real 2025-07-15 downtown Phoenix payload, not an assumed schema.
+# Each tile carries average_temperature / min_temperature / max_temperature, all Celsius,
+# and the AOI is reduced by averaging each field ACROSS tiles: the season replays one
+# standard element at one site, so it needs one number per field, and the tile mean is
+# the stable choice. Over 2.53 km2 the tiles spread only ~0.1 C in the daily mean, so the
+# choice of reducer barely moves the answer here - it would matter over a whole metro.
+#
+# DO NOT use stats_data.temperature_stats for this. Those min/max fields describe the
+# spread of average_temperature ACROSS TILES (36.91 to 37.01 on 2025-07-15), not the
+# day's minimum and maximum air temperature (32.78 and 40.20). Reading them as the daily
+# range understates the diurnal swing by 7 C and silently flattens every solve.
+def day_record(day: str, payload: dict[str, Any]) -> dict[str, Any]:
+    features = fg_tiles(payload)
+    n = len(features)
+
+    def tile_mean(field: str) -> float:
+        values = [
+            float(f["properties"][field])
+            for f in features
+            if f["properties"].get(field) is not None
+        ]
+        if not values:
+            raise ValueError(f"no tile in the {day} heatmap carries {field}")
+        return sum(values) / len(values)
+
+    return {
+        "date": day,
+        "day_of_year": date.fromisoformat(day).timetuple().tm_yday,
+        "t_min_c": tile_mean("min_temperature"),
+        "t_mean_c": tile_mean("average_temperature"),
+        "t_max_c": tile_mean("max_temperature"),
+        "n_tiles": n,
+    }
+
+
+# cached heatmaps in, the daily records season_exposure wants out. never calls the API.
+#
+# A missing day is an error, not a gap to skip over. Quietly returning 40 days when 92
+# were asked for would produce a season statistic that reads like a full summer.
 def season_records(
     polygon: dict[str, Any], start_date: str, end_date: str, settings: Settings | None = None
 ) -> list[dict[str, Any]]:
-    raise NotImplementedError(
-        "reducing a filter_type=3 tcm heatmap to per-day t_min_c/t_mean_c/t_max_c needs the "
-        "real response schema, which no cached response exists to confirm. Blocked on the "
-        "same unknown as fg_client.tiles_to_series_c - run one live day first, then write "
-        "both parsers against the actual payload. Returning zeros here would be worse."
-    )
+    settings = settings or get_settings()
+    days = dates_between(start_date, end_date)
+    missing = [
+        day for day in days if not is_cached(settings.cache_dir, CACHE_NAME,
+                                             day_params(polygon, day))
+    ]
+    if missing:
+        raise KeyError(
+            f"{len(missing)} of {len(days)} days are not cached "
+            f"(first: {missing[0]}, last: {missing[-1]}). Run fetch_season first - "
+            "season_records never calls the API."
+        )
+    return [day_record(day, cached_day(polygon, day, settings)) for day in days]
 
 
 # read-through helper for one day, so callers never reach past the cache.

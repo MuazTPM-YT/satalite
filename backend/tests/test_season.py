@@ -7,13 +7,24 @@ from typing import Any
 
 import pytest
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.services import season
+from app.services.fg_client import tiles_to_series_c
 from physics.season_analysis import STANDARD_ELEMENT, season_exposure, standard_mix
 
-PHOENIX = {"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {},
-           "geometry": {"type": "Polygon", "coordinates": [[[-112.1, 33.4], [-112.0, 33.4],
-                        [-112.0, 33.5], [-112.1, 33.5], [-112.1, 33.4]]]}}]}
+# the real one, not a second copy: this polygon is the cache key, and a test that
+# fetched against a different box would prove nothing about the committed cache.
+PHOENIX = season.DOWNTOWN_PHOENIX
+
+# the one live day committed to data/cache/, so the demo needs no network
+COMMITTED_DAY = "2025-07-15"
+
+
+# conftest points the cache at a tmp dir so no test can touch the committed one by
+# accident. The real-payload tests below want the committed day, so they ask for it.
+@pytest.fixture
+def real_cache() -> Settings:
+    return Settings(cache_dir=Path(__file__).resolve().parents[1] / "data" / "cache")
 
 
 def test_phoenix_summer_is_92_days() -> None:
@@ -93,9 +104,40 @@ def test_a_day_that_was_never_fetched_is_not_invented() -> None:
         season.cached_day(PHOENIX, "2025-06-01")
 
 
-def test_reducing_heatmaps_to_daily_stats_is_still_blocked() -> None:
-    with pytest.raises(NotImplementedError, match="response schema"):
+# an uncached day must stop the reduction, not quietly shorten the season
+def test_season_records_refuses_to_skip_missing_days() -> None:
+    with pytest.raises(KeyError, match="not cached"):
         season.season_records(PHOENIX, "2025-06-01", "2025-06-02")
+
+
+# ---------------------------------------------------------------------------
+# Parsed against the real committed 2025-07-15 payload. These numbers come from
+# live data, so a schema change or a unit slip breaks the test rather than the demo.
+# ---------------------------------------------------------------------------
+def test_committed_day_reduces_to_real_celsius(real_cache: Settings) -> None:
+    (record,) = season.season_records(PHOENIX, COMMITTED_DAY, COMMITTED_DAY, real_cache)
+    assert record["n_tiles"] == 221
+    assert record["day_of_year"] == 196
+    assert record["t_min_c"] == pytest.approx(32.78, abs=0.01)
+    assert record["t_mean_c"] == pytest.approx(36.95, abs=0.01)
+    assert record["t_max_c"] == pytest.approx(40.20, abs=0.01)
+    # ordering is the unit check: read as Fahrenheit these would be 0.4-4.6 C in July
+    assert record["t_min_c"] < record["t_mean_c"] < record["t_max_c"]
+
+
+# stats_data.temperature_stats describes the spread of average_temperature ACROSS TILES,
+# not the day's air-temperature range. Reading it as the daily range loses 7 C of swing.
+def test_stats_data_is_not_the_daily_range(real_cache: Settings) -> None:
+    stats = season.cached_day(PHOENIX, COMMITTED_DAY, real_cache)["result"]["stats_data"]
+    (record,) = season.season_records(PHOENIX, COMMITTED_DAY, COMMITTED_DAY, real_cache)
+    assert stats["temperature_stats"]["minimum"] > record["t_min_c"] + 3.0
+    assert stats["temperature_stats"]["maximum"] < record["t_max_c"] - 3.0
+
+
+def test_tiles_to_series_is_spatial_and_celsius(real_cache: Settings) -> None:
+    series = tiles_to_series_c(season.cached_day(PHOENIX, COMMITTED_DAY, real_cache))
+    assert len(series) == 221
+    assert all(20.0 < temp_c < 50.0 for _, temp_c in series)
 
 
 # ---------------------------------------------------------------------------
