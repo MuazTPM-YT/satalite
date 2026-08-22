@@ -223,8 +223,17 @@ class SeasonAnalysisResponse(BaseModel):
 
 
 class ValidationResponse(BaseModel):
-    """Summary of validation/ against the USBR cases."""
+    """Summary of validation/ against the USBR cases.
+
+    The primary metric is band coverage, not point error: DSO-12-02 publishes no cement
+    chemistry, so a point prediction there would test four unmeasured numbers.
+    """
 
     cases: list[dict[str, Any]]
     generated_at: str | None = None
+    primary_metric: str = "coverage_pct"
+    coverage_pass_pct: float | None = None
+    band_width_warn_c: float | None = None
+    n_samples: int | None = None
+    assumed_chemistry_ranges: dict[str, dict[str, list[float]]] = {}
     notes: list[str] = []

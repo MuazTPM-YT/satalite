@@ -11,7 +11,7 @@ result does not depend on the pool size, the scheduling order, or the day of the
 """
 
 import multiprocessing as mp
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -101,7 +101,15 @@ def pool_context() -> mp.context.BaseContext:
 
 
 # sample the uncertain params. seeded, so demo repeats.
-def draw_parameters(base: Mix, n: int, seed: int = 0) -> list[ParamSample]:
+#
+# tau_h_samples lets a caller supply tau from somewhere better than a 15% normal about
+# the base - the validation harness derives it from sampled cement chemistry, where the
+# Schindler-Folliard regression swings tau from 25.8 h to 15.2 h across a plausible SO3
+# range alone. The internal tau draw still happens and is then discarded, so the rng
+# stream stays in lockstep and every OTHER parameter is unchanged by the substitution.
+def draw_parameters(
+    base: Mix, n: int, seed: int = 0, tau_h_samples: Sequence[float] | None = None
+) -> list[ParamSample]:
     rng = np.random.default_rng(seed)
 
     # placement temperature: normal sigma 3, truncated at +/- 3 sd rather than resampled,
@@ -126,6 +134,13 @@ def draw_parameters(base: Mix, n: int, seed: int = 0) -> list[ParamSample]:
     # (450 J/g) perturbed about 500 would be handed 11% of heat it does not have.
     h_cem_j_per_g = rng.normal(base.h_cem_j_per_g, 0.08 * base.h_cem_j_per_g, n)
     forecast_z = rng.normal(0.0, 1.0, n)
+
+    if tau_h_samples is not None:
+        if len(tau_h_samples) != n:
+            raise ValueError(
+                f"tau_h_samples has {len(tau_h_samples)} entries, expected n={n}"
+            )
+        tau_h = np.asarray(tau_h_samples, dtype=np.float64)
 
     return [
         ParamSample(
@@ -233,8 +248,10 @@ def run_ensemble(
     grade: str = "4000psi",
     forecast_sigma_c: dict[str, Any] | None = None,
     processes: int | None = None,
+    adiabatic: bool = False,
+    tau_h_samples: Sequence[float] | None = None,
 ) -> Ensemble:
-    samples = draw_parameters(mix, n, seed)
+    samples = draw_parameters(mix, n, seed, tau_h_samples)
     coarse = Element(
         shape=element.shape,
         dims_mm=element.dims_mm,
@@ -243,7 +260,12 @@ def run_ensemble(
         formwork=element.formwork,
         on_ground=element.on_ground,
     )
-    options = {"dt_s": dt_s, "hours": hours, "record_every_s": record_every_s}
+    options = {
+        "dt_s": dt_s,
+        "hours": hours,
+        "record_every_s": record_every_s,
+        "adiabatic": adiabatic,
+    }
     sigma_by_hour_c = _sigma_on_hours(forecast_sigma_c, ambient.hours)
 
     jobs = [

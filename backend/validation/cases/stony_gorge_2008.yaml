@@ -14,6 +14,7 @@ geometry:
   dx_m: 0.02
 
 mix:
+  cement_type: "II"        # ASTM C150 type as stated in DSO-12-02. Picks H_cem
   cement_kg_m3: 313.8          # Type II, 529 lb/yd3
   fly_ash_kg_m3: 104.4         # Class F, 176 lb/yd3
   cementitious_kg_m3: 418.3    # 705 lb/yd3
