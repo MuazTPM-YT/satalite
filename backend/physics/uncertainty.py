@@ -5,18 +5,20 @@ of this solver reports a peak core temperature to a tenth of a degree while sitt
 a heat of hydration good to maybe +/- 8% and a surface film coefficient good to maybe a
 factor of two. This module puts that spread on the screen instead of hiding it.
 
-Reproducibility: every sample is drawn in the PARENT process from one seeded generator
+Reproducibility: every sample is drawn in the PARENT process from one seeded sequence
 before any work is dispatched. Workers receive finished numbers and draw nothing, so the
 result does not depend on the pool size, the scheduling order, or the day of the week.
 """
 
 import multiprocessing as mp
+import warnings
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+from scipy.stats import norm, qmc
 
 from physics import FloatArray
 from physics.equations import maturity
@@ -100,40 +102,72 @@ def pool_context() -> mp.context.BaseContext:
     return mp.get_context()
 
 
+# the ten sampled dimensions, in the order draw_parameters reads the Sobol columns.
+# Changing this order changes every seeded result, so do not reorder it casually.
+SAMPLED_PARAMETERS = (
+    "placement_temp_offset_c",
+    "h_multiplier",
+    "tau_h",
+    "beta",
+    "a_solar",
+    "k_w_m_k",
+    "rho_cp_j_m3_k",
+    "ea_j_mol",
+    "h_cem_j_per_g",
+    "forecast_z",
+)
+
+
 # sample the uncertain params. seeded, so demo repeats.
+#
+# Scrambled Sobol, not pseudorandom. A low-discrepancy sequence fills the ten-dimensional
+# parameter box more evenly than independent draws, and it is the band EDGES that pay for
+# clumping. Owen scrambling is what keeps it seedable and unbiased - a raw Sobol sequence
+# is the same points every time and has no seed to vary at all.
+#
+# n NOT A POWER OF 2: Sobol's balance property holds only on complete 2^m blocks. n = 300
+# takes the first 300 points of a 512-point block, so the unfinished remainder is
+# unbalanced and behaves closer to plain Monte Carlo. We take n as given rather than
+# silently rounding it, because n_samples is a published field in the API response and a
+# caller who asks for 300 must not be handed 512.
 #
 # tau_h_samples lets a caller supply tau from somewhere better than a 15% normal about
 # the base - the validation harness derives it from sampled cement chemistry, where the
 # Schindler-Folliard regression swings tau from 25.8 h to 15.2 h across a plausible SO3
-# range alone. The internal tau draw still happens and is then discarded, so the rng
-# stream stays in lockstep and every OTHER parameter is unchanged by the substitution.
+# range alone. Every dimension is drawn in one block here, so the substitution cannot
+# shift any OTHER parameter no matter what it replaces.
 def draw_parameters(
     base: Mix, n: int, seed: int = 0, tau_h_samples: Sequence[float] | None = None
 ) -> list[ParamSample]:
-    rng = np.random.default_rng(seed)
+    with warnings.catch_warnings():
+        # we know, and the docstring above says what it costs.
+        warnings.filterwarnings("ignore", message=".*balance properties.*")
+        unit = qmc.Sobol(d=len(SAMPLED_PARAMETERS), scramble=True, seed=seed).random(n)
+    # norm.ppf(0) is -inf, and a scrambled draw can legitimately land on the open bound.
+    unit = np.clip(unit, 1e-12, 1.0 - 1e-12)
 
     # placement temperature: normal sigma 3, truncated at +/- 3 sd rather than resampled,
-    # because a resample loop would consume a variable number of draws and break the
-    # one-stream reproducibility guarantee.
-    placement_offset_c = np.clip(rng.normal(0.0, 3.0, n), -9.0, 9.0)
+    # because a resample loop would consume a variable number of points and break the
+    # one-block reproducibility guarantee.
+    placement_offset_c = np.clip(norm.ppf(unit[:, 0], 0.0, 3.0), -9.0, 9.0)
 
     # film coefficient: lognormal spanning 0.5x to 2.0x. Those bounds are read as the
     # 95% interval, so sigma_ln = ln(2)/2 puts each of them two sd from a median of 1.
-    h_multiplier = np.clip(rng.lognormal(0.0, np.log(2.0) / 2.0, n), 0.5, 2.0)
+    h_multiplier = np.clip(np.exp(norm.ppf(unit[:, 1], 0.0, np.log(2.0) / 2.0)), 0.5, 2.0)
 
-    tau_h = rng.normal(base.tau_h, 0.15 * base.tau_h, n)
-    beta = np.clip(rng.normal(base.beta, 0.10 * base.beta, n), 0.6, 1.4)
-    a_solar = rng.uniform(0.50, 0.65, n)
-    k_w_m_k = rng.normal(base.k_w_m_k, 0.075 * base.k_w_m_k, n)
+    tau_h = norm.ppf(unit[:, 2], base.tau_h, 0.15 * base.tau_h)
+    beta = np.clip(norm.ppf(unit[:, 3], base.beta, 0.10 * base.beta), 0.6, 1.4)
+    a_solar = 0.50 + 0.15 * unit[:, 4]
+    k_w_m_k = norm.ppf(unit[:, 5], base.k_w_m_k, 0.075 * base.k_w_m_k)
 
     rho_cp_base = base.rho_kg_m3 * base.cp_j_kg_k
-    rho_cp_j_m3_k = rng.normal(rho_cp_base, 0.075 * rho_cp_base, n)
+    rho_cp_j_m3_k = norm.ppf(unit[:, 6], rho_cp_base, 0.075 * rho_cp_base)
 
-    ea_j_mol = rng.uniform(33000.0, 42000.0, n)
+    ea_j_mol = 33000.0 + 9000.0 * unit[:, 7]
     # centred on the mix's own cement heat, not the global default: a Type V mix
     # (450 J/g) perturbed about 500 would be handed 11% of heat it does not have.
-    h_cem_j_per_g = rng.normal(base.h_cem_j_per_g, 0.08 * base.h_cem_j_per_g, n)
-    forecast_z = rng.normal(0.0, 1.0, n)
+    h_cem_j_per_g = norm.ppf(unit[:, 8], base.h_cem_j_per_g, 0.08 * base.h_cem_j_per_g)
+    forecast_z = norm.ppf(unit[:, 9])
 
     if tau_h_samples is not None:
         if len(tau_h_samples) != n:
