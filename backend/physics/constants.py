@@ -12,9 +12,20 @@ CP_DEFAULT = 1000.0           # J/kg/K
 K_DEFAULT = 2.2               # W/m/K
 EMISSIVITY = 0.90             # concrete
 SOLAR_ABSORPTIVITY = 0.55     # fresh concrete, range 0.50-0.65
-H_CEM_DEFAULT = 500.0         # J/g if Bogue data unavailable. USBR DSO-12-02.
+H_CEM_DEFAULT = 500.0         # J/g when the cement type is unknown. USBR DSO-12-02.
 # was 470: field data shows it under-predicts. Stony Gorge measured rise 104 degF
 # against 96 predicted. Modern cements grind finer, so more heat per unit binder.
+
+# Cement heat by ASTM C150 type, J/g. One global H_cem is why 500 fixed Stony Gorge
+# (Type II) and hurt Deer Creek (Type II/V): C3A carries the largest Bogue coefficient
+# at 866 J/g, and Type V is low-C3A by definition, so a II/V blend simply generates less
+# heat per unit cement. These are the type means; the ensemble samples around them.
+H_CEM_BY_TYPE = {
+    "I": 510.0,      # highest C3A
+    "II": 500.0,     # confirmed against the Stony Gorge field rise
+    "II/V": 470.0,   # low C3A
+    "V": 450.0,      # lowest
+}
 
 # ASTM C1074 switches the activation energy slope at 20 C. this is a fixed
 # breakpoint in the standard, NOT the reference temperature. do not tie it to T_ref.

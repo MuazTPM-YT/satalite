@@ -53,6 +53,19 @@ def test_h_cem_is_sampled_and_reaches_the_mix() -> None:
     assert np.std([s.h_cem_j_per_g for s in samples]) > 20.0  # ~8% of 500
 
 
+# a Type V mix perturbed about the global 500 would be handed 11% of heat it has not got
+def test_h_cem_is_sampled_around_the_mix_not_the_global_default() -> None:
+    cool = Mix(cement_kg_m3=400.0, h_u_j_per_kg=450e3, alpha_u=0.7, tau_h=15.1,
+               beta=0.9, h_cem_j_per_g=450.0)
+    heats = [s.h_cem_j_per_g for s in draw_parameters(cool, 500, seed=4)]
+    assert np.mean(heats) == pytest.approx(450.0, abs=8.0)
+    # and scaling h_u must be a no-op at the mean, not a 450/500 haircut
+    unshifted = [s for s in draw_parameters(cool, 500, seed=4) if s.h_cem_j_per_g > 449.9]
+    assert mix_for(cool, unshifted[0]).h_u_j_per_kg == pytest.approx(
+        450e3 * unshifted[0].h_cem_j_per_g / 450.0
+    )
+
+
 # rho*cp is sampled as a product, so cp carries it and rho stays put
 def test_rho_cp_product_is_what_varies() -> None:
     sample = draw_parameters(MIX, 1, seed=3)[0]

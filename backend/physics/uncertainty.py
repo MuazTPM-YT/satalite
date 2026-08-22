@@ -19,7 +19,6 @@ from typing import Any
 import numpy as np
 
 from physics import FloatArray
-from physics.constants import H_CEM_DEFAULT
 from physics.equations import maturity
 from physics.solver import solve
 from physics.strength_model import StrengthParams, params_for, strength_fraction
@@ -123,7 +122,9 @@ def draw_parameters(base: Mix, n: int, seed: int = 0) -> list[ParamSample]:
     rho_cp_j_m3_k = rng.normal(rho_cp_base, 0.075 * rho_cp_base, n)
 
     ea_j_mol = rng.uniform(33000.0, 42000.0, n)
-    h_cem_j_per_g = rng.normal(H_CEM_DEFAULT, 0.08 * H_CEM_DEFAULT, n)
+    # centred on the mix's own cement heat, not the global default: a Type V mix
+    # (450 J/g) perturbed about 500 would be handed 11% of heat it does not have.
+    h_cem_j_per_g = rng.normal(base.h_cem_j_per_g, 0.08 * base.h_cem_j_per_g, n)
     forecast_z = rng.normal(0.0, 1.0, n)
 
     return [
@@ -149,10 +150,11 @@ def draw_parameters(base: Mix, n: int, seed: int = 0) -> list[ParamSample]:
 def mix_for(base: Mix, sample: ParamSample) -> Mix:
     return Mix(
         cement_kg_m3=base.cement_kg_m3,
-        h_u_j_per_kg=base.h_u_j_per_kg * (sample.h_cem_j_per_g / H_CEM_DEFAULT),
+        h_u_j_per_kg=base.h_u_j_per_kg * (sample.h_cem_j_per_g / base.h_cem_j_per_g),
         alpha_u=base.alpha_u,
         tau_h=sample.tau_h,
         beta=sample.beta,
+        h_cem_j_per_g=sample.h_cem_j_per_g,
         rho_kg_m3=base.rho_kg_m3,
         cp_j_kg_k=sample.rho_cp_j_m3_k / base.rho_kg_m3,
         k_w_m_k=sample.k_w_m_k,

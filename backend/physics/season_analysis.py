@@ -85,6 +85,7 @@ def standard_mix() -> Mix:
             p_fa=P_FLY_ASH,
             p_fa_cao=P_FLY_ASH_CAO,
         ),
+        h_cem_j_per_g=H_CEM_DEFAULT,
         alpha_u=ultimate_degree(W_CM, p_fa=P_FLY_ASH),
         tau_h=tau_hours(
             p_c3a=P_C3A,

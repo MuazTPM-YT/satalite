@@ -5,6 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from physics.constants import H_CEM_BY_TYPE
 from physics.equations.boundary import FORMWORK_R
 from physics.geometry import SHAPES
 
@@ -65,12 +66,27 @@ class MixSpec(BaseModel):
     """Either name the standard mix or give every hydration parameter explicitly."""
 
     mix_id: str = "standard"
+    # ASTM C150 type. Picks the cement heat: C3A carries the largest Bogue coefficient
+    # (866 J/g) and Type V is low-C3A by definition, so a II/V blend makes less heat per
+    # unit cement. None means unknown, which falls back to H_CEM_DEFAULT rather than
+    # guessing a type - guessing "V" would quietly relax every temperature prediction.
+    cement_type: str | None = None
     cement_kg_m3: float | None = Field(default=None, gt=0.0)
     h_u_j_per_kg: float | None = Field(default=None, gt=0.0)
     alpha_u: float | None = Field(default=None, gt=0.0, le=1.09)
     tau_h: float | None = Field(default=None, gt=0.0)
     beta: float | None = Field(default=None, gt=0.0)
     grade: str = "4000psi"
+
+    # reject an unknown cement type at the boundary, not by silently defaulting.
+    @model_validator(mode="after")
+    def _known_cement_type(self) -> "MixSpec":
+        if self.cement_type is not None and self.cement_type not in H_CEM_BY_TYPE:
+            raise ValueError(
+                f"unknown cement_type {self.cement_type!r}, expected one of "
+                f"{sorted(H_CEM_BY_TYPE)} or null for unknown"
+            )
+        return self
 
 
 class AmbientSpec(BaseModel):

@@ -6,6 +6,7 @@ web code.
 """
 
 import logging
+from dataclasses import replace
 from typing import Any
 
 import numpy as np
@@ -20,7 +21,14 @@ from app.models import (
     PourWindowCandidate,
     SimulationResult,
 )
-from physics.constants import CRACK_LIMIT_C, DEF_LIMIT_C, PLACEMENT_MAX_C, STRIP_FRACTION
+from physics.constants import (
+    CRACK_LIMIT_C,
+    DEF_LIMIT_C,
+    H_CEM_BY_TYPE,
+    H_CEM_DEFAULT,
+    PLACEMENT_MAX_C,
+    STRIP_FRACTION,
+)
 from physics.forecast_error import provisional_error
 from physics.limits import EVAP_LIMIT_KG_M2_H
 from physics.season_analysis import (
@@ -47,11 +55,28 @@ def to_element(spec: ElementSpec) -> Element:
     )
 
 
+# cement heat for a stated ASTM C150 type. unknown type keeps the global default.
+def h_cem_for(cement_type: str | None) -> float:
+    return H_CEM_DEFAULT if cement_type is None else H_CEM_BY_TYPE[cement_type]
+
+
 # spec in, physics Mix out. "standard" is the season-analysis mix, unchanged.
+#
+# A stated cement_type rescales the standard mix's ultimate heat by the ratio of type
+# heats. h_u is linear in H_cem for the clinker fraction, and the fly-ash CaO term does
+# not track it, so this slightly overstates the shift for a heavily blended mix - in the
+# conservative direction for a low-C3A type, which is the one worth being careful about.
 def to_mix(spec: MixSpec) -> Mix:
     base = standard_mix()
     if spec.mix_id == "standard" and spec.cement_kg_m3 is None:
-        return base
+        h_cem = h_cem_for(spec.cement_type)
+        if h_cem == base.h_cem_j_per_g:
+            return base
+        return replace(
+            base,
+            h_u_j_per_kg=base.h_u_j_per_kg * (h_cem / base.h_cem_j_per_g),
+            h_cem_j_per_g=h_cem,
+        )
     if spec.mix_id != "standard" and spec.cement_kg_m3 is None:
         raise ValueError(
             f"unknown mix_id {spec.mix_id!r}. Either use 'standard' or supply "
@@ -70,6 +95,7 @@ def to_mix(spec: MixSpec) -> Mix:
         alpha_u=float(spec.alpha_u),                # type: ignore[arg-type]
         tau_h=float(spec.tau_h),                    # type: ignore[arg-type]
         beta=float(spec.beta) if spec.beta is not None else base.beta,
+        h_cem_j_per_g=h_cem_for(spec.cement_type),
     )
 
 

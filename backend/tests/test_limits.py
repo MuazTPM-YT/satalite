@@ -2,8 +2,16 @@
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
-from physics.constants import CRACK_LIMIT_C, DEF_LIMIT_C, H_CEM_DEFAULT
+from app.models import MixSpec
+from app.services.simulate import h_cem_for, to_mix
+from physics.constants import (
+    CRACK_LIMIT_C,
+    DEF_LIMIT_C,
+    H_CEM_BY_TYPE,
+    H_CEM_DEFAULT,
+)
 from physics.forecast_error import empirical_forecast_error
 from physics.limits import (
     DEF_ETTRINGITE_C,
@@ -21,6 +29,34 @@ def test_constants_match_the_validation_data() -> None:
     assert DEF_LIMIT_C == 68.3        # 155 degF
     assert CRACK_LIMIT_C == 19.4      # 35 degF
     assert H_CEM_DEFAULT == 500.0     # J/g
+
+
+# C3A carries the largest Bogue coefficient (866 J/g) and Type V is low-C3A by
+# definition, so cement heat must fall monotonically as the type gets more sulfate
+# resistant. Getting this order backwards would make the safest cement the hottest.
+def test_cement_heat_falls_as_c3a_falls() -> None:
+    assert H_CEM_BY_TYPE["I"] > H_CEM_BY_TYPE["II"] > H_CEM_BY_TYPE["II/V"] > H_CEM_BY_TYPE["V"]
+    assert H_CEM_BY_TYPE["II"] == H_CEM_DEFAULT   # the fallback is the confirmed type
+
+
+# an unknown type must not silently become the coolest one
+def test_unknown_cement_type_falls_back_to_default() -> None:
+    assert h_cem_for(None) == H_CEM_DEFAULT
+    assert h_cem_for("V") == 450.0
+
+
+def test_cement_type_moves_the_mix_heat() -> None:
+    hot = to_mix(MixSpec(cement_type="I"))
+    cool = to_mix(MixSpec(cement_type="V"))
+    assert hot.h_u_j_per_kg > cool.h_u_j_per_kg
+    assert hot.adiabatic_rise_c > cool.adiabatic_rise_c
+    # and the mix remembers which mean the ensemble must perturb it about
+    assert cool.h_cem_j_per_g == 450.0
+
+
+def test_unknown_cement_type_is_rejected_at_the_boundary() -> None:
+    with pytest.raises(ValidationError, match="unknown cement_type"):
+        MixSpec(cement_type="IV")
 
 
 # Heinz & Ludwig via DSO-12-02: below BOTH ratios a cement resists DEF, so the ceiling
