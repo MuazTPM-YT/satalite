@@ -3,7 +3,13 @@
 from dataclasses import dataclass, field
 
 from physics import FloatArray
-from physics.constants import BETA_DEFAULT, CP_DEFAULT, K_DEFAULT, RHO_DEFAULT
+from physics.constants import (
+    BETA_DEFAULT,
+    CP_DEFAULT,
+    H_CEM_DEFAULT,
+    K_DEFAULT,
+    RHO_DEFAULT,
+)
 
 
 @dataclass(frozen=True)
@@ -19,6 +25,10 @@ class Mix:
     alpha_u: float            # ultimate degree of hydration
     tau_h: float              # hydration time parameter, hours
     beta: float = BETA_DEFAULT
+    # the cement heat h_u_j_per_kg was derived from, J/g. Carried so the ensemble can
+    # scale h_u around the RIGHT mean: a Type II/V mix built at 470 must be perturbed
+    # about 470, not about the global default.
+    h_cem_j_per_g: float = H_CEM_DEFAULT
     rho_kg_m3: float = RHO_DEFAULT
     cp_j_kg_k: float = CP_DEFAULT
     k_w_m_k: float = K_DEFAULT

@@ -1,0 +1,62 @@
+# USBR DSO-12-02, Bartojay 2012, Table 2. Single isolated placement, no adjacent lifts.
+id: stony_gorge_2008
+name: Stony Gorge Dam diaphragm wall
+source: USBR DSO-12-02 (Bartojay 2012), Table 2
+kind: field
+
+geometry:
+  # 6 ft thick x 14 ft wide x 12 ft high. The 2D section is thickness x height.
+  shape: wall
+  thickness_mm: 1829.0         # 6 ft
+  height_mm: 3658.0            # 12 ft
+  formwork: plywood_18mm       # report says steel/timber forms; see notes
+  on_ground: false
+  dx_m: 0.02
+
+mix:
+  cement_type: "II"        # ASTM C150 type as stated in DSO-12-02. Picks H_cem
+  cement_kg_m3: 313.8          # Type II, 529 lb/yd3
+  fly_ash_kg_m3: 104.4         # Class F, 176 lb/yd3
+  cementitious_kg_m3: 418.3    # 705 lb/yd3
+  water_kg_m3: 166.1
+  w_cm: 0.397
+  fly_ash_cao_frac: 0.05
+  c3a_frac: 0.06
+  c3s_frac: 0.55
+  so3_frac: 0.026
+  blaine_m2_kg: 350.0
+
+initial:
+  placement_temp_c: 11.1       # 52 degF
+  placed_on: 2008-04-24
+  placed_hour: 9               # ~09:00
+  lat_deg: 39.58               # Stony Gorge Dam, California
+  day_of_year: 115
+
+ambient:
+  # The report gives a 7-day average and maximum only. No hourly series exists.
+  mean_c: 17.2                 # 63 degF
+  max_c: 32.0                  # 89.6 degF
+
+measured:
+  # Table 2, Center sensor, degF converted to C
+  checkpoints_h: [12, 24, 48, 72, 168]
+  core_temp_c: [45.0, 62.0, 69.0, 64.0, 39.0]
+  peak_core_temp_c: 68.9       # 156.2 degF
+  peak_time_window_h: [36, 51]
+  max_rise_c: 57.8             # 104 degF
+  # "6 inches from the surface exceeded the 35 degF differential for all three sensors,
+  # with maximum differentials of 41 to 52 degF" -> 22.8 to 28.9 C
+  max_core_surface_diff_c: [22.8, 28.9]
+
+acceptance:
+  peak_core_temp_c: 5.0
+  peak_time_h: 8.0
+  checkpoint_temp_c: 5.0
+
+notes:
+  - "FORMWORK_R has no steel/timber entry. plywood_18mm (R = 0.15) is the closest
+     available and is warmer than bare steel, so it biases the prediction HIGH."
+  - "Adiabatic rise for this mix at H_cem = 470 J/g is 96.2 degF, BELOW the measured field
+     rise of 104 degF, which is physically impossible. This case is why H_CEM_DEFAULT is
+     now 500 J/g."

@@ -1,0 +1,38 @@
+# USBR DSO-12-02, Bartojay 2012. Deer Creek Dam Spillway mix, USBR 4911 adiabatic test.
+# Lab-measured with NO boundary conditions, so this validates the hydration chain alone.
+id: deer_creek_adiabatic
+name: Deer Creek spillway mix - adiabatic temperature rise
+source: USBR DSO-12-02 (Bartojay 2012), adiabatic calorimetry under USBR 4911
+kind: adiabatic
+
+mix:
+  # lb/yd3 in the report, converted to kg/m3 in the same table
+  cement_type: "II/V"        # ASTM C150 type as stated in DSO-12-02. Picks H_cem
+  cement_kg_m3: 436.1          # Type II/V, 735 lb/yd3
+  fly_ash_kg_m3: 108.6         # Class F, 183 lb/yd3
+  silica_fume_kg_m3: 27.3      # 46 lb/yd3 - NOT in the Schindler H_u formula, see notes
+  cementitious_kg_m3: 571.9    # 964 lb/yd3
+  water_kg_m3: 183.9
+  w_cm: 0.322
+  fly_ash_cao_frac: 0.05       # Class F assumption, not reported
+  # Schindler tau regression inputs. Type II/V clinker, not reported per-oxide.
+  c3a_frac: 0.06
+  c3s_frac: 0.55
+  so3_frac: 0.026
+  blaine_m2_kg: 350.0
+
+initial:
+  placement_temp_c: 16.7       # 62 degF
+
+measured:
+  adiabatic_rise_c: 61.1       # 110 degF
+  peak_temp_c: 77.8            # 172 degF
+
+acceptance:
+  adiabatic_rise_pct: 15.0     # target; stretch is 8%
+
+notes:
+  - "Silica fume (46 lb/yd3) carries no term in the Schindler-Folliard H_u formula, so its
+     heat is unmodelled. This biases the prediction LOW, not high."
+  - "The lab chamber struggled to hold adiabatic past ~14 days, so the measured 110 degF
+     may be slightly conservative."

@@ -33,12 +33,16 @@ def _weather_per_step(
 
 
 # strictly conservative surface coefficient, used only to bound the stability limit.
-def _worst_case_h_sum(section: Section, ambient: Ambient) -> FloatArray:
+def _worst_case_h_sum(
+    section: Section, ambient: Ambient, h_multiplier: float = 1.0
+) -> FloatArray:
     h_conv = float(boundary.h_convective(float(np.max(ambient.wind_ms))))
     sky_c = float(np.min(boundary.sky_temperature_c(ambient.air_temp_c, ambient.cloud_pct)))
     h_rad = float(boundary.h_radiative(90.0, sky_c))  # 90 C surface is far above any real pour
     h_max = float(boundary.h_effective(h_conv, h_rad, 0.0))  # bare: formwork only ever reduces
-    return np.asarray((section.face_tags != 0).sum(axis=0) * h_max, dtype=np.float64)
+    return np.asarray(
+        (section.face_tags != 0).sum(axis=0) * h_max * h_multiplier, dtype=np.float64
+    )
 
 
 # element, mix and weather in. full thermal and maturity history out.
@@ -53,6 +57,7 @@ def solve(
     solar_absorptivity: float = SOLAR_ABSORPTIVITY,
     evaporative_cooling: bool = True,
     adiabatic: bool = False,
+    h_multiplier: float = 1.0,
 ) -> SolveResult:
     section = rasterize(element.shape, element.dims_mm, element.dx_m, element.on_ground)
     mask, tags, dx_m = section.mask, section.face_tags, section.dx_m
@@ -66,7 +71,9 @@ def solve(
     conduction.assert_stable(
         dt_s,
         mask,
-        np.zeros_like(n_solid) if adiabatic else _worst_case_h_sum(section, ambient),
+        np.zeros_like(n_solid)
+        if adiabatic
+        else _worst_case_h_sum(section, ambient, h_multiplier),
         dx_m,
         mix.alpha_m2_s,
         mix.k_w_m_k,
@@ -128,11 +135,13 @@ def solve(
             temp_c[boundary_rows, boundary_cols], float(weather["sky_temp_c"][i])
         )
         h_conv = float(weather["h_conv"][i])
-        film_open = boundary.h_effective(h_conv, h_rad_b, 0.0)
+        film_open = boundary.h_effective(h_conv, h_rad_b, 0.0) * h_multiplier
         h_sum[boundary_rows, boundary_cols] = n_exposed_b * conduction.face_h_discrete(
             film_open, dx_m, mix.k_w_m_k
         ) + n_formed_b * conduction.face_h_discrete(
-            boundary.h_effective(h_conv, h_rad_b, formwork_r), dx_m, mix.k_w_m_k
+            boundary.h_effective(h_conv, h_rad_b, formwork_r) * h_multiplier,
+            dx_m,
+            mix.k_w_m_k,
         )
 
         # true free-surface temperature, reconstructed from the cell centre. q lags one

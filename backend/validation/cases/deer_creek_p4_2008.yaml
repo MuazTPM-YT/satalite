@@ -1,0 +1,59 @@
+# USBR DSO-12-02, Bartojay 2012, Table 4. Placement No. 4 only - the bottom lift.
+# Placements 6 and 8 are excluded: both were heated by the lift below and multi-lift
+# coupling is outside this model.
+id: deer_creek_p4_2008
+name: Deer Creek spillway, placement No. 4
+source: USBR DSO-12-02 (Bartojay 2012), Table 4
+kind: field
+
+geometry:
+  # Buttress ~6.5 ft thick x 7.5-12.5 ft high. Mid-height taken as 10 ft.
+  shape: wall
+  thickness_mm: 1981.0         # 6.5 ft
+  height_mm: 3048.0            # 10 ft, mid of the reported 7.5-12.5 ft range
+  formwork: insulating_blanket # thermal blankets were used
+  on_ground: true              # bottom lift on rock; see notes
+  dx_m: 0.02
+
+mix:
+  # same mix as the adiabatic case
+  cement_type: "II/V"        # ASTM C150 type as stated in DSO-12-02. Picks H_cem
+  cement_kg_m3: 436.1
+  fly_ash_kg_m3: 108.6
+  silica_fume_kg_m3: 27.3
+  cementitious_kg_m3: 571.9
+  water_kg_m3: 183.9
+  w_cm: 0.322
+  fly_ash_cao_frac: 0.05
+  c3a_frac: 0.06
+  c3s_frac: 0.55
+  so3_frac: 0.026
+  blaine_m2_kg: 350.0
+
+initial:
+  placement_temp_c: 13.9       # 57 degF
+  placed_on: 2008-04-25
+  placed_hour: 9
+  lat_deg: 40.28               # Deer Creek Dam, Utah
+  day_of_year: 116
+
+ambient:
+  mean_c: 10.0                 # 50 degF reported average
+  max_c: 23.0                  # 73.4 degF, the Table 4 "ambient shade" maximum
+
+measured:
+  # Table 4, Center sensor, degF converted to C
+  checkpoints_h: [12, 24, 48, 72, 168]
+  core_temp_c: [48.0, 72.0, 73.0, 70.0, 46.0]
+  peak_core_temp_c: 74.0       # 165.2 degF
+  max_rise_c: 62.8             # 113 degF
+
+acceptance:
+  peak_core_temp_c: 5.0
+  peak_time_h: 8.0
+  checkpoint_temp_c: 5.0
+
+notes:
+  - "on_ground tags the base GROUND, which the solver treats as a zero-flux face. For a
+     bottom lift cast on rock that is an approximation, and it biases the core HIGH."
+  - "Silica fume heat is unmodelled, biasing the prediction LOW."

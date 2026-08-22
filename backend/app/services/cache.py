@@ -16,6 +16,16 @@ def request_key(name: str, params: dict[str, Any]) -> str:
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
+# where a given request's response lives. same key, same file, every time.
+def cache_path(cache_dir: Path, name: str, params: dict[str, Any]) -> Path:
+    return cache_dir / f"{name}-{request_key(name, params)}.json"
+
+
+# already on disk? lets a caller skip work without paying for a call to find out.
+def is_cached(cache_dir: Path, name: str, params: dict[str, Any]) -> bool:
+    return cache_path(cache_dir, name, params).exists()
+
+
 # read-through cache. miss calls fetch() once, then writes json to disk.
 def cached_call(
     cache_dir: Path,
@@ -23,8 +33,7 @@ def cached_call(
     params: dict[str, Any],
     fetch: Callable[[], Any],
 ) -> Any:
-    key = request_key(name, params)
-    path = cache_dir / f"{name}-{key}.json"
+    path = cache_path(cache_dir, name, params)
     if path.exists():
         log.info("cache hit %s", path.name)
         return json.loads(path.read_text())
