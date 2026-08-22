@@ -14,13 +14,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from app.config import get_settings
-from app.models import SeasonAnalysisResponse, ValidationResponse
+from app.models import DemoEnsembleResponse, SeasonAnalysisResponse, ValidationResponse
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["analysis"])
 
 SEASON_FILENAME = "season-analysis.json"
+DEMO_ENSEMBLE_FILENAME = "demo-ensemble.json"
 
 
 # read a precomputed json file or explain exactly how to make it.
@@ -43,6 +44,22 @@ async def season_analysis() -> SeasonAnalysisResponse:
             path,
             "Fetch the season with app.services.season.fetch_season, then run "
             "physics.season_analysis.season_exposure and write the result here.",
+        )
+    )
+
+
+# serve the precomputed demo bands. never computes.
+#
+# This is the whole point of the split: the ensemble is minutes of work whose answer does
+# not change between requests, so it is built once offline at a sample count no request
+# thread could ever afford, and the live route only ever runs the deterministic solve.
+@router.get("/demo-ensemble", response_model=DemoEnsembleResponse)
+async def demo_ensemble() -> DemoEnsembleResponse:
+    path = get_settings().cache_dir / DEMO_ENSEMBLE_FILENAME
+    return DemoEnsembleResponse(
+        **_load(
+            path,
+            "Run `python -m scripts.build_demo_ensemble` from backend/ to build it.",
         )
     )
 
