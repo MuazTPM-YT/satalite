@@ -1,15 +1,39 @@
-// left panel. element geometry, mix design, pour details
+// left panel. element geometry, mix design, pour details — reads/writes shared element config
 "use client";
 
-// static T-beam cross-section SVG preview
-function CrossSectionPreview() {
+import type { ElementConfig } from "@/lib/elementConfig";
+
+interface LeftPanelProps {
+  config: ElementConfig;
+  onChange: <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => void;
+}
+
+// dynamic T-beam cross-section SVG preview from shared config dims
+function CrossSectionPreview({ config }: { config: ElementConfig }) {
+  const fw = config.flange_width_mm;
+  const fd = config.flange_depth_mm;
+  const ww = config.web_width_mm;
+  const td = config.total_depth_mm;
+
+  // fit shape into fixed preview box
+  const box_w = 160;
+  const box_h = 140;
+  const scale = Math.min(box_w / fw, box_h / td);
+  const fw_px = fw * scale;
+  const fd_px = fd * scale;
+  const ww_px = ww * scale;
+  const td_px = td * scale;
+  const x0 = 20;
+  const y0 = 10;
+  const webX = x0 + (fw_px - ww_px) / 2;
+
   return (
     <div className="mt-2 p-2 bg-bg-primary rounded-md border border-border-default">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
           Cross-Section
         </span>
-        <span className="text-[10px] text-text-muted">1:15</span>
+        <span className="text-[10px] text-text-muted">fit</span>
       </div>
       <svg
         viewBox="0 0 200 160"
@@ -17,50 +41,47 @@ function CrossSectionPreview() {
         xmlns="http://www.w3.org/2000/svg"
       >
         {/* T-beam shape: flange on top, web below */}
-        {/* flange: 600mm wide × 150mm deep → scaled */}
         <rect
-          x="20" y="10" width="160" height="40"
+          x={x0} y={y0} width={fw_px} height={fd_px}
           fill="none" stroke="#8b949e" strokeWidth="1.5"
         />
-        {/* web: 250mm wide × 350mm deep → scaled */}
         <rect
-          x="70" y="50" width="60" height="100"
+          x={webX} y={y0 + fd_px} width={ww_px} height={td_px - fd_px}
           fill="none" stroke="#8b949e" strokeWidth="1.5"
         />
         {/* dimension lines */}
-        {/* flange width */}
-        <line x1="20" y1="5" x2="180" y2="5" stroke="#6e7681" strokeWidth="0.5" />
-        <line x1="20" y1="2" x2="20" y2="8" stroke="#6e7681" strokeWidth="0.5" />
-        <line x1="180" y1="2" x2="180" y2="8" stroke="#6e7681" strokeWidth="0.5" />
-        <text x="100" y="4" textAnchor="middle" fill="#6e7681" fontSize="7">600</text>
-        {/* web width */}
-        <line x1="70" y1="155" x2="130" y2="155" stroke="#6e7681" strokeWidth="0.5" />
-        <line x1="70" y1="152" x2="70" y2="158" stroke="#6e7681" strokeWidth="0.5" />
-        <line x1="130" y1="152" x2="130" y2="158" stroke="#6e7681" strokeWidth="0.5" />
-        <text x="100" y="154" textAnchor="middle" fill="#6e7681" fontSize="7">250</text>
-        {/* total depth */}
-        <line x1="190" y1="10" x2="190" y2="150" stroke="#6e7681" strokeWidth="0.5" />
-        <line x1="187" y1="10" x2="193" y2="10" stroke="#6e7681" strokeWidth="0.5" />
-        <line x1="187" y1="150" x2="193" y2="150" stroke="#6e7681" strokeWidth="0.5" />
-        <text x="195" y="83" textAnchor="start" fill="#6e7681" fontSize="7" transform="rotate(90,195,83)">500</text>
+        <line x1={x0} y1={y0 - 5} x2={x0 + fw_px} y2={y0 - 5} stroke="#6e7681" strokeWidth="0.5" />
+        <line x1={x0} y1={y0 - 8} x2={x0} y2={y0 - 2} stroke="#6e7681" strokeWidth="0.5" />
+        <line x1={x0 + fw_px} y1={y0 - 8} x2={x0 + fw_px} y2={y0 - 2} stroke="#6e7681" strokeWidth="0.5" />
+        <text x={x0 + fw_px / 2} y={y0 - 6} textAnchor="middle" fill="#6e7681" fontSize="7">{fw}</text>
+        <line x1={webX} y1={y0 + td_px + 5} x2={webX + ww_px} y2={y0 + td_px + 5} stroke="#6e7681" strokeWidth="0.5" />
+        <line x1={webX} y1={y0 + td_px + 2} x2={webX} y2={y0 + td_px + 8} stroke="#6e7681" strokeWidth="0.5" />
+        <line x1={webX + ww_px} y1={y0 + td_px + 2} x2={webX + ww_px} y2={y0 + td_px + 8} stroke="#6e7681" strokeWidth="0.5" />
+        <text x={webX + ww_px / 2} y={y0 + td_px + 14} textAnchor="middle" fill="#6e7681" fontSize="7">{ww}</text>
+        <line x1={x0 + fw_px + 10} y1={y0} x2={x0 + fw_px + 10} y2={y0 + td_px} stroke="#6e7681" strokeWidth="0.5" />
+        <line x1={x0 + fw_px + 7} y1={y0} x2={x0 + fw_px + 13} y2={y0} stroke="#6e7681" strokeWidth="0.5" />
+        <line x1={x0 + fw_px + 7} y1={y0 + td_px} x2={x0 + fw_px + 13} y2={y0 + td_px} stroke="#6e7681" strokeWidth="0.5" />
+        <text x={x0 + fw_px + 16} y={y0 + td_px / 2} textAnchor="middle" fill="#6e7681" fontSize="7" transform={`rotate(90 ${x0 + fw_px + 16} ${y0 + td_px / 2})`}>{td}</text>
       </svg>
     </div>
   );
 }
 
-// form row with label + input
+// form row with label + controlled input
 function FormRow({
   label,
   value,
   unit,
   type = "number",
   id,
+  onChange,
 }: {
   label: string;
   value: string | number;
   unit?: string;
   type?: string;
   id: string;
+  onChange: (value: string) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
@@ -71,9 +92,9 @@ function FormRow({
         <input
           id={id}
           type={type}
-          defaultValue={value}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
           className="w-16 text-right text-xs"
-          readOnly
         />
         {unit && (
           <span className="text-[10px] text-text-muted w-8">{unit}</span>
@@ -83,24 +104,26 @@ function FormRow({
   );
 }
 
-// dropdown row
+// dropdown row with controlled select
 function SelectRow({
   label,
   value,
   options,
   id,
+  onChange,
 }: {
   label: string;
   value: string;
   options: string[];
   id: string;
+  onChange: (value: string) => void;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
       <label htmlFor={id} className="text-xs text-text-secondary whitespace-nowrap">
         {label}
       </label>
-      <select id={id} defaultValue={value} className="text-xs max-w-[130px]">
+      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="text-xs max-w-[130px]">
         {options.map((opt) => (
           <option key={opt} value={opt}>{opt}</option>
         ))}
@@ -121,7 +144,7 @@ function SectionHeader({ title, icon }: { title: string; icon: string }) {
   );
 }
 
-export default function LeftPanel() {
+export default function LeftPanel({ config, onChange }: LeftPanelProps) {
   return (
     <aside className="w-[260px] shrink-0 bg-bg-surface border-r border-border-default overflow-y-auto">
       <div className="p-3">
@@ -131,35 +154,39 @@ export default function LeftPanel() {
         <SelectRow
           id="shape"
           label="Shape"
-          value="T-Beam"
+          value={config.shape}
           options={["T-Beam", "Rectangle", "I-Beam", "Box"]}
+          onChange={(v) => onChange("shape", v)}
         />
-        <FormRow id="flange-width" label="Flange width" value={600} unit="mm" />
-        <FormRow id="flange-depth" label="Flange depth" value={150} unit="mm" />
-        <FormRow id="web-width" label="Web width" value={250} unit="mm" />
-        <FormRow id="total-depth" label="Total depth" value={500} unit="mm" />
-        <FormRow id="length" label="Length" value={6000} unit="mm" />
+        <FormRow id="flange-width" label="Flange width" value={config.flange_width_mm} unit="mm" onChange={(v) => onChange("flange_width_mm", Number(v))} />
+        <FormRow id="flange-depth" label="Flange depth" value={config.flange_depth_mm} unit="mm" onChange={(v) => onChange("flange_depth_mm", Number(v))} />
+        <FormRow id="web-width" label="Web width" value={config.web_width_mm} unit="mm" onChange={(v) => onChange("web_width_mm", Number(v))} />
+        <FormRow id="total-depth" label="Total depth" value={config.total_depth_mm} unit="mm" onChange={(v) => onChange("total_depth_mm", Number(v))} />
+        <FormRow id="length" label="Length" value={config.length_mm} unit="mm" onChange={(v) => onChange("length_mm", Number(v))} />
 
         <SelectRow
           id="formwork"
           label="Formwork"
-          value="Plywood 18 mm"
+          value={config.formwork}
           options={["Plywood 18 mm", "Steel", "Insulated"]}
+          onChange={(v) => onChange("formwork", v)}
         />
         <SelectRow
           id="top-face"
           label="Top face"
-          value="Exposed"
+          value={config.top_face}
           options={["Exposed", "Covered", "Insulated"]}
+          onChange={(v) => onChange("top_face", v)}
         />
         <SelectRow
           id="soffit"
           label="Soffit"
-          value="Formed"
+          value={config.soffit}
           options={["Formed", "Ground"]}
+          onChange={(v) => onChange("soffit", v)}
         />
 
-        <CrossSectionPreview />
+        <CrossSectionPreview config={config} />
 
         {/* MIX section */}
         <SectionHeader title="Mix" icon="◇" />
@@ -167,25 +194,27 @@ export default function LeftPanel() {
         <SelectRow
           id="grade"
           label="Grade"
-          value="4000 psi (28 MPa)"
+          value={config.grade}
           options={["3000 psi (21 MPa)", "4000 psi (28 MPa)", "5000 psi (35 MPa)", "6000 psi (42 MPa)"]}
+          onChange={(v) => onChange("grade", v)}
         />
         <SelectRow
           id="cement"
           label="Cement"
-          value="Type I/II"
+          value={config.cement}
           options={["Type I", "Type I/II", "Type II", "Type III", "Type V"]}
+          onChange={(v) => onChange("cement", v)}
         />
-        <FormRow id="content" label="Content" value={400} unit="kg/m³" />
-        <FormRow id="wcm" label="w/cm" value={0.45} />
-        <FormRow id="fly-ash" label="Fly ash" value={20} unit="%" />
-        <FormRow id="placement-temp" label="Placement temp" value={29} unit="°C" />
+        <FormRow id="content" label="Content" value={config.content_kgm3} unit="kg/m³" onChange={(v) => onChange("content_kgm3", Number(v))} />
+        <FormRow id="wcm" label="w/cm" value={config.wcm} onChange={(v) => onChange("wcm", Number(v))} />
+        <FormRow id="fly-ash" label="Fly ash" value={config.fly_ash_pct} unit="%" onChange={(v) => onChange("fly_ash_pct", Number(v))} />
+        <FormRow id="placement-temp" label="Placement temp" value={config.placement_temp_c} unit="°C" onChange={(v) => onChange("placement_temp_c", Number(v))} />
 
         {/* POUR section */}
         <SectionHeader title="Pour" icon="◈" />
 
-        <FormRow id="pour-date" label="Date" value="2026-08-22" type="text" />
-        <FormRow id="start-time" label="Start time" value="04:00" type="text" />
+        <FormRow id="pour-date" label="Date" value={config.pour_date} type="text" onChange={(v) => onChange("pour_date", v)} />
+        <FormRow id="start-time" label="Start time" value={config.start_time} type="text" onChange={(v) => onChange("start_time", v)} />
         <div className="flex items-center justify-between gap-2 py-1">
           <label className="text-xs text-text-secondary">Wind</label>
           <div className="flex items-center gap-1">
@@ -197,7 +226,7 @@ export default function LeftPanel() {
             <span className="text-[10px] text-text-muted">m/s</span>
           </div>
         </div>
-        <FormRow id="cure-window" label="Cure window" value={72} unit="h" />
+        <FormRow id="cure-window" label="Cure window" value={config.cure_window_h} unit="h" onChange={(v) => onChange("cure_window_h", Number(v))} />
       </div>
     </aside>
   );

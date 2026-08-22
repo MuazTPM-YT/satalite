@@ -17,14 +17,9 @@ function statusIcon(pass: boolean | undefined, status?: "pass" | "warn" | "fail"
 }
 
 export default function PourWindowTable({ candidates }: PourWindowTableProps) {
-  // find selected row for summary card
-  const selected = candidates.find((c) => c.selected) ?? candidates[0];
-
   return (
     <div className="border-t border-border-default bg-bg-surface">
-      <div className="flex items-start">
-        {/* table area */}
-        <div className="flex-1 p-3">
+      <div className="p-3">
           {/* header */}
           <div className="flex items-center gap-1.5 mb-2">
             <span className="text-text-muted text-xs">⊞</span>
@@ -114,30 +109,6 @@ export default function PourWindowTable({ candidates }: PourWindowTableProps) {
             evaporation limits — the time saved is bought against three separate
             criteria, not one score.
           </p>
-        </div>
-
-        {/* right summary card */}
-        <div className="w-[200px] shrink-0 p-3 border-l border-border-default">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1">
-            Strip-Ready
-          </div>
-          <div className="text-xl font-semibold text-text-primary">
-            Thu 14:00
-          </div>
-          <div className="text-[11px] text-text-secondary mt-0.5">
-            95% confidence &nbsp;&nbsp; ±3.5 h
-          </div>
-          <div className="mt-3 flex items-center justify-between text-[10px] text-text-muted">
-            <span>0% f&apos;c now</span>
-            <span>70% req.</span>
-          </div>
-          <div className="mt-1 h-1 rounded-full bg-bg-primary overflow-hidden">
-            <div
-              className="h-full rounded-full bg-accent-blue"
-              style={{ width: `${selected.strip_ready_pct > 100 ? 100 : 0}%` }}
-            />
-          </div>
-        </div>
       </div>
     </div>
   );

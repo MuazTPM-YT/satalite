@@ -1,26 +1,102 @@
 // 3D viewer. R3F canvas with clip plane, probe popup, synced legend
 "use client";
 
-import { useMemo, useState, useCallback, useRef } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useMemo, useState, useCallback, useRef, useEffect } from "react";
+import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import TBeamMesh from "@/components/TBeamMesh";
 import type { ProbeResult } from "@/components/TBeamMesh";
+import ThermalLegend from "@/components/ThermalLegend";
 import type { ThermalSimulationResult } from "@/lib/mockThermalField";
-import { buildLegendGradient } from "@/lib/thermalColormap";
 
-// element length matching LeftPanel
-const ELEMENT_LENGTH_M = 6.0;
+// camera preset angles. front = default opening framing
+type PresetView = "top" | "front" | "iso";
+const PRESET_POS: Record<PresetView, THREE.Vector3> = {
+  top: new THREE.Vector3(0, 5, 0),
+  front: new THREE.Vector3(0, 0, 5),
+  iso: new THREE.Vector3(2.9, 2.2, 3.5),
+};
+
+// minimal orbit controls surface we drive directly
+interface ControlsLike {
+  target: THREE.Vector3;
+  update: () => void;
+}
+
+// camera preset pill style, same as TopBar tabs
+function camClass(active: boolean): string {
+  return active
+    ? "px-3 py-1 text-xs rounded bg-bg-elevated text-text-primary font-medium"
+    : "px-3 py-1 text-xs rounded text-text-secondary hover:text-text-primary transition-colors";
+}
 
 interface ViewerProps {
   sim: ThermalSimulationResult;
   timeIndex: number;
+  // element length from shared LeftPanel config state
+  length_m: number;
 }
 
-export default function Viewer({ sim, timeIndex }: ViewerProps) {
+// inside-canvas controller: snaps camera, clears highlight on manual orbit
+function CameraRig({
+  preset,
+  onDrift,
+}: {
+  preset: PresetView | null;
+  onDrift: () => void;
+}) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as unknown as ControlsLike | null;
+  const snappingRef = useRef(false);
+  const presetPosRef = useRef<THREE.Vector3 | null>(null);
+
+  // snap camera + target whenever a preset is chosen
+  const applyPreset = useCallback(
+    (view: PresetView) => {
+      snappingRef.current = true;
+      const pos = PRESET_POS[view];
+      camera.position.copy(pos);
+      if (controls) {
+        controls.target.set(0, 0, 0);
+        controls.update();
+      }
+      presetPosRef.current = pos.clone();
+      snappingRef.current = false;
+    },
+    [camera, controls]
+  );
+
+  // run snap after render when preset id changes (re-click after drift retriggers)
+  useEffect(() => {
+    if (preset !== null) applyPreset(preset);
+  }, [preset, applyPreset]);
+
+  // user orbited/panned away from the preset position — drop the highlight
+  const handleOrbitChange = useCallback(() => {
+    if (snappingRef.current || !presetPosRef.current) return;
+    if (camera.position.distanceTo(presetPosRef.current) > 0.05) {
+      onDrift();
+    }
+  }, [camera, onDrift]);
+
+  return (
+    <OrbitControls
+      makeDefault
+      enableDamping
+      dampingFactor={0.12}
+      minDistance={0.5}
+      maxDistance={20}
+      onChange={handleOrbitChange}
+    />
+  );
+}
+
+export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
   // clip plane position along Z axis (0 = fully open, 1 = fully closed)
   const [clipFrac, setClipFrac] = useState(1.0);
+  // active camera preset, null once user orbits away
+  const [camView, setCamView] = useState<PresetView | null>("front");
 
   // probe state
   const [probe, setProbe] = useState<ProbeResult | null>(null);
@@ -30,19 +106,16 @@ export default function Viewer({ sim, timeIndex }: ViewerProps) {
   // compute clip plane and slice Z coordinate from fraction
   const { clippingPlane, clipZ } = useMemo(() => {
     if (clipFrac >= 0.999) return { clippingPlane: null, clipZ: null };
-    const halfLen = ELEMENT_LENGTH_M / 2;
-    const z = -halfLen + clipFrac * ELEMENT_LENGTH_M;
+    const halfLen = length_m / 2;
+    const z = -halfLen + clipFrac * length_m;
     return {
       clippingPlane: new THREE.Plane(new THREE.Vector3(0, 0, -1), z),
       clipZ: z,
     };
-  }, [clipFrac]);
+  }, [clipFrac, length_m]);
 
   // depth label in mm for clip slider
-  const clipDepth_mm = Math.round(clipFrac * ELEMENT_LENGTH_M * 1000);
-
-  // legend gradient from same colormap function
-  const legendGradient = useMemo(() => buildLegendGradient(), []);
+  const clipDepth_mm = Math.round(clipFrac * length_m * 1000);
 
   // handle probe click from mesh — position near click point with boundary clamping
   const handleProbe = useCallback(
@@ -66,13 +139,25 @@ export default function Viewer({ sim, timeIndex }: ViewerProps) {
       {/* toolbar row */}
       <div className="flex items-center gap-1 px-3 py-2 border-b border-border-default">
         <div className="flex items-center gap-0.5 bg-bg-primary rounded-md p-0.5">
-          <button className="px-3 py-1 text-xs rounded text-text-secondary hover:text-text-primary transition-colors">
+          <button
+            aria-pressed={camView === "top"}
+            className={camClass(camView === "top")}
+            onClick={() => setCamView("top")}
+          >
             ☐ Top
           </button>
-          <button className="px-3 py-1 text-xs rounded bg-bg-elevated text-text-primary font-medium">
+          <button
+            aria-pressed={camView === "front"}
+            className={camClass(camView === "front")}
+            onClick={() => setCamView("front")}
+          >
             ◧ Front
           </button>
-          <button className="px-3 py-1 text-xs rounded text-text-secondary hover:text-text-primary transition-colors">
+          <button
+            aria-pressed={camView === "iso"}
+            className={camClass(camView === "iso")}
+            onClick={() => setCamView("iso")}
+          >
             ◇ Iso
           </button>
         </div>
@@ -121,20 +206,17 @@ export default function Viewer({ sim, timeIndex }: ViewerProps) {
           <TBeamMesh
             sim={sim}
             timeIndex={timeIndex}
+            length_m={length_m}
             clippingPlane={clippingPlane}
             clipZ={clipZ}
             onProbe={handleProbe}
           />
-          <OrbitControls
-            enableDamping
-            dampingFactor={0.12}
-            minDistance={0.5}
-            maxDistance={20}
-          />
+          <CameraRig preset={camView} onDrift={() => setCamView(null)} />
         </Canvas>
 
-        {/* clip plane slider — right edge, vertical */}
-        <div className="absolute top-12 right-16 bottom-8 flex flex-col items-center gap-1">
+        {/* clip plane slider — right edge, vertical. stops above hint block so
+            depth label never collides with interaction hints */}
+        <div className="absolute top-12 right-16 bottom-24 flex flex-col items-center gap-1">
           <span className="text-[9px] text-text-muted">SECTION CUT</span>
           <input
             type="range"
@@ -225,18 +307,9 @@ export default function Viewer({ sim, timeIndex }: ViewerProps) {
           </div>
         </div>
 
-        {/* right-side color legend — built from same colormap stops */}
-        <div className="absolute top-4 right-4 flex flex-col items-center gap-0.5 pointer-events-none">
-          <span className="text-[10px] text-text-muted mb-1">°C</span>
-          <div
-            className="w-3 h-32 rounded-sm"
-            style={{ background: legendGradient }}
-          />
-          <div className="flex flex-col items-end text-[9px] text-text-muted mt-1">
-            <span>75</span>
-            <span className="mt-5">50</span>
-            <span className="mt-5">25</span>
-          </div>
+        {/* right-side color legend — shared component, same as 2D view */}
+        <div className="absolute top-4 right-4 pointer-events-none">
+          <ThermalLegend defLimit_c={sim.flags.def_risk.limit} />
         </div>
       </div>
     </div>

@@ -11,9 +11,6 @@ import { buildHeatmapTexture } from "@/lib/thermalColormap";
 const TEMP_MIN_C = 20;
 const TEMP_MAX_C = 75;
 
-// element length from LeftPanel hardcoded value
-const ELEMENT_LENGTH_M = 6.0;
-
 export interface ProbeResult {
   position: THREE.Vector3;
   temp_c: number;
@@ -26,6 +23,8 @@ export interface ProbeResult {
 interface TBeamMeshProps {
   sim: ThermalSimulationResult;
   timeIndex?: number;
+  // element length from shared LeftPanel config state, passed via Viewer
+  length_m: number;
   clippingPlane?: THREE.Plane | null;
   clipZ?: number | null;
   onProbe?: (result: ProbeResult | null, event?: { offsetX: number; offsetY: number }) => void;
@@ -34,6 +33,7 @@ interface TBeamMeshProps {
 export default function TBeamMesh({
   sim,
   timeIndex = 0,
+  length_m,
   clippingPlane = null,
   clipZ = null,
   onProbe,
@@ -52,7 +52,7 @@ export default function TBeamMesh({
     shape.closePath();
 
     const geo = new THREE.ExtrudeGeometry(shape, {
-      depth: ELEMENT_LENGTH_M,
+      depth: length_m,
       bevelEnabled: false,
     });
 
@@ -97,7 +97,7 @@ export default function TBeamMesh({
       capGeometry: capGeo,
       offset: new THREE.Vector3(cx, cy, cz),
     };
-  }, [grid]);
+  }, [grid, length_m]);
 
   // rebuild heatmap texture when time index changes
   const texture = useMemo(() => {
