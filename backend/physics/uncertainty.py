@@ -268,6 +268,32 @@ def _run_one(job: tuple[Element, Mix, Ambient, ParamSample, dict[str, Any]]) -> 
         )
 
 
+@dataclass(frozen=True)
+class _BandInputs:
+    """Exactly what _assemble reads off a member, and nothing else."""
+
+    times_h: FloatArray
+    core_temp_c: FloatArray
+    surface_temp_c: FloatArray
+    min_t_e_h: FloatArray
+
+
+# one ensemble member, reduced inside the worker. top level so multiprocessing can pickle it.
+#
+# A 72 h run at dx = 20 mm holds 433 frames x 2250 cells in two field arrays: 15 MB per
+# sample. Returning whole SolveResults needed 30 GB at N = 2048 and the parent was
+# OOM-killed with the pool still running. The parent only ever reduces those frames to one
+# series anyway, so do it here - same arithmetic on the same array, 10 kB on the wire.
+def _run_one_bands(job: tuple[Element, Mix, Ambient, ParamSample, dict[str, Any]]) -> _BandInputs:
+    result = _run_one(job)
+    return _BandInputs(
+        times_h=result.times_h,
+        core_temp_c=result.core_temp_c,
+        surface_temp_c=result.surface_temp_c,
+        min_t_e_h=np.nanmin(result.t_e_h_frames, axis=(1, 2)),
+    )
+
+
 # run the ensemble. returns percentile bands.
 def run_ensemble(
     element: Element,
@@ -308,10 +334,10 @@ def run_ensemble(
     ]
 
     if processes == 1:
-        results = [_run_one(job) for job in jobs]
+        results = [_run_one_bands(job) for job in jobs]
     else:
         with pool_context().Pool(processes) as pool:
-            results = pool.map(_run_one, jobs)
+            results = pool.map(_run_one_bands, jobs)
 
     params = params_for(grade)
     return _assemble(results, samples, params, seed, dx_m)
@@ -328,10 +354,10 @@ def _sigma_on_hours(
     return np.asarray(np.interp(hours, lead_h, sigma_c), dtype=np.float64)
 
 
-# stack the per-sample histories. equivalent age is the section MINIMUM, because the
-# coldest corner is what governs when the formwork can come off, not the average.
+# stack the per-sample histories. equivalent age is the section MINIMUM (taken in the
+# worker), because the coldest corner is what governs when the formwork can come off.
 def _assemble(
-    results: list[SolveResult],
+    results: list[_BandInputs],
     samples: list[ParamSample],
     params: StrengthParams,
     seed: int,
@@ -339,9 +365,7 @@ def _assemble(
 ) -> Ensemble:
     core_temp_c = np.asarray([r.core_temp_c for r in results], dtype=np.float64)
     surface_temp_c = np.asarray([r.surface_temp_c for r in results], dtype=np.float64)
-    equivalent_age_h = np.asarray(
-        [np.nanmin(r.t_e_h_frames, axis=(1, 2)) for r in results], dtype=np.float64
-    )
+    equivalent_age_h = np.asarray([r.min_t_e_h for r in results], dtype=np.float64)
     return Ensemble(
         times_h=results[0].times_h,
         core_temp_c=core_temp_c,
