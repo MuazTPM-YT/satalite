@@ -1,6 +1,7 @@
 """The API boundary: validation rejects bad input, and precomputed routes never compute."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -170,3 +171,30 @@ def test_validation_serves_the_report_or_says_how_to_build_it(client: TestClient
     # failures must be served too, not filtered out
     assert any(c["passed"] is False for c in cases)
     assert resp.json()["notes"], "limitations must travel with the numbers"
+
+
+# the report path used to be a fixed count of parents up from __file__, which lands
+# outside the container's flattened layout and 503s there for the wrong reason.
+def test_validation_path_is_a_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VALIDATION_PATH", str(tmp_path / "nowhere.json"))
+    get_settings.cache_clear()
+
+    resp = TestClient(create_app()).get("/api/validation")
+    assert resp.status_code == 503
+    assert "nowhere.json" in resp.json()["detail"]
+
+
+# the origin list defaults to localhost, so a deployment that forgets it passes every
+# test and then fails every browser request. Prove the setting reaches the middleware.
+def test_allowed_origins_comes_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://satalite.example.com,http://localhost:3000")
+    get_settings.cache_clear()
+
+    client = TestClient(create_app())
+    deployed = client.get("/api/health", headers={"Origin": "https://satalite.example.com"})
+    assert deployed.headers["access-control-allow-origin"] == "https://satalite.example.com"
+
+    stranger = client.get("/api/health", headers={"Origin": "https://not-ours.example.com"})
+    assert "access-control-allow-origin" not in stranger.headers

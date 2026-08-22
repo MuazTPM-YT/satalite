@@ -1,0 +1,13 @@
+.git
+.venv
+backend/.venv
+**/__pycache__
+frontend
+
+# raw FortyGuard payloads are big and quota-bought - they do not belong in an image.
+# The precomputed analysis artefacts do: the routes that serve them never compute.
+backend/data/cache/*
+!backend/data/cache/.gitkeep
+!backend/data/cache/season-analysis.json
+
+.env

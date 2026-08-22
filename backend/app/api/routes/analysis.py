@@ -21,7 +21,6 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["analysis"])
 
 SEASON_FILENAME = "season-analysis.json"
-VALIDATION_PATH = Path(__file__).resolve().parents[4] / "docs" / "VALIDATION.json"
 
 
 # read a precomputed json file or explain exactly how to make it.
@@ -52,5 +51,8 @@ async def season_analysis() -> SeasonAnalysisResponse:
 @router.get("/validation", response_model=ValidationResponse)
 async def validation() -> ValidationResponse:
     return ValidationResponse(
-        **_load(VALIDATION_PATH, "Run `pytest validation/ -m validation` to generate it.")
+        **_load(
+            get_settings().validation_path,
+            "Run `pytest validation/ -m validation` to generate it.",
+        )
     )
