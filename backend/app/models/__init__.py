@@ -199,6 +199,10 @@ class PourWindowRequest(BaseModel):
     ambient: AmbientSpec
     candidate_offsets_h: list[float] = Field(min_length=1, max_length=24)
     duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
+    # OFF by default. The candidate sweep is seconds; the ensemble on the pick is a
+    # minute, and a minute on a request thread is a gateway timeout on a free tier.
+    # Ask for it explicitly, or read the precomputed band from /api/demo-ensemble.
+    ensemble: bool = False
     ensemble_samples: int = Field(default=300, ge=1, le=2000)
     seed: int = 0
 
@@ -206,7 +210,24 @@ class PourWindowRequest(BaseModel):
 class PourWindowResult(BaseModel):
     candidates: list[PourWindowCandidate]
     best_offset_h: float
+    ensemble: EnsembleResult | None = None
+
+
+class DemoEnsembleResponse(BaseModel):
+    """Precomputed bands for ONE fixed scenario. Served from disk, never solved live.
+
+    The scenario travels with the band on purpose. A band drawn beside a pour it was not
+    computed for is worse than no band at all, so a reader has to be able to see what it
+    describes. Anything the caller changes in the UI invalidates this payload.
+    """
+
+    scenario: SimulationRequest
     ensemble: EnsembleResult
+    built_at: str
+    sampler: str
+    dt_s: float
+    sampled_parameters: list[str]
+    note: str
 
 
 class SeasonAnalysisResponse(BaseModel):

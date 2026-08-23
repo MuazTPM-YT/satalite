@@ -1,6 +1,7 @@
 """The API boundary: validation rejects bad input, and precomputed routes never compute."""
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -111,6 +112,7 @@ def test_pour_windows_ranks_candidates_and_ensembles_the_pick(client: TestClient
         "ambient": ambient_payload(),
         "candidate_offsets_h": [0.0, 4.0],
         "duration_hours": 6.0,
+        "ensemble": True,
         "ensemble_samples": 6,
     }
     resp = client.post("/api/pour-windows", json=body)
@@ -123,6 +125,21 @@ def test_pour_windows_ranks_candidates_and_ensembles_the_pick(client: TestClient
     # the pick must actually be the best-ranked candidate, not just the first
     best = min(data["candidates"], key=lambda c: (c["n_breaches"], c["peak_core_temp_c"]))
     assert data["best_offset_h"] == best["offset_h"]
+
+
+# the sweep is what the route is for. A minute of ensemble on a request thread is a
+# gateway timeout on a free tier, so it must not happen unless it was asked for.
+def test_pour_windows_leaves_the_ensemble_off_unless_asked(client: TestClient) -> None:
+    body = {
+        "element": ELEMENT,
+        "ambient": ambient_payload(),
+        "candidate_offsets_h": [0.0, 4.0],
+        "duration_hours": 6.0,
+    }
+    resp = client.post("/api/pour-windows", json=body)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["ensemble"] is None
+    assert len(resp.json()["candidates"]) == 2
 
 
 # a missing precompute is a 503 that says how to build it, never a fabricated payload
@@ -152,6 +169,57 @@ def test_season_analysis_serves_the_precomputed_file(client: TestClient) -> None
     assert resp.json()["n_days"] == 2
 
 
+def _demo_ensemble_payload() -> dict[str, object]:
+    bands = {key: [1.0, 2.0] for key in ("p05", "p25", "p50", "p75", "p95")}
+    return {
+        "scenario": {
+            "element": ELEMENT,
+            "ambient": ambient_payload(),
+            "duration_hours": 6.0,
+        },
+        "ensemble": {
+            "n_samples": 2048,
+            "seed": 0,
+            "dx_m": 0.02,
+            "core_temp_c": bands,
+            "surface_temp_c": bands,
+            "strength_fraction": bands,
+            "equivalent_age_h": bands,
+            "strength_probability": [0.0, 1.0],
+            "strip_time_h_p95": 30.0,
+            "forecast_error": {"provisional": True},
+        },
+        "built_at": "2026-08-23T00:00:00+00:00",
+        "sampler": "scipy.stats.qmc.Sobol(scramble=True)",
+        "dt_s": 30.0,
+        "sampled_parameters": ["tau_h"],
+        "note": "one fixed scenario",
+    }
+
+
+def test_demo_ensemble_missing_says_how_to_build_it(client: TestClient) -> None:
+    resp = client.get("/api/demo-ensemble")
+    assert resp.status_code == 503
+    assert "build_demo_ensemble" in resp.json()["detail"]
+
+
+# the served band must carry the scenario it was computed for. A cached band drawn
+# beside a different pour is worse than showing no band at all.
+def test_demo_ensemble_serves_the_band_with_its_scenario(client: TestClient) -> None:
+    path = get_settings().cache_dir / "demo-ensemble.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(_demo_ensemble_payload()))
+
+    resp = client.get("/api/demo-ensemble")
+    assert resp.status_code == 200, resp.text
+
+    data = resp.json()
+    assert data["ensemble"]["n_samples"] == 2048
+    assert data["scenario"]["element"]["shape"] == ELEMENT["shape"]
+    assert data["scenario"]["duration_hours"] == 6.0
+    assert data["sampled_parameters"] == ["tau_h"]
+
+
 # 200 once `pytest validation/ -m validation` has written the report, 503 before that.
 # Either is correct; a fabricated payload never is.
 def test_validation_serves_the_report_or_says_how_to_build_it(client: TestClient) -> None:
@@ -170,3 +238,30 @@ def test_validation_serves_the_report_or_says_how_to_build_it(client: TestClient
     # failures must be served too, not filtered out
     assert any(c["passed"] is False for c in cases)
     assert resp.json()["notes"], "limitations must travel with the numbers"
+
+
+# the report path used to be a fixed count of parents up from __file__, which lands
+# outside the container's flattened layout and 503s there for the wrong reason.
+def test_validation_path_is_a_setting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VALIDATION_PATH", str(tmp_path / "nowhere.json"))
+    get_settings.cache_clear()
+
+    resp = TestClient(create_app()).get("/api/validation")
+    assert resp.status_code == 503
+    assert "nowhere.json" in resp.json()["detail"]
+
+
+# the origin list defaults to localhost, so a deployment that forgets it passes every
+# test and then fails every browser request. Prove the setting reaches the middleware.
+def test_allowed_origins_comes_from_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ALLOWED_ORIGINS", "https://satalite.example.com,http://localhost:3000")
+    get_settings.cache_clear()
+
+    client = TestClient(create_app())
+    deployed = client.get("/api/health", headers={"Origin": "https://satalite.example.com"})
+    assert deployed.headers["access-control-allow-origin"] == "https://satalite.example.com"
+
+    stranger = client.get("/api/health", headers={"Origin": "https://not-ours.example.com"})
+    assert "access-control-allow-origin" not in stranger.headers
