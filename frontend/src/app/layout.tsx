@@ -1,20 +1,26 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 
+// self-hosted Inter via next/font
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
+
 export const metadata: Metadata = {
-  title: "SatAlite",
+  title: "SatAlite Studio",
   description: "Concrete curing prediction from hyperlocal air temperature",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full flex flex-col bg-background text-foreground">
-        <header className="border-b border-black/10 dark:border-white/15 px-6 py-4">
-          <span className="font-semibold tracking-tight">SatAlite</span>
-        </header>
-        <main className="flex-1 px-6 py-8">{children}</main>
-      </body>
+    <html lang="en" className={`${inter.className} dark`}>
+      <body>{children}</body>
     </html>
   );
 }

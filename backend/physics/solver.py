@@ -79,6 +79,17 @@ def solve(
     )
 
     # faces per cell, by kind. adiabatic seals every one of them.
+    #
+    # GROUND faces carry no flux here, and that is conservative for SOME outputs only.
+    # It over-predicts peak core, so DEF and cracking flag early - fine. It also
+    # over-predicts maturity, so strip times come out EARLY, which is the unsafe
+    # direction and the one a contractor acts on. Measured on the standard element:
+    # on_ground gives peak core 63.82 C against 61.30 formed and hottest 73.67 against
+    # 65.84, past both DEF_LIMIT_C and the 70 C ettringite ceiling. Soil sinks better
+    # than 18 mm plywood, so the true answer is BELOW the formed case, not above it.
+    # Master 4.6 specifies a semi-infinite soil sink; until that exists, ElementSpec
+    # refuses on_ground=True rather than let this ship. Nothing reachable from the API
+    # takes this path - validation/runner.py builds Element directly and still does.
     n_exposed = np.zeros(mask.shape, dtype=np.float64)
     n_formed = np.zeros(mask.shape, dtype=np.float64)
     if not adiabatic:
@@ -168,16 +179,28 @@ def solve(
             mix.k_w_m_k,
         )
 
-        # solar in, evaporative latent heat out. free surface only.
+        # solar in, evaporative latent heat out, sky radiation deficit. free surface only.
         q_face_w_m2 = np.full(surf_rows.size, float(weather["q_solar_w_m2"][i]))
         if evaporative_cooling:
             q_face_w_m2 = q_face_w_m2 - LATENT_HEAT_VAP * boundary.evaporation_rate_kg_m2_s(
                 surf_temp_c, air_temp_c, float(weather["rh_frac"][i]), float(weather["wind_ms"][i])
             )
+        # h_rad is linearised around T_sky but conduction.step drives h_sum against T_air.
+        # the missing (T_sky - T_air) offset is a fixed flux, like solar. ~37 W/m2 on
+        # clear nights; zero when overcast. formed faces see formwork, not sky directly.
+        q_face_w_m2 = q_face_w_m2 + h_rad_b[exposed_in_boundary] * (
+            float(weather["sky_temp_c"][i]) - air_temp_c
+        )
+        # the sky deficit is an external face flux exactly like solar, so it takes both
+        # surface treatments and NEITHER is optional. open_s seals it: a face with no
+        # flux applied cannot receive sky radiation either, or adiabatic runs rebuild a
+        # gradient out of nothing. face_q_discrete attenuates it: it compensates a term
+        # inside h_sum that face_h_discrete already attenuated, so leaving it raw would
+        # over-correct AND put the q*h*dx/(2k) first-order error back in a new place.
         q_face_w_m2 = q_face_w_m2 * open_s
-        # q_face_w_m2 stays RAW: face_temp_c reconstructs the surface from the flux that
-        # actually lands on it. Only the share that survives the half cell reaches the
-        # centre, so the attenuation belongs here, on q_sum, and nowhere else.
+        # q_face_w_m2 stays RAW into the next step's face_temp_c: that reconstructs the
+        # surface from the flux that actually lands on it. Only the share surviving the
+        # half cell reaches the centre, so the attenuation belongs here, on q_sum, alone.
         q_sum[surf_rows, surf_cols] = n_exposed_s * conduction.face_q_discrete(
             q_face_w_m2, film_open[exposed_in_boundary] * open_s, dx_m, mix.k_w_m_k
         )
@@ -222,7 +245,8 @@ def solve(
     max_any_c.append(float(temp_c[mask].max()))
     # weather runs to n_steps - 1, so the last available index is the closest the series
     # gets to the final state. One frame of lag on the film, against the alternative of
-    # this sample meaning something different from all the others.
+    # this sample meaning something different from all the others. surface_state is the
+    # single definition of the reconstruction, and it is the one that seals a sealed face.
     surface_c.append(float(surface_state(temp_c, n_steps - 1, q_face_w_m2)[2].mean()))
 
     core_arr = np.asarray(core_c, dtype=np.float64)
