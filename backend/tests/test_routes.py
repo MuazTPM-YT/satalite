@@ -93,6 +93,27 @@ def test_unknown_shape_is_rejected(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_on_ground_is_refused_rather_than_solved_with_an_insulated_base(
+    client: TestClient,
+) -> None:
+    resp = client.post(
+        "/api/simulate",
+        json={"element": {**ELEMENT, "on_ground": True}, "ambient": ambient_payload()},
+    )
+    assert resp.status_code == 422
+    assert "ground boundary not modelled" in resp.text
+    # the pour-window route shares the same ElementSpec, so it must refuse too
+    resp = client.post(
+        "/api/pour-windows",
+        json={
+            "element": {**ELEMENT, "on_ground": True},
+            "ambient": ambient_payload(),
+            "candidate_offsets_h": [0.0],
+        },
+    )
+    assert resp.status_code == 422
+
+
 def test_unknown_mix_id_is_rejected_not_silently_defaulted(client: TestClient) -> None:
     resp = client.post(
         "/api/simulate",

@@ -61,6 +61,17 @@ class ElementSpec(BaseModel):
             raise ValueError(
                 f"unknown formwork {self.formwork!r}, expected one of {sorted(FORMWORK_R)}"
             )
+        # geometry.rasterize tags the base GROUND, but the solver counts only EXPOSED and
+        # FORMED faces, so a ground face carries zero h and zero q - a perfectly insulated
+        # base. That over-predicts the core, over-predicts maturity and makes strip times
+        # optimistic, which is the unsafe direction. Refuse rather than solve it. The
+        # semi-infinite soil sink of master 4.6 is the fix and it is not in this build.
+        if self.on_ground:
+            raise ValueError(
+                "ground boundary not modelled in this build: a GROUND face currently "
+                "carries zero flux, which is an insulated base and biases the core HIGH. "
+                "Set on_ground=false."
+            )
         return self
 
 
