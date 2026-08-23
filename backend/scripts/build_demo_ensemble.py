@@ -58,6 +58,10 @@ NOTE = (
     "Precomputed for the fixed scenario in this payload and for no other. The "
     "deterministic curve is solved live per request at dx = 10 mm; these bands were "
     "solved offline at dx = 20 mm, which costs about 0.7 C on peak core temperature. "
+    "BAND EDGES CARRY SAMPLING NOISE: seed-to-seed spread on p05/p95 of peak core "
+    "temperature was measured over 5 seeds at 0.34 C for N=300 and 0.27 C for N=600, "
+    "which extrapolates to roughly 0.12-0.15 C at the N used here. Read the edges to "
+    "about 0.2 C, not to the precision they are printed at. "
     "Air temperature is a Parton-Logan reconstruction from stated daily min/mean/max, "
     "not an observed hourly series. Strip times use PROVISIONAL strength calibration."
 )
