@@ -17,6 +17,7 @@ import {
   generateMockThermalSimulation,
   getPourWindowCandidates,
   createGridFromOutline,
+  createOutlineForShape,
   type GridData,
 } from "@/lib/mockThermalField";
 import {
@@ -49,10 +50,18 @@ export default function StudioPage() {
   const [element, setElement] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
 
   // sim data lives here so all panels share it; imported outline runs same pipeline
-  const grid: GridData | undefined = useMemo(
-    () => (imported ? createGridFromOutline(imported.outline) : undefined),
-    [imported]
-  );
+  // grid from imported outline, or generated from preset shape + current dims
+  const grid: GridData | undefined = useMemo(() => {
+    if (imported) return createGridFromOutline(imported.outline);
+    const outline = createOutlineForShape(
+      element.shape,
+      element.flange_width_mm / 1000,
+      element.flange_depth_mm / 1000,
+      element.web_width_mm / 1000,
+      element.total_depth_mm / 1000
+    );
+    return outline ? createGridFromOutline(outline) : undefined;
+  }, [imported, element.shape, element.flange_width_mm, element.flange_depth_mm, element.web_width_mm, element.total_depth_mm]);
   const sim = useMemo(() => generateMockThermalSimulation(grid), [grid]);
   const candidates = useMemo(() => getPourWindowCandidates(), []);
   const [timeIndex, setTimeIndex] = useState(0);

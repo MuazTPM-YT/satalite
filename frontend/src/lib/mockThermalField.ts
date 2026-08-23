@@ -80,6 +80,71 @@ export interface PourWindowCandidate {
   fastest?: boolean;
 }
 
+// i-beam outline: full-width flanges top AND bottom, web between
+export function createIBeamOutline(
+  flangeWidth_m = 0.6,
+  flangeDepth_m = 0.15,
+  webWidth_m = 0.25,
+  totalDepth_m = 0.5
+): [number, number][] {
+  const a = (flangeWidth_m - webWidth_m) / 2.0;
+  const b = (flangeWidth_m + webWidth_m) / 2.0;
+  const y1 = flangeDepth_m;
+  const y2 = totalDepth_m - flangeDepth_m;
+
+  return [
+    [0.0, 0.0],
+    [flangeWidth_m, 0.0],
+    [flangeWidth_m, y1],
+    [b, y1],
+    [b, y2],
+    [flangeWidth_m, y2],
+    [flangeWidth_m, totalDepth_m],
+    [0.0, totalDepth_m],
+    [0.0, y2],
+    [a, y2],
+    [a, y1],
+    [0.0, y1],
+  ];
+}
+
+// plain solid rectangle outline, width from flange-width field
+export function createRectOutline(
+  width_m = 0.6,
+  depth_m = 0.5
+): [number, number][] {
+  return [
+    [0.0, 0.0],
+    [width_m, 0.0],
+    [width_m, depth_m],
+    [0.0, depth_m],
+  ];
+}
+
+// clamp dimensions so degenerate inputs still make a valid solid
+function clampDims(fw: number, fd: number, ww: number, td: number) {
+  const tdSafe = Math.max(td, 0.05);
+  const fwSafe = Math.max(Math.min(fw, 2.0), 0.05);
+  const fdSafe = Math.max(Math.min(fd, tdSafe * 0.45), 0.01);
+  const wwSafe = Math.max(Math.min(ww, fwSafe * 0.95), 0.01);
+  return { fw: fwSafe, fd: fdSafe, ww: wwSafe, td: tdSafe };
+}
+
+// outline for a preset shape name from metre dims; null = unknown shape
+export function createOutlineForShape(
+  shape: string,
+  fw_m: number,
+  fd_m: number,
+  ww_m: number,
+  td_m: number
+): [number, number][] | null {
+  const { fw, fd, ww, td } = clampDims(fw_m, fd_m, ww_m, td_m);
+  if (shape === "T-Beam") return createTBeamOutline(fw, fd, ww, td);
+  if (shape === "I-Beam") return createIBeamOutline(fw, fd, ww, td);
+  if (shape === "Rectangle") return createRectOutline(fw, td);
+  return null;
+}
+
 // make closed T-beam outline in metres matching panel dimensions
 export function createTBeamOutline(
   flangeWidth_m = 0.6,

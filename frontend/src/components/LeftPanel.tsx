@@ -5,6 +5,7 @@
 import { useRef } from "react";
 import type { ElementConfig } from "@/lib/elementConfig";
 import { mToUnit, unitToM, fmtLen, roundDisp, type LengthUnit } from "@/lib/units";
+import { createOutlineForShape } from "@/lib/mockThermalField";
 
 // shape value used when geometry came from an IFC file
 export const IMPORTED_SHAPE = "Imported (IFC)";
@@ -26,7 +27,7 @@ interface LeftPanelProps {
   importedOutline?: [number, number][] | null;
 }
 
-// dynamic cross-section SVG preview from config dims, or real outline when imported
+// dynamic cross-section SVG preview — real outline, imported or preset-generated
 function CrossSectionPreview({
   config,
   units,
@@ -36,84 +37,38 @@ function CrossSectionPreview({
   units: LengthUnit;
   outline?: [number, number][];
 }) {
-  // imported path: draw the real extracted outline
-  if (outline && outline.length >= 3) {
-    const xs = outline.map((p) => p[0]);
-    const ys = outline.map((p) => p[1]);
-    const w = Math.max(...xs);
-    const h = Math.max(...ys);
-    const scale = Math.min(160 / w, 140 / h);
-    const px = outline.map(([x, y]) => `${(20 + x * scale).toFixed(1)},${(10 + (h - y) * scale).toFixed(1)}`).join(" ");
-    return (
-      <div className="mt-2 p-2 bg-bg-primary rounded-sm border border-border-default">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
-            Cross-Section
-          </span>
-          <span className="text-[10px] text-text-muted">IFC</span>
-        </div>
-        <svg viewBox="0 0 200 160" className="w-full" xmlns="http://www.w3.org/2000/svg">
-          <polygon points={px} fill="none" stroke="#8b949e" strokeWidth="1.5" />
-          <text x="100" y="158" textAnchor="middle" fill="#6e7681" fontSize="7">
-            {fmtLen(w, units)} × {fmtLen(h, units)}
-          </text>
-        </svg>
-      </div>
-    );
-  }
+  // imported outline wins; otherwise generate from current shape + dims
+  const pts: [number, number][] =
+    outline && outline.length >= 3
+      ? outline
+      : createOutlineForShape(
+          config.shape,
+          config.flange_width_mm / 1000,
+          config.flange_depth_mm / 1000,
+          config.web_width_mm / 1000,
+          config.total_depth_mm / 1000
+        ) ?? [];
+  if (pts.length < 3) return null;
 
-  const fw = config.flange_width_mm;
-  const fd = config.flange_depth_mm;
-  const ww = config.web_width_mm;
-  const td = config.total_depth_mm;
-
-  // fit shape into fixed preview box
-  const box_w = 160;
-  const box_h = 140;
-  const scale = Math.min(box_w / fw, box_h / td);
-  const fw_px = fw * scale;
-  const fd_px = fd * scale;
-  const ww_px = ww * scale;
-  const td_px = td * scale;
-  const x0 = 20;
-  const y0 = 10;
-  const webX = x0 + (fw_px - ww_px) / 2;
+  const isIFC = !!(outline && outline.length >= 3);
+  const w = Math.max(...pts.map((p) => p[0]));
+  const h = Math.max(...pts.map((p) => p[1]));
+  const scale = Math.min(160 / w, 140 / h);
+  const px = pts.map(([x, y]) => `${(20 + x * scale).toFixed(1)},${(10 + (h - y) * scale).toFixed(1)}`).join(" ");
 
   return (
-    <div className="mt-2 p-2 bg-bg-primary rounded-md border border-border-default">
+    <div className="mt-2 p-2 bg-bg-primary rounded-sm border border-border-default">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
           Cross-Section
         </span>
-        <span className="text-[10px] text-text-muted">fit</span>
+        <span className="text-[10px] text-text-muted">{isIFC ? "IFC" : "fit"}</span>
       </div>
-      <svg
-        viewBox="0 0 200 160"
-        className="w-full"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {/* T-beam shape: flange on top, web below */}
-        <rect
-          x={x0} y={y0} width={fw_px} height={fd_px}
-          fill="none" stroke="#8b949e" strokeWidth="1.5"
-        />
-        <rect
-          x={webX} y={y0 + fd_px} width={ww_px} height={td_px - fd_px}
-          fill="none" stroke="#8b949e" strokeWidth="1.5"
-        />
-        {/* dimension lines */}
-        <line x1={x0} y1={y0 - 5} x2={x0 + fw_px} y2={y0 - 5} stroke="#6e7681" strokeWidth="0.5" />
-        <line x1={x0} y1={y0 - 8} x2={x0} y2={y0 - 2} stroke="#6e7681" strokeWidth="0.5" />
-        <line x1={x0 + fw_px} y1={y0 - 8} x2={x0 + fw_px} y2={y0 - 2} stroke="#6e7681" strokeWidth="0.5" />
-        <text x={x0 + fw_px / 2} y={y0 - 6} textAnchor="middle" fill="#6e7681" fontSize="7">{fmtLen(fw / 1000, units)}</text>
-        <line x1={webX} y1={y0 + td_px + 5} x2={webX + ww_px} y2={y0 + td_px + 5} stroke="#6e7681" strokeWidth="0.5" />
-        <line x1={webX} y1={y0 + td_px + 2} x2={webX} y2={y0 + td_px + 8} stroke="#6e7681" strokeWidth="0.5" />
-        <line x1={webX + ww_px} y1={y0 + td_px + 2} x2={webX + ww_px} y2={y0 + td_px + 8} stroke="#6e7681" strokeWidth="0.5" />
-        <text x={webX + ww_px / 2} y={y0 + td_px + 14} textAnchor="middle" fill="#6e7681" fontSize="7">{fmtLen(ww / 1000, units)}</text>
-        <line x1={x0 + fw_px + 10} y1={y0} x2={x0 + fw_px + 10} y2={y0 + td_px} stroke="#6e7681" strokeWidth="0.5" />
-        <line x1={x0 + fw_px + 7} y1={y0} x2={x0 + fw_px + 13} y2={y0} stroke="#6e7681" strokeWidth="0.5" />
-        <line x1={x0 + fw_px + 7} y1={y0 + td_px} x2={x0 + fw_px + 13} y2={y0 + td_px} stroke="#6e7681" strokeWidth="0.5" />
-        <text x={x0 + fw_px + 16} y={y0 + td_px / 2} textAnchor="middle" fill="#6e7681" fontSize="7" transform={`rotate(90 ${x0 + fw_px + 16} ${y0 + td_px / 2})`}>{fmtLen(td / 1000, units)}</text>
+      <svg viewBox="0 0 200 160" className="w-full" xmlns="http://www.w3.org/2000/svg">
+        <polygon points={px} fill="none" stroke="#8b949e" strokeWidth="1.5" />
+        <text x="100" y="158" textAnchor="middle" fill="#6e7681" fontSize="7">
+          {fmtLen(w, units)} × {fmtLen(h, units)}
+        </text>
       </svg>
     </div>
   );
@@ -221,7 +176,7 @@ export default function LeftPanel({ config, onChange, units, ifc, onImportIfc, i
           id="shape"
           label="Shape"
           value={config.shape}
-          options={isImported ? ["T-Beam", "Rectangle", "I-Beam", "Box", IMPORTED_SHAPE] : ["T-Beam", "Rectangle", "I-Beam", "Box"]}
+          options={isImported ? ["T-Beam", "Rectangle", "I-Beam", IMPORTED_SHAPE] : ["T-Beam", "Rectangle", "I-Beam"]}
           onChange={(v) => onChange("shape", v)}
         />
 
