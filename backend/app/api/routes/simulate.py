@@ -77,10 +77,11 @@ async def pour_windows(request: PourWindowRequest) -> PourWindowResult:
     pick = best_candidate(candidates)
     log.info("pour window pick offset_h=%.1f breaches=%d", pick.offset_h, pick.n_breaches)
 
-    return PourWindowResult(
-        candidates=candidates,
-        best_offset_h=pick.offset_h,
-        ensemble=run_bands(
+    # the sweep is the answer; the band is opt-in. Running it unconditionally put a
+    # minute of solving on a request thread that only ever needed seconds of it.
+    ensemble = None
+    if request.ensemble:
+        ensemble = run_bands(
             element,
             mix,
             to_ambient(request.ambient, pick.offset_h),
@@ -88,5 +89,8 @@ async def pour_windows(request: PourWindowRequest) -> PourWindowResult:
             request.mix.grade,
             request.ensemble_samples,
             request.seed,
-        ),
+        )
+
+    return PourWindowResult(
+        candidates=candidates, best_offset_h=pick.offset_h, ensemble=ensemble
     )

@@ -1,0 +1,16 @@
+.git
+.venv
+backend/.venv
+**/__pycache__
+frontend
+
+# raw FortyGuard payloads are big and quota-bought, so the directory is excluded - but
+# the demo has to run with no network, and the precomputed artefacts are what the
+# never-compute routes serve. This allow-list mirrors .gitignore; keep them in step.
+backend/data/cache/*
+!backend/data/cache/.gitkeep
+!backend/data/cache/heatmap-73ed3878b2fa10b340a54c677a84397e16526f30862c61b9d176b7bcfdd9ba47.json
+!backend/data/cache/season-analysis.json
+!backend/data/cache/demo-ensemble.json
+
+.env

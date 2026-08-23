@@ -9,9 +9,12 @@ temperature from the [FortyGuard](https://fortyguard.com) tOS Enterprise API, ru
 finite-difference thermal solver coupled to a Schindler–Folliard cement hydration model,
 and reports peak temperature, maximum gradient, and ASTM C1074 maturity-based strength gain.
 
-**Status: scaffold.** Structure and wiring only. The solver, hydration, and maturity
-maths are stubs that raise `NotImplementedError` — nothing fabricates a plausible-looking
-number before the real physics lands.
+**Status: solver live.** The 2D masked finite-volume solver, the hydration chain and the
+maturity clock are implemented and covered by five golden physics tests — each a
+known-answer check against something that does not depend on our implementation. A Monte
+Carlo ensemble reports p05/p95 bands over the parameters we genuinely do not know.
+Strength calibration is still PROVISIONAL literature defaults, and says so in every
+payload that carries a strip time.
 
 ## Layout
 
@@ -20,7 +23,9 @@ backend/
   app/        FastAPI: routes, config, pydantic models, services
   physics/    pure numpy. never imports fastapi, pydantic, or app/
   vendor/     vendored FortyGuard client (MIT, see credit below)
-  tests/      purity + api tests pass now; 4 golden physics tests skipped
+  tests/      purity, api and five golden physics tests
+  validation/ real measured cases, run on purpose: pytest validation/ -m validation
+  scripts/    offline builds and measurement harnesses. never on a request path
 frontend/     Next.js 16, TypeScript, Tailwind, App Router
 docs/
 ```
@@ -72,8 +77,12 @@ uv run mypy physics app     # strict on physics/, lenient elsewhere
 uv run pytest -v
 ```
 
-Expect `9 passed, 4 skipped`. The 4 skips are the golden physics tests in
-`tests/test_golden.py`, waiting on the solver.
+Expect `159 passed`. `validation/` is deliberately outside `testpaths` — it runs real
+measured cases and is invoked on purpose:
+
+```bash
+uv run pytest validation/ -m validation
+```
 
 Frontend — lint, types, build:
 
@@ -83,6 +92,44 @@ npm run lint
 npx tsc --noEmit
 npm run build
 ```
+
+## Precomputed answers
+
+Three results are built offline and served straight from disk. None of them changes
+between requests, and each is minutes of solving, so none belongs on a request thread.
+A missing file is a 503 naming the command that builds it — never a live compute, never
+a placeholder.
+
+| Route | File | Built by |
+|---|---|---|
+| `/api/demo-ensemble` | `backend/data/cache/demo-ensemble.json` | `python -m scripts.build_demo_ensemble` |
+| `/api/season-analysis` | `backend/data/cache/season-analysis.json` | `app.services.season.fetch_season` then `physics.season_analysis.season_exposure` |
+| `/api/validation` | `docs/VALIDATION.json` | `pytest validation/ -m validation` |
+
+The ensemble is the reason for the split: 2048 samples is minutes of work, while the
+deterministic solve behind `POST /api/simulate` is seconds. `POST /api/pour-windows`
+takes `ensemble: false` by default for the same reason — ask for the band explicitly, or
+read the precomputed one.
+
+**Fetching a season costs real money.** One day is one heatmap at a flat 4220 credits,
+so a 92-day season is roughly 388,000 of a ~2,000,000 credit budget. The fetch is
+resumable and checks the cache before every call. Do not run it casually.
+
+## Docker
+
+The build context is the **repository root**, not `backend/` — `docs/` holds the
+validation report the API serves, and it lives outside `backend/`:
+
+```bash
+docker build -f backend/Dockerfile -t satalite .
+docker run -p 8000:8000 \
+  -e FORTYGUARD_API_KEY=... \
+  -e ALLOWED_ORIGINS=https://your-frontend.example.com \
+  satalite
+```
+
+`ALLOWED_ORIGINS` is not optional for a real deployment. It defaults to localhost, which
+passes every test and then fails every browser request in production.
 
 ## Notes
 
