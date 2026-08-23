@@ -1,6 +1,6 @@
 # SatAlite — Validation
 
-Generated 2026-08-23T19:44:15+00:00 by `pytest validation/ -m validation`.
+Generated 2026-08-23T21:30:35+00:00 by `pytest validation/ -m validation`.
 
 **1 of 3 cases meet the 90% coverage bar.**
 
@@ -57,10 +57,10 @@ Resulting tau: p05 18.9 h, p50 22.0 h, p95 25.9 h.
 |---|---|---|---|---|---|
 | 12 h | 10.7 | 21.5 | 36.6 | 48.0 | NO |
 | 24 h | 22.8 | 46.9 | 71.2 | 72.0 | NO |
-| 48 h | 55.5 | 71.1 | 86.7 | 73.0 | yes |
+| 48 h | 55.4 | 71.1 | 86.7 | 73.0 | yes |
 | 72 h | 61.3 | 74.0 | 87.6 | 70.0 | yes |
-| 168 h | 55.1 | 64.3 | 74.6 | 46.0 | NO |
-| **Peak core** | 62.1 | 74.1 | 87.6 | 74.0 | yes |
+| 168 h | 55.1 | 64.2 | 74.5 | 46.0 | NO |
+| **Peak core** | 62.0 | 74.1 | 87.6 | 74.0 | yes |
 
 Secondary — point error on the ensemble median: peak +0.1 °C, worst checkpoint 26.5 °C.
 
@@ -87,10 +87,10 @@ Resulting tau: p05 15.7 h, p50 17.9 h, p95 20.6 h.
 |---|---|---|---|---|---|
 | 12 h | 7.1 | 16.9 | 31.3 | 45.0 | NO |
 | 24 h | 16.0 | 38.4 | 59.6 | 62.0 | NO |
-| 48 h | 46.3 | 59.4 | 72.2 | 69.0 | yes |
+| 48 h | 46.3 | 59.4 | 72.1 | 69.0 | yes |
 | 72 h | 50.6 | 60.5 | 70.6 | 64.0 | yes |
-| 168 h | 39.2 | 45.2 | 52.8 | 39.0 | NO |
-| **Peak core** | 50.9 | 61.0 | 72.7 | 68.9 | yes |
+| 168 h | 39.2 | 45.1 | 52.8 | 39.0 | NO |
+| **Peak core** | 50.9 | 61.0 | 72.6 | 68.9 | yes |
 
 Secondary — point error on the ensemble median: peak -7.9 °C, worst checkpoint 28.1 °C.
 

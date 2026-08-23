@@ -24,10 +24,22 @@ on a cell centre and reads one cell. Averaging across the peak of a concave prof
 reads low, so three spacings carry a bias the fourth does not, and the sign of
 d(10-20) flips for reasons that have nothing to do with the discretisation.
 
-max_core_temp_anywhere_c takes a straight max over cells with no stencil in the way, and
-on that metric the same runs are monotone and clean: p = 2.49, Richardson 65.990 C. The
-scheme is second order. The probe series cannot show it, so this script now reports the
-order on both and the stencil-free one is the honest answer to the question in the title.
+max_core_temp_anywhere_c takes a straight max over cells with no stencil in the way, so
+this script reports the order on both. Read the stencil-free column with care, though,
+and do not quote a single arm's figure as the scheme's order.
+
+Once the q attenuation is applied the residual mesh error on this problem is at worst
+0.03 C across dx = 5 to 20 mm, and the stencil-free orders are being fitted to successive
+differences of a few MILLIKELVIN. At that size the frame cadence and the dt truncation are
+the same magnitude as the dx error, so the fit is unreliable: arms A, C and D land near
+2.0, B reads 3.14, and E and F read 1.12 and 0.50 on total spreads of 18 and 15 mK, with
+F not even monotone. That scatter is what a converged solution looks like, not a
+first-order scheme. convergence() floors at 1e-9 C, nine orders below anything
+physically resolvable, so it will always hand back a confident-looking p rather than
+decline - the caller has to check the spread before believing it.
+
+Arm D is the only trustworthy order here, because its field is spatially uniform and
+exact at every dx: p = 2.0053.
 
 The adiabatic case cannot discriminate: with every face sealed the field stays spatially
 uniform and exact at every dx, so there is no dx error to measure at all. Arm D runs it
@@ -203,7 +215,7 @@ def main() -> None:
 
     # the 60 mm strip has to reproduce the stored 3000 mm number before any arm is read.
     # if it does not, every order below is measuring the width change instead.
-    stored_3000mm_10mm_c = 61.522535973074
+    stored_3000mm_10mm_c = 61.254206
     check = measure(ambient, mix, 0.010, WIDTH_MM)
     width_delta_c = check.peak_core_temp_c - stored_3000mm_10mm_c
     print(f"width check, dx 10 mm: {WIDTH_MM:.0f} mm strip gives "

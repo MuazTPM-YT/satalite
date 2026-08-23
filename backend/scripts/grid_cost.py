@@ -3,9 +3,13 @@
 ANSWERED, and the answer changed once the q attenuation landed. It used to be dear:
 20 mm cost 0.335 C against the 5 mm reference and golden test 5 sat at 0.0978 C against
 a 0.1 C assertion, 2 percent of headroom. The missing q*h*dx/(2k) term was carrying all
-of it. Now 10 mm costs -0.004 C, 15 mm -0.013 C and 20 mm +0.031 C, and golden 5 reads
+of it. Now 10 mm costs -0.005 C, 15 mm -0.014 C and 20 mm +0.028 C, and golden 5 reads
 0.000368 C. The ensemble's 20 mm mesh is defensible on these numbers; before, it was not
 measured at all.
+
+Note golden 5 does not exercise the sky radiation deficit at all: uniform_ambient runs at
+cloud_pct = 100, so T_sky = T_air and that term is identically zero. Its 0.000368 C is
+unchanged by the merge for that reason, not by coincidence.
 
 Run:  cd backend && .venv/bin/python -m scripts.grid_cost
 
