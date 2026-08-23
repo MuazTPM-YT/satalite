@@ -175,7 +175,12 @@ def solve(
                 surf_temp_c, air_temp_c, float(weather["rh_frac"][i]), float(weather["wind_ms"][i])
             )
         q_face_w_m2 = q_face_w_m2 * open_s
-        q_sum[surf_rows, surf_cols] = n_exposed_s * q_face_w_m2
+        # q_face_w_m2 stays RAW: face_temp_c reconstructs the surface from the flux that
+        # actually lands on it. Only the share that survives the half cell reaches the
+        # centre, so the attenuation belongs here, on q_sum, and nowhere else.
+        q_sum[surf_rows, surf_cols] = n_exposed_s * conduction.face_q_discrete(
+            q_face_w_m2, film_open[exposed_in_boundary] * open_s, dx_m, mix.k_w_m_k
+        )
 
         if i % record_every == 0:
             frames_c.append(np.where(mask, temp_c, np.nan))

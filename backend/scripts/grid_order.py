@@ -175,7 +175,7 @@ def main() -> None:
 
     # the 60 mm strip has to reproduce the stored 3000 mm number before any arm is read.
     # if it does not, every order below is measuring the width change instead.
-    stored_3000mm_10mm_c = 61.29751539939253
+    stored_3000mm_10mm_c = 61.522535973074
     check = measure(ambient, mix, 0.010, WIDTH_MM)
     width_delta_c = check.peak_core_temp_c - stored_3000mm_10mm_c
     print(f"width check, dx 10 mm: {WIDTH_MM:.0f} mm strip gives "
