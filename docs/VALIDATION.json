@@ -1,29 +1,96 @@
 {
- "generated_at": "2026-08-22T02:23:56+00:00",
+ "generated_at": "2026-08-23T19:44:15+00:00",
+ "primary_metric": "coverage_pct",
+ "coverage_pass_pct": 90.0,
+ "band_width_warn_c": 25.0,
+ "n_samples": 300,
+ "assumed_chemistry_ranges": {
+  "II": {
+   "c3a_frac": [
+    0.05,
+    0.08
+   ],
+   "c3s_frac": [
+    0.5,
+    0.6
+   ],
+   "so3_frac": [
+    0.025,
+    0.035
+   ],
+   "blaine_m2_kg": [
+    340.0,
+    400.0
+   ]
+  },
+  "II/V": {
+   "c3a_frac": [
+    0.03,
+    0.05
+   ],
+   "c3s_frac": [
+    0.5,
+    0.6
+   ],
+   "so3_frac": [
+    0.02,
+    0.03
+   ],
+   "blaine_m2_kg": [
+    330.0,
+    390.0
+   ]
+  }
+ },
  "cases": [
   {
    "case_id": "deer_creek_adiabatic",
    "name": "Deer Creek spillway mix - adiabatic temperature rise",
    "kind": "adiabatic",
+   "cement_type": "II/V",
    "passed": true,
    "checks": {
-    "adiabatic_rise": true
+    "coverage": true
    },
+   "coverage": {
+    "n_checkpoints": 1,
+    "n_inside": 1,
+    "pct_inside": 100.0,
+    "inside": [
+     true
+    ]
+   },
+   "bands": {
+    "quantity": "adiabatic_rise_c",
+    "p05": [
+     53.838712791158414
+    ],
+    "p50": [
+     64.72369228194825
+    ],
+    "p95": [
+     77.30644016792354
+    ],
+    "peak_width_c": 23.467727376765126
+   },
+   "band_too_wide": false,
    "predicted": {
-    "adiabatic_rise_c": 69.00359195744629,
-    "peak_temp_c": 85.70359195744629,
-    "closed_form_rise_c": 70.08650694896156,
+    "adiabatic_rise_c_p50": 64.72369228194825,
+    "closed_form_rise_c": 66.0617256686168,
     "alpha_u": 0.7383226379903246,
-    "h_u_j_per_kg": 398363.3502360553,
-    "tau_h": 20.517207559375105
+    "h_u_j_per_kg": 375486.97324707126,
+    "h_cem_j_per_g": 470.0,
+    "tau_h_p05": 18.912275958652963,
+    "tau_h_p50": 22.036897821671538,
+    "tau_h_p95": 25.94057891875552
    },
    "measured": {
     "adiabatic_rise_c": 61.1,
     "peak_temp_c": 77.8
    },
    "errors": {
-    "adiabatic_rise_c": 7.903591957446288,
-    "adiabatic_rise_pct": 12.935502385345806
+    "adiabatic_rise_c": 3.6236922819482444,
+    "adiabatic_rise_pct": 5.930756598933297
    },
    "notes": [
     "Silica fume (46 lb/yd3) carries no term in the Schindler-Folliard H_u formula, so its heat is unmodelled. This biases the prediction LOW, not high.",
@@ -34,11 +101,60 @@
    "case_id": "deer_creek_p4_2008",
    "name": "Deer Creek spillway, placement No. 4",
    "kind": "field",
+   "cement_type": "II/V",
    "passed": false,
    "checks": {
-    "peak_core_temp": true,
-    "checkpoints": false
+    "coverage": false
    },
+   "coverage": {
+    "n_checkpoints": 5,
+    "n_inside": 2,
+    "pct_inside": 40.0,
+    "inside": [
+     false,
+     false,
+     true,
+     true,
+     false
+    ]
+   },
+   "bands": {
+    "quantity": "core_temp_c",
+    "checkpoints_h": [
+     12.0,
+     24.0,
+     48.0,
+     72.0,
+     168.0
+    ],
+    "p05": [
+     10.678914370231883,
+     22.831552711243585,
+     55.47061801827785,
+     61.31689578917995,
+     55.13946256178031
+    ],
+    "p50": [
+     21.45404721816414,
+     46.930250351866135,
+     71.07626221110468,
+     74.00331584361066,
+     64.25814415538167
+    ],
+    "p95": [
+     36.573605865748604,
+     71.24435315923061,
+     86.69044098011246,
+     87.58211481795401,
+     74.59887155101335
+    ],
+    "peak_p05": 62.06512026388421,
+    "peak_p50": 74.12961676814729,
+    "peak_p95": 87.63926431188521,
+    "peak_width_c": 25.574144048001003,
+    "peak_covered": true
+   },
+   "band_too_wide": true,
    "predicted": {
     "checkpoints_h": [
      12.0,
@@ -47,20 +163,20 @@
      72.0,
      168.0
     ],
-    "core_temp_c": [
-     23.982374647513208,
-     53.999298328109205,
-     75.54698463977385,
-     78.2650959073305,
-     71.92945325018847
+    "core_temp_c_p50": [
+     21.45404721816414,
+     46.930250351866135,
+     71.07626221110468,
+     74.00331584361066,
+     64.25814415538167
     ],
-    "peak_core_temp_c": 78.34233459588418,
-    "peak_core_time_h": 78.33333333333333,
-    "max_core_surface_diff_c": 71.24494120745207,
+    "peak_core_temp_c_p50": 74.12961676814729,
     "alpha_u": 0.7383226379903246,
-    "h_u_j_per_kg": 398363.3502360553,
-    "tau_h": 20.517207559375105,
-    "closed_form_adiabatic_rise_c": 70.08650694896156
+    "h_u_j_per_kg": 375486.97324707126,
+    "h_cem_j_per_g": 470.0,
+    "tau_h_p05": 18.912275958652963,
+    "tau_h_p50": 22.036897821671538,
+    "tau_h_p95": 25.94057891875552
    },
    "measured": {
     "checkpoints_h": [
@@ -83,14 +199,14 @@
    },
    "errors": {
     "checkpoint_c": [
-     -24.017625352486792,
-     -18.000701671890795,
-     2.5469846397738536,
-     8.265095907330505,
-     25.929453250188473
+     -26.54595278183586,
+     -25.069749648133865,
+     -1.9237377888953233,
+     4.003315843610665,
+     18.25814415538167
     ],
-    "peak_core_temp_c": 4.342334595884182,
-    "peak_core_time_h": null
+    "peak_core_temp_c": 0.12961676814728662,
+    "max_abs_checkpoint_c": 26.54595278183586
    },
    "notes": [
     "on_ground tags the base GROUND, which the solver treats as a zero-flux face. For a bottom lift cast on rock that is an approximation, and it biases the core HIGH.",
@@ -101,12 +217,60 @@
    "case_id": "stony_gorge_2008",
    "name": "Stony Gorge Dam diaphragm wall",
    "kind": "field",
+   "cement_type": "II",
    "passed": false,
    "checks": {
-    "peak_core_temp": false,
-    "checkpoints": false,
-    "peak_time": false
+    "coverage": false
    },
+   "coverage": {
+    "n_checkpoints": 5,
+    "n_inside": 2,
+    "pct_inside": 40.0,
+    "inside": [
+     false,
+     false,
+     true,
+     true,
+     false
+    ]
+   },
+   "bands": {
+    "quantity": "core_temp_c",
+    "checkpoints_h": [
+     12.0,
+     24.0,
+     48.0,
+     72.0,
+     168.0
+    ],
+    "p05": [
+     7.076648592035729,
+     15.950300958581284,
+     46.34619285698138,
+     50.62007607099365,
+     39.232344827509046
+    ],
+    "p50": [
+     16.878703503889348,
+     38.423829086311635,
+     59.39888222228999,
+     60.474692337579356,
+     45.17026693744943
+    ],
+    "p95": [
+     31.30964907960122,
+     59.55074217006148,
+     72.15111527478686,
+     70.58165505974718,
+     52.81387774598049
+    ],
+    "peak_p05": 50.88889799428525,
+    "peak_p50": 61.0215011860192,
+    "peak_p95": 72.66019751328656,
+    "peak_width_c": 21.77129951900131,
+    "peak_covered": true
+   },
+   "band_too_wide": false,
    "predicted": {
     "checkpoints_h": [
      12.0,
@@ -115,20 +279,20 @@
      72.0,
      168.0
     ],
-    "core_temp_c": [
-     15.090801972194571,
-     32.8483131512974,
-     55.74644208407941,
-     57.36871829051219,
-     42.42338177802605
+    "core_temp_c_p50": [
+     16.878703503889348,
+     38.423829086311635,
+     59.39888222228999,
+     60.474692337579356,
+     45.17026693744943
     ],
-    "peak_core_temp_c": 57.70667304799951,
-    "peak_core_time_h": 62.833333333333336,
-    "max_core_surface_diff_c": 48.14231555639317,
+    "peak_core_temp_c_p50": 61.0215011860192,
     "alpha_u": 0.8173576558570607,
     "h_u_j_per_kg": 397551.99617499404,
-    "tau_h": 21.107234956219525,
-    "closed_form_adiabatic_rise_c": 56.63471197433574
+    "h_cem_j_per_g": 500.0,
+    "tau_h_p05": 15.684270282370154,
+    "tau_h_p50": 17.942553290812818,
+    "tau_h_p95": 20.61215436701178
    },
    "measured": {
     "checkpoints_h": [
@@ -157,14 +321,14 @@
    },
    "errors": {
     "checkpoint_c": [
-     -29.90919802780543,
-     -29.151686848702603,
-     -13.253557915920588,
-     -6.6312817094878085,
-     3.423381778026048
+     -28.121296496110652,
+     -23.576170913688365,
+     -9.601117777710009,
+     -3.5253076624206443,
+     6.170266937449433
     ],
-    "peak_core_temp_c": -11.193326952000497,
-    "peak_core_time_h": 19.333333333333336
+    "peak_core_temp_c": -7.878498813980805,
+    "max_abs_checkpoint_c": 28.121296496110652
    },
    "notes": [
     "FORMWORK_R has no steel/timber entry. plywood_18mm (R = 0.15) is the closest available and is warmer than bare steel, so it biases the prediction HIGH.",
@@ -173,10 +337,12 @@
   }
  ],
  "notes": [
-  "Ambient temperature is a Parton-Logan reconstruction from the reported multi-day average and maximum. No hourly series exists in the source. The daily minimum is inferred as 2*mean - max, forcing a symmetric diurnal swing that real weather does not have.",
-  "Humidity, wind, cloud cover and irradiance are not reported and are held at fixed assumed values (see validation/runner.py). They are not measurements.",
-  "Cement chemistry - C3A, C3S, SO3 and Blaine fineness - is NOT reported in DSO-12-02. The values in the case files are assumed for an ordinary Type II clinker. The Schindler-Folliard tau regression is highly sensitive to them: tau moves from 25.8 h to 15.2 h across a plausible SO3 range alone, and tau sets the whole early-age shape.",
-  "Silica fume carries no term in the Schindler-Folliard ultimate-heat formula, so the Deer Creek mix has 27.3 kg/m3 of unmodelled binder. This biases predictions LOW.",
+  "Cement chemistry \u2014 C3A, C3S, SO3 and Blaine fineness \u2014 is NOT reported in DSO-12-02. This is why the test is coverage and not point error. The ranges sampled are typical published ASTM C150 ranges for the stated cement type; they are ASSUMPTIONS, not measurements, and they were not narrowed or re-centred to make any case pass. The Schindler-Folliard tau regression is highly sensitive to them: tau moves from 25.8 h to 15.2 h across a plausible SO3 range alone.",
+  "Coverage is conditional on the reconstructed ambient. Ambient temperature is a Parton-Logan reconstruction from the reported multi-day average and maximum. No hourly series exists in the source. The daily minimum is inferred as 2*mean - max, forcing a symmetric diurnal swing that real weather does not have. This reconstruction is NOT varied by the ensemble, so its error sits OUTSIDE the band.",
+  "Humidity, wind, cloud cover and irradiance are not reported and are held at fixed assumed values (see validation/runner.py). They are not measurements, and they are not varied by the ensemble either.",
+  "Silica fume carries no term in the Schindler-Folliard ultimate-heat formula, so the Deer Creek mix has 27.3 kg/m3 of unmodelled binder. This biases the prediction LOW. Deer Creek already over-predicts, so the TRUE over-prediction is worse than the number reported here \u2014 a term for silica fume would push the band further above the measurements, not toward them. No such term has been invented to close the gap.",
+  "H_cem is selected by ASTM cement type (physics.constants.H_CEM_BY_TYPE: I 510, II 500, II/V 470, V 450 J/g) rather than computed from Bogue compounds, because DSO-12-02 publishes no oxide analysis. The type means are literature values; only the Type II figure is confirmed against a measurement in these cases.",
+  "The ensemble varies the mix, the surface film, the solar absorptivity, the placement temperature and the activation energy. It does not vary the geometry, the formwork R-value or the weather reconstruction. Those errors are outside the band.",
   "The solver is 2D. Both field elements are finite in the third dimension, so the real sections lose heat this model cannot.",
   "Strength is not validated here. Case 4 of the source (Table 9) needs a calibrated strength-maturity model; physics/strength_model.py is PROVISIONAL."
  ]
