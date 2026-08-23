@@ -7,12 +7,27 @@ first order in dx. This sweep is what identified it - baseline p = 0.82, but the
 arm (B) and the h-off arm (C) were each mesh independent, and the dose-response arms
 fell from 1.56 to 1.31 as a_solar doubled. The error needed BOTH terms.
 
-Post-fix the arms read differently and it is worth saying why. A, B, C, E and F all
-report UNDEFINED now, carrying the same residual within a few percent of each other
-whatever q is doing: d(5-10) = +4.7e-3, d(10-20) = -3.4e-2. That is the dt policy, not
-the mesh. dt = SAFETY x the stability limit scales as dx**2, so the 20 mm point runs at
-dt = 38 s and its temporal truncation dominates what little dx error survives. Arm A
-joined the collapsed group; it did not become second order.
+Post-fix the arms read differently and it is worth saying why, because the first
+explanation offered for it was WRONG and the record should show that.
+
+A, B, C, E and F all report UNDEFINED on peak core now, carrying the same residual
+within a few percent of each other whatever q is doing: d(5-10) = +4.7e-3, d(10-20) =
+-3.4e-2. That was first put down to the dt policy - dt = SAFETY x the stability limit
+scales as dx**2, so the 20 mm point runs at dt = 38 s. Testing it killed it: holding dt
+fixed at 2.386 s across all four spacings moves d(10-20) only from -3.818e-2 to
+-3.654e-2. dt owns about 4 percent of the residual. The 20 mm outlier survives.
+
+It is the PROBE STENCIL. The probe is a physical point - the centroid, (30, 150) mm -
+and cell centres sit at (i+0.5)*dx. At 5, 10 and 15 mm that point falls between cells
+and the bilinear stencil averages four of them at 0.25 each; at 20 mm it lands exactly
+on a cell centre and reads one cell. Averaging across the peak of a concave profile
+reads low, so three spacings carry a bias the fourth does not, and the sign of
+d(10-20) flips for reasons that have nothing to do with the discretisation.
+
+max_core_temp_anywhere_c takes a straight max over cells with no stencil in the way, and
+on that metric the same runs are monotone and clean: p = 2.49, Richardson 65.990 C. The
+scheme is second order. The probe series cannot show it, so this script now reports the
+order on both and the stencil-free one is the honest answer to the question in the title.
 
 The adiabatic case cannot discriminate: with every face sealed the field stays spatially
 uniform and exact at every dx, so there is no dx error to measure at all. Arm D runs it
@@ -212,6 +227,10 @@ def main() -> None:
                   f"{row.peak_core_time_h:>9.3f} {row.max_core_surface_diff_c:>9.4f} "
                   f"{row.wall_s:>7.1f}")
         results[arm] = rows
+        conv = convergence({dx: r.max_core_temp_anywhere_c for dx, r in rows.items()})
+        if conv["order_p"] is not None:
+            print(f"  order on hottest cell (no probe stencil): p = {conv['order_p']:.4f}, "
+                  f"Richardson {conv['richardson_c']:.6f} C")
         conv = convergence({dx: r.peak_core_temp_c for dx, r in rows.items()})
         if conv["order_p"] is None:
             print(f"  order: UNDEFINED - {conv['note']} "
@@ -222,11 +241,17 @@ def main() -> None:
                   f"ratio {conv['ratio']:.4f}, p = {conv['order_p']:.4f}, "
                   f"Richardson {conv['richardson_c']:.6f} C\n")
 
-    print("summary, observed order p on peak core temperature:")
+    # both metrics, side by side. The probe one is what the product reports; the
+    # stencil-free one is what the scheme actually does.
+    print(f"summary, observed order p:  {'arm':<12} {'by probe':>10} {'hottest cell':>14}")
     for arm, rows in results.items():
-        conv = convergence({dx: r.peak_core_temp_c for dx, r in rows.items()})
-        p = conv["order_p"]
-        print(f"  {arm:<12} p = {'undefined' if p is None else f'{p:.4f}'}")
+        by_probe = convergence({dx: r.peak_core_temp_c for dx, r in rows.items()})["order_p"]
+        by_max = convergence(
+            {dx: r.max_core_temp_anywhere_c for dx, r in rows.items()}
+        )["order_p"]
+        print(f"{'':<28}{arm:<12} "
+              f"{'undefined' if by_probe is None else f'{by_probe:.4f}':>10} "
+              f"{'undefined' if by_max is None else f'{by_max:.4f}':>14}")
 
     _results.write("grid-order", {
         "case": {
@@ -246,6 +271,12 @@ def main() -> None:
                 "overrides": {k: v for k, v in ARMS[arm].items()},
                 "spacings": {f"{dx * 1000:.0f}mm": asdict(r) for dx, r in rows.items()},
                 "convergence": convergence({dx: r.peak_core_temp_c for dx, r in rows.items()}),
+                # the same order measured without the bilinear probe in the path. The
+                # probe lands on a cell centre at 20 mm and between cells at the other
+                # three, which flips the sign of d(10-20) and hides a clean p near 2.
+                "convergence_hottest_cell": convergence(
+                    {dx: r.max_core_temp_anywhere_c for dx, r in rows.items()}
+                ),
             }
             for arm, rows in results.items()
         },
