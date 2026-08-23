@@ -1,11 +1,11 @@
 """Pydantic schemas for the API boundary. Units live in field names."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from physics.constants import H_CEM_BY_TYPE
+from physics.constants import H_CEM_BY_TYPE, T_REF_DEFAULT_C
 from physics.equations.boundary import FORMWORK_R
 from physics.geometry import SHAPES
 
@@ -159,21 +159,30 @@ class EnsembleResult(BaseModel):
     forecast_error: dict[str, Any]
 
 
+# which quantity crossed a limit. A plain str let a typo through the boundary silently.
+TrippedBy = Literal["probe", "max_anywhere", "both", "none"]
+
+
 class BreachFlags(BaseModel):
     """What this run trips. Thresholds echoed so a reader never has to guess them."""
 
     def_risk: bool
     def_threshold_c: float
-    # which quantity tripped def_risk: "max_anywhere", "probe", "both" or "none".
-    def_tripped_by: str
+    def_tripped_by: TrippedBy
     cracking: bool
     cracking_limit_c: float
-    # which quantity tripped cracking: "max_anywhere", "probe", "both" or "none".
-    cracking_tripped_by: str
+    cracking_tripped_by: TrippedBy
     evaporation: bool
     evaporation_limit_kg_m2_h: float
     placement: bool
     placement_limit_c: float
+
+
+# maturity reference temperature, celsius. A CHOICE, not a constant - master 4.4 says
+# so and says it must match the strength calibration. Exposed here rather than left at a
+# silent default, because a run at 20 C read against parameters fitted at 23 C is a
+# systematic offset nobody can see.
+T_REF_FIELD = Field(default=T_REF_DEFAULT_C, gt=0.0, le=40.0)
 
 
 class SimulationRequest(BaseModel):
@@ -181,6 +190,7 @@ class SimulationRequest(BaseModel):
     mix: MixSpec = MixSpec()
     ambient: AmbientSpec
     duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
+    t_ref_c: float = T_REF_FIELD
 
 
 class SimulationResult(BaseModel):
@@ -198,6 +208,10 @@ class SimulationResult(BaseModel):
     max_core_temp_anywhere_c: float
     # where peak_core_temp_c was actually sampled, [x, y] metres. Run metadata.
     probe_xy_m: list[float]
+    # the maturity reference temperature this run integrated at. Run metadata, and it
+    # must be read next to the strength numbers: master 4.4 requires T_ref match the
+    # strength calibration, and this is the only place a caller can see which one it got.
+    t_ref_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float | None
     breaches: BreachFlags
@@ -224,6 +238,7 @@ class PourWindowRequest(BaseModel):
     ambient: AmbientSpec
     candidate_offsets_h: list[float] = Field(min_length=1, max_length=24)
     duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
+    t_ref_c: float = T_REF_FIELD
     # OFF by default. The candidate sweep is seconds; the ensemble on the pick is a
     # minute, and a minute on a request thread is a gateway timeout on a free tier.
     # Ask for it explicitly, or read the precomputed band from /api/demo-ensemble.

@@ -20,6 +20,7 @@ from app.models import (
     MixSpec,
     PourWindowCandidate,
     SimulationResult,
+    TrippedBy,
 )
 from physics.constants import (
     CRACK_LIMIT_C,
@@ -28,6 +29,7 @@ from physics.constants import (
     H_CEM_DEFAULT,
     PLACEMENT_MAX_C,
     STRIP_FRACTION,
+    T_REF_DEFAULT_C,
 )
 from physics.forecast_error import provisional_error
 from physics.limits import (
@@ -159,7 +161,7 @@ def to_breaches(
 
 # name which quantity crossed a limit, so a reader is never left guessing. Shared by the
 # DEF and cracking flags - both ask the same probe-vs-hottest-point question.
-def _tripped_by(by_probe: bool, by_anywhere: bool) -> str:
+def _tripped_by(by_probe: bool, by_anywhere: bool) -> TrippedBy:
     if by_probe and by_anywhere:
         return "both"
     if by_anywhere:
@@ -174,9 +176,14 @@ def _or_none(value: float) -> float | None:
 
 # one deterministic solve, packaged for the wire.
 def run_deterministic(
-    element: Element, mix: Mix, ambient: Ambient, hours: float, grade: str
+    element: Element,
+    mix: Mix,
+    ambient: Ambient,
+    hours: float,
+    grade: str,
+    t_ref_c: float = T_REF_DEFAULT_C,
 ) -> tuple[SolveResult, SimulationResult]:
-    result = solve(element, mix, ambient, hours=hours)
+    result = solve(element, mix, ambient, hours=hours, t_ref_c=t_ref_c)
     weakest_t_e_h = np.nanmin(result.t_e_h_frames, axis=(1, 2))
     peak_evap_kg_m2_h = float(np.max(evaporation_series_kg_m2_s(result, ambient)) * 3600.0)
 
@@ -192,6 +199,7 @@ def run_deterministic(
         max_anywhere_surface_diff_c=result.max_anywhere_surface_diff_c,
         max_core_temp_anywhere_c=result.max_core_temp_anywhere_c,
         probe_xy_m=list(result.probe_xy_m),
+        t_ref_c=t_ref_c,
         peak_evaporation_kg_m2_h=peak_evap_kg_m2_h,
         strip_time_h=_or_none(deterministic_strip_time_h(result, grade)),
         breaches=to_breaches(
@@ -262,9 +270,10 @@ def run_bands(
     grade: str,
     n: int,
     seed: int,
+    t_ref_c: float = T_REF_DEFAULT_C,
 ) -> EnsembleResult:
     forecast_error = provisional_error()
-    log.info("ensemble n=%d seed=%d grade=%s", n, seed, grade)
+    log.info("ensemble n=%d seed=%d grade=%s t_ref=%.1f C", n, seed, grade, t_ref_c)
     ensemble = run_ensemble(
         element,
         mix,
@@ -274,5 +283,6 @@ def run_bands(
         hours=hours,
         grade=grade,
         forecast_sigma_c=forecast_error,
+        t_ref_c=t_ref_c,
     )
     return to_ensemble_result(ensemble, forecast_error)

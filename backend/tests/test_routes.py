@@ -291,3 +291,22 @@ def test_allowed_origins_comes_from_settings(monkeypatch: pytest.MonkeyPatch) ->
 
     stranger = client.get("/api/health", headers={"Origin": "https://not-ours.example.com"})
     assert "access-control-allow-origin" not in stranger.headers
+
+
+# master 4.4: T_ref is a config value, never silently hardcoded. It has to be reachable
+# from a request AND visible on the response, because a run integrated at 20 C read
+# against strength parameters fitted at 23 C is an offset nobody can see.
+def test_t_ref_c_is_reachable_and_echoed_in_run_metadata(client: TestClient) -> None:
+    body = {"element": ELEMENT, "ambient": ambient_payload(), "duration_hours": 6.0}
+    default = client.post("/api/simulate", json=body).json()
+    assert default["t_ref_c"] == 20.0
+
+    raised = client.post("/api/simulate", json={**body, "t_ref_c": 23.0}).json()
+    assert raised["t_ref_c"] == 23.0
+    # a higher reference means every hour counts for less, so equivalent age must fall
+    assert raised["equivalent_age_h"][-1] < default["equivalent_age_h"][-1]
+
+
+def test_t_ref_c_outside_the_physical_range_is_rejected(client: TestClient) -> None:
+    body = {"element": ELEMENT, "ambient": ambient_payload(), "t_ref_c": 0.0}
+    assert client.post("/api/simulate", json=body).status_code == 422

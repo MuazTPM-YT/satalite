@@ -40,11 +40,12 @@ async def simulate(
 
     ambient = to_ambient(request.ambient)
     _, payload = run_deterministic(
-        element, mix, ambient, request.duration_hours, request.mix.grade
+        element, mix, ambient, request.duration_hours, request.mix.grade, request.t_ref_c
     )
     if ensemble:
         payload.ensemble = run_bands(
-            element, mix, ambient, request.duration_hours, request.mix.grade, samples, seed
+            element, mix, ambient, request.duration_hours, request.mix.grade,
+            samples, seed, request.t_ref_c,
         )
     return payload
 
@@ -66,7 +67,7 @@ async def pour_windows(request: PourWindowRequest) -> PourWindowResult:
             placement_temp_c=float(shifted.air_temp_c[0]) + PLACEMENT_ABOVE_AMBIENT_C,
         )
         _, payload = run_deterministic(
-            placed, mix, shifted, request.duration_hours, request.mix.grade
+            placed, mix, shifted, request.duration_hours, request.mix.grade, request.t_ref_c
         )
         candidates.append(to_candidate(offset_h, placed, payload))
 
@@ -85,6 +86,7 @@ async def pour_windows(request: PourWindowRequest) -> PourWindowResult:
             request.mix.grade,
             request.ensemble_samples,
             request.seed,
+            request.t_ref_c,
         )
 
     return PourWindowResult(

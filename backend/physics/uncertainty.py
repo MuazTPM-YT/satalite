@@ -21,6 +21,7 @@ import numpy as np
 from scipy.stats import norm, qmc
 
 from physics import FloatArray
+from physics.constants import T_REF_DEFAULT_C
 from physics.equations import maturity
 from physics.solver import solve
 from physics.strength_model import StrengthParams, params_for, strength_fraction
@@ -326,6 +327,7 @@ def run_ensemble(
     forecast_sigma_c: dict[str, Any] | None = None,
     processes: int | None = None,
     adiabatic: bool = False,
+    t_ref_c: float = T_REF_DEFAULT_C,
     tau_h_samples: Sequence[float] | None = None,
     sampler: str = "sobol",
 ) -> Ensemble:
@@ -336,6 +338,9 @@ def run_ensemble(
         "hours": hours,
         "record_every_s": record_every_s,
         "adiabatic": adiabatic,
+        # the band has to integrate maturity at the same reference the deterministic
+        # curve did, or the two disagree about what an equivalent hour means.
+        "t_ref_c": t_ref_c,
     }
     sigma_by_hour_c = _sigma_on_hours(forecast_sigma_c, ambient.hours)
 
