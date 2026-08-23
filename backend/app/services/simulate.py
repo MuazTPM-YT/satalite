@@ -20,6 +20,7 @@ from app.models import (
     MixSpec,
     PourWindowCandidate,
     SimulationResult,
+    TrippedBy,
 )
 from physics.constants import (
     CRACK_LIMIT_C,
@@ -28,9 +29,16 @@ from physics.constants import (
     H_CEM_DEFAULT,
     PLACEMENT_MAX_C,
     STRIP_FRACTION,
+    T_REF_DEFAULT_C,
 )
 from physics.forecast_error import provisional_error
-from physics.limits import EVAP_LIMIT_KG_M2_H
+from physics.limits import (
+    EVAP_LIMIT_KG_M2_H,
+    breaches_cracking,
+    breaches_def,
+    breaches_evaporation,
+    breaches_placement,
+)
 from physics.season_analysis import (
     deterministic_strip_time_h,
     evaporation_series_kg_m2_s,
@@ -52,6 +60,7 @@ def to_element(spec: ElementSpec) -> Element:
         placement_temp_c=spec.placement_temp_c,
         formwork=spec.formwork,
         on_ground=spec.on_ground,
+        probe_xy_m=None if spec.probe_xy_m is None else (spec.probe_xy_m[0], spec.probe_xy_m[1]),
     )
 
 
@@ -112,10 +121,14 @@ def to_ambient(spec: AmbientSpec, offset_h: float = 0.0) -> Ambient:
     )
 
 
-# every threshold this run crosses, with the threshold alongside it.
+# every threshold this run crosses, with the threshold alongside it. The comparisons come
+# from physics.limits, never from an inline repeat of them - this used to re-implement all
+# four, so a limit could move in one place and not the other.
 def to_breaches(
     peak_core_temp_c: float,
+    max_core_temp_anywhere_c: float,
     max_diff_c: float,
+    max_anywhere_diff_c: float,
     peak_evap_kg_m2_h: float,
     placement_temp_c: float,
 ) -> BreachFlags:
@@ -123,16 +136,37 @@ def to_breaches(
     # a cement whose S/A and S2/A resist DEF, but MixSpec carries no alumina content, so
     # relaxing here would mean relaxing a safety limit on a number nobody supplied.
     threshold_c = DEF_LIMIT_C
+    # flag on EITHER. The probe sits at a nominal point; the hottest cell is where DEF
+    # actually happens, and on a 300 mm slab the two differ by about 4 C.
+    def_by_probe = bool(breaches_def(peak_core_temp_c, threshold_c))
+    def_by_anywhere = bool(breaches_def(max_core_temp_anywhere_c, threshold_c))
+    # same treatment for cracking, for the same reason. The probe-based differential is
+    # the LESS conservative of the two - on a 300 mm slab it reads about 4.5 C low - so
+    # evaluating the flag on it alone was the DEF defect wearing a different name.
+    crack_by_probe = bool(breaches_cracking(max_diff_c))
+    crack_by_anywhere = bool(breaches_cracking(max_anywhere_diff_c))
     return BreachFlags(
-        def_risk=peak_core_temp_c > threshold_c,
+        def_risk=def_by_probe or def_by_anywhere,
         def_threshold_c=threshold_c,
-        cracking=max_diff_c > CRACK_LIMIT_C,
+        def_tripped_by=_tripped_by(def_by_probe, def_by_anywhere),
+        cracking=crack_by_probe or crack_by_anywhere,
         cracking_limit_c=CRACK_LIMIT_C,
-        evaporation=peak_evap_kg_m2_h > EVAP_LIMIT_KG_M2_H,
+        cracking_tripped_by=_tripped_by(crack_by_probe, crack_by_anywhere),
+        evaporation=bool(breaches_evaporation(peak_evap_kg_m2_h / 3600.0)),
         evaporation_limit_kg_m2_h=EVAP_LIMIT_KG_M2_H,
-        placement=placement_temp_c > PLACEMENT_MAX_C,
+        placement=bool(breaches_placement(placement_temp_c)),
         placement_limit_c=PLACEMENT_MAX_C,
     )
+
+
+# name which quantity crossed a limit, so a reader is never left guessing. Shared by the
+# DEF and cracking flags - both ask the same probe-vs-hottest-point question.
+def _tripped_by(by_probe: bool, by_anywhere: bool) -> TrippedBy:
+    if by_probe and by_anywhere:
+        return "both"
+    if by_anywhere:
+        return "max_anywhere"
+    return "probe" if by_probe else "none"
 
 
 # nan is not valid json. a time that was never reached is null, never a made-up number.
@@ -142,9 +176,14 @@ def _or_none(value: float) -> float | None:
 
 # one deterministic solve, packaged for the wire.
 def run_deterministic(
-    element: Element, mix: Mix, ambient: Ambient, hours: float, grade: str
+    element: Element,
+    mix: Mix,
+    ambient: Ambient,
+    hours: float,
+    grade: str,
+    t_ref_c: float = T_REF_DEFAULT_C,
 ) -> tuple[SolveResult, SimulationResult]:
-    result = solve(element, mix, ambient, hours=hours)
+    result = solve(element, mix, ambient, hours=hours, t_ref_c=t_ref_c)
     weakest_t_e_h = np.nanmin(result.t_e_h_frames, axis=(1, 2))
     peak_evap_kg_m2_h = float(np.max(evaporation_series_kg_m2_s(result, ambient)) * 3600.0)
 
@@ -157,11 +196,17 @@ def run_deterministic(
         peak_core_temp_c=result.peak_core_temp_c,
         peak_core_time_h=result.peak_core_time_h,
         max_core_surface_diff_c=result.max_core_surface_diff_c,
+        max_anywhere_surface_diff_c=result.max_anywhere_surface_diff_c,
+        max_core_temp_anywhere_c=result.max_core_temp_anywhere_c,
+        probe_xy_m=list(result.probe_xy_m),
+        t_ref_c=t_ref_c,
         peak_evaporation_kg_m2_h=peak_evap_kg_m2_h,
         strip_time_h=_or_none(deterministic_strip_time_h(result, grade)),
         breaches=to_breaches(
             result.peak_core_temp_c,
+            result.max_core_temp_anywhere_c,
             result.max_core_surface_diff_c,
+            result.max_anywhere_surface_diff_c,
             peak_evap_kg_m2_h,
             element.placement_temp_c,
         ),
@@ -179,7 +224,9 @@ def to_candidate(
         offset_h=offset_h,
         placement_temp_c=element.placement_temp_c,
         peak_core_temp_c=payload.peak_core_temp_c,
+        max_core_temp_anywhere_c=payload.max_core_temp_anywhere_c,
         max_core_surface_diff_c=payload.max_core_surface_diff_c,
+        max_anywhere_surface_diff_c=payload.max_anywhere_surface_diff_c,
         peak_evaporation_kg_m2_h=payload.peak_evaporation_kg_m2_h,
         strip_time_h=payload.strip_time_h,
         breaches=breaches,
@@ -223,9 +270,10 @@ def run_bands(
     grade: str,
     n: int,
     seed: int,
+    t_ref_c: float = T_REF_DEFAULT_C,
 ) -> EnsembleResult:
     forecast_error = provisional_error()
-    log.info("ensemble n=%d seed=%d grade=%s", n, seed, grade)
+    log.info("ensemble n=%d seed=%d grade=%s t_ref=%.1f C", n, seed, grade, t_ref_c)
     ensemble = run_ensemble(
         element,
         mix,
@@ -235,5 +283,6 @@ def run_bands(
         hours=hours,
         grade=grade,
         forecast_sigma_c=forecast_error,
+        t_ref_c=t_ref_c,
     )
     return to_ensemble_result(ensemble, forecast_error)

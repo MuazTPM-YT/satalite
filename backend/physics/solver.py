@@ -1,7 +1,6 @@
 """Orchestrates the timestep loop. The only stateful thing in physics/."""
 
 import numpy as np
-from scipy import ndimage
 
 from physics import FloatArray
 from physics.constants import LATENT_HEAT_VAP, SOLAR_ABSORPTIVITY, T_REF_DEFAULT_C
@@ -80,9 +79,17 @@ def solve(
     )
 
     # faces per cell, by kind. adiabatic seals every one of them.
-    # GROUND faces (on_ground=True) are intentionally excluded: the subgrade is a
-    # massive thermal buffer with high contact resistance, so adiabatic is conservative
-    # for peak temperature prediction. this matches the t_eq = 2t convention in the spec.
+    #
+    # GROUND faces carry no flux here, and that is conservative for SOME outputs only.
+    # It over-predicts peak core, so DEF and cracking flag early - fine. It also
+    # over-predicts maturity, so strip times come out EARLY, which is the unsafe
+    # direction and the one a contractor acts on. Measured on the standard element:
+    # on_ground gives peak core 63.82 C against 61.30 formed and hottest 73.67 against
+    # 65.84, past both DEF_LIMIT_C and the 70 C ettringite ceiling. Soil sinks better
+    # than 18 mm plywood, so the true answer is BELOW the formed case, not above it.
+    # Master 4.6 specifies a semi-infinite soil sink; until that exists, ElementSpec
+    # refuses on_ground=True rather than let this ship. Nothing reachable from the API
+    # takes this path - validation/runner.py builds Element directly and still does.
     n_exposed = np.zeros(mask.shape, dtype=np.float64)
     n_formed = np.zeros(mask.shape, dtype=np.float64)
     if not adiabatic:
@@ -97,15 +104,23 @@ def solve(
     n_exposed_b = n_exposed[boundary_rows, boundary_cols]
     n_formed_b = n_formed[boundary_rows, boundary_cols]
     n_exposed_s = n_exposed[surf_rows, surf_cols]
+    # 1.0 where the face actually gets flux, 0.0 where it is sealed. adiabatic zeroes
+    # n_exposed, so the film and the external flux vanish with it and the reconstructed
+    # surface collapses back onto the cell centre - which is the truth on a sealed face.
+    open_s = (n_exposed_s > 0.0).astype(np.float64)
 
     # free-surface cells are a subset of boundary cells. this maps one index into the other.
     order = np.zeros(mask.shape, dtype=np.int64)
     order[boundary_rows, boundary_cols] = np.arange(boundary_rows.size)
     exposed_in_boundary = order[surf_rows, surf_cols]
 
-    # core = the cell furthest from any face; surface = the mean over open-faced cells.
-    depth = ndimage.distance_transform_edt(np.pad(mask, 1))[1:-1, 1:-1]
-    core_ij = np.unravel_index(int(np.argmax(np.where(mask, depth, -1.0))), mask.shape)
+    # core = a fixed physical point, sampled bilinearly; surface = the mean over
+    # open-faced cells. The probe is a location, not a cell, so the reported number stops
+    # moving when dx does. Default is the section centroid.
+    probe_rows, probe_cols, probe_w = section.probe_stencil(
+        *(element.probe_xy_m if element.probe_xy_m is not None else section.centroid_m)
+    )
+    probe_xy_m = section.stencil_xy_m(probe_rows, probe_cols, probe_w)
 
     # 0 outside the mask, not nan: the hydration and maturity terms are evaluated over
     # the whole array and nan would poison the in-place source assembly. Frames are
@@ -117,11 +132,32 @@ def solve(
     heat_scale = mix.h_u_j_per_kg * mix.cement_kg_m3 / 3600.0
     q_face_w_m2 = np.zeros(surf_rows.size, dtype=np.float64)
 
+    # films and the reconstructed free-surface temperature at one weather index. Pulled
+    # out because the sample taken after the loop used to be a raw cell centre while every
+    # sample inside it was a face temperature - one series carrying two definitions.
+    def surface_state(
+        now_c: FloatArray, i: int, q_face: FloatArray
+    ) -> tuple[FloatArray, FloatArray, FloatArray]:
+        h_rad = boundary.h_radiative(
+            now_c[boundary_rows, boundary_cols], float(weather["sky_temp_c"][i])
+        )
+        film = boundary.h_effective(float(weather["h_conv"][i]), h_rad, 0.0) * h_multiplier
+        face_c = conduction.face_temp_c(
+            now_c[surf_rows, surf_cols],
+            float(weather["air_temp_c"][i]),
+            film[exposed_in_boundary] * open_s,
+            q_face,
+            dx_m,
+            mix.k_w_m_k,
+        )
+        return h_rad, film, face_c
+
     record_every = max(int(round(record_every_s / dt_s)), 1)
     frames_c: list[FloatArray] = []
     frames_te: list[FloatArray] = []
     frame_times_h: list[float] = []
     core_c: list[float] = []
+    max_any_c: list[float] = []
     surface_c: list[float] = []
     dt_h = dt_s / 3600.0
 
@@ -131,26 +167,14 @@ def solve(
         # surface films, evaluated only on cells that actually have an exterior face.
         # h_rad uses the cell centre: it is cubic in kelvin, so a dx/2 offset moves it
         # by well under a percent. Uno evaporation below is the one that cannot take it.
-        h_rad_b = boundary.h_radiative(
-            temp_c[boundary_rows, boundary_cols], float(weather["sky_temp_c"][i])
-        )
+        # surf_temp_c is the true free surface, reconstructed from the cell centre; q lags
+        # one step, which at dt = 10 s against a slowly varying latent flux is immaterial.
+        h_rad_b, film_open, surf_temp_c = surface_state(temp_c, i, q_face_w_m2)
         h_conv = float(weather["h_conv"][i])
-        film_open = boundary.h_effective(h_conv, h_rad_b, 0.0) * h_multiplier
         h_sum[boundary_rows, boundary_cols] = n_exposed_b * conduction.face_h_discrete(
             film_open, dx_m, mix.k_w_m_k
         ) + n_formed_b * conduction.face_h_discrete(
             boundary.h_effective(h_conv, h_rad_b, formwork_r) * h_multiplier,
-            dx_m,
-            mix.k_w_m_k,
-        )
-
-        # true free-surface temperature, reconstructed from the cell centre. q lags one
-        # step, which at dt = 10 s against a slowly varying latent flux is immaterial.
-        surf_temp_c = conduction.face_temp_c(
-            temp_c[surf_rows, surf_cols],
-            air_temp_c,
-            film_open[exposed_in_boundary],
-            q_face_w_m2,
             dx_m,
             mix.k_w_m_k,
         )
@@ -164,16 +188,29 @@ def solve(
         # h_rad is linearised around T_sky but conduction.step drives h_sum against T_air.
         # the missing (T_sky - T_air) offset is a fixed flux, like solar. ~37 W/m2 on
         # clear nights; zero when overcast. formed faces see formwork, not sky directly.
-        q_face_w_m2 += h_rad_b[exposed_in_boundary] * (
+        q_face_w_m2 = q_face_w_m2 + h_rad_b[exposed_in_boundary] * (
             float(weather["sky_temp_c"][i]) - air_temp_c
         )
-        q_sum[surf_rows, surf_cols] = n_exposed_s * q_face_w_m2
+        # the sky deficit is an external face flux exactly like solar, so it takes both
+        # surface treatments and NEITHER is optional. open_s seals it: a face with no
+        # flux applied cannot receive sky radiation either, or adiabatic runs rebuild a
+        # gradient out of nothing. face_q_discrete attenuates it: it compensates a term
+        # inside h_sum that face_h_discrete already attenuated, so leaving it raw would
+        # over-correct AND put the q*h*dx/(2k) first-order error back in a new place.
+        q_face_w_m2 = q_face_w_m2 * open_s
+        # q_face_w_m2 stays RAW into the next step's face_temp_c: that reconstructs the
+        # surface from the flux that actually lands on it. Only the share surviving the
+        # half cell reaches the centre, so the attenuation belongs here, on q_sum, alone.
+        q_sum[surf_rows, surf_cols] = n_exposed_s * conduction.face_q_discrete(
+            q_face_w_m2, film_open[exposed_in_boundary] * open_s, dx_m, mix.k_w_m_k
+        )
 
         if i % record_every == 0:
             frames_c.append(np.where(mask, temp_c, np.nan))
             frames_te.append(np.where(mask, t_e_h, np.nan))
             frame_times_h.append(float(step_times_h[i]))
-            core_c.append(float(temp_c[core_ij]))
+            core_c.append(float(np.dot(temp_c[probe_rows, probe_cols], probe_w)))
+            max_any_c.append(float(temp_c[mask].max()))
             surface_c.append(float(surf_temp_c.mean()))
 
         # the maturity clock and the hydration heat share one rate multiplier evaluation.
@@ -204,20 +241,16 @@ def solve(
     frames_c.append(np.where(mask, temp_c, np.nan))
     frames_te.append(np.where(mask, t_e_h, np.nan))
     frame_times_h.append(hours)
-    core_c.append(float(temp_c[core_ij]))
-    # reconstruct the true face temperature, same as the loop body does, so the last
-    # entry in surface_c is consistent with all the others (cell centre != surface).
-    final_surf_temp_c = conduction.face_temp_c(
-        temp_c[surf_rows, surf_cols],
-        air_temp_c,
-        film_open[exposed_in_boundary],
-        q_face_w_m2,
-        dx_m,
-        mix.k_w_m_k,
-    )
-    surface_c.append(float(final_surf_temp_c.mean()))
+    core_c.append(float(np.dot(temp_c[probe_rows, probe_cols], probe_w)))
+    max_any_c.append(float(temp_c[mask].max()))
+    # weather runs to n_steps - 1, so the last available index is the closest the series
+    # gets to the final state. One frame of lag on the film, against the alternative of
+    # this sample meaning something different from all the others. surface_state is the
+    # single definition of the reconstruction, and it is the one that seals a sealed face.
+    surface_c.append(float(surface_state(temp_c, n_steps - 1, q_face_w_m2)[2].mean()))
 
     core_arr = np.asarray(core_c, dtype=np.float64)
+    max_any_arr = np.asarray(max_any_c, dtype=np.float64)
     surface_arr = np.asarray(surface_c, dtype=np.float64)
     times_arr = np.asarray(frame_times_h, dtype=np.float64)
     peak_i = int(np.argmax(core_arr))
@@ -231,6 +264,9 @@ def solve(
         peak_core_temp_c=float(core_arr[peak_i]),
         peak_core_time_h=float(times_arr[peak_i]),
         max_core_surface_diff_c=float(np.max(core_arr - surface_arr)),
+        max_anywhere_surface_diff_c=float(np.max(max_any_arr - surface_arr)),
+        max_core_temp_anywhere_c=float(np.max(max_any_arr)),
+        probe_xy_m=probe_xy_m,
         dt_s=dt_s,
         outline_m=section.outline_m,
     )

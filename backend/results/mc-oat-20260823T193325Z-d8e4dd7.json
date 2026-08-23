@@ -1,0 +1,231 @@
+{
+  "below_small_swing_c": [],
+  "case": {
+    "date": "2025-07-15",
+    "dt_s": 30.0,
+    "dx_m": 0.02,
+    "hours": 72.0,
+    "lat_deg": 33.45,
+    "placement_hour": 14,
+    "placement_temp_c": 46.111849288266136,
+    "small_swing_c": 0.1,
+    "z95": 1.6448536269514722
+  },
+  "caveat": "one-at-a-time misses interactions; Arrhenius rate depends on T and hydration heat feeds back into T, so the feedback-loop parameters (placement_temp_offset_c, ea_j_mol, tau_h, h_cem_j_per_g) are understated",
+  "largest_contributor": {
+    "name": "placement_temp_offset_c",
+    "share_pct": 21.57749116057034
+  },
+  "nominal": {
+    "peak_core_temp_c": 61.559634631743855,
+    "peak_core_time_h": 6.0,
+    "strip_time_h": 42.5
+  },
+  "parameters": {
+    "a_solar": {
+      "d_max_core_anywhere_c": 0.45444412633413833,
+      "d_peak_core_c": 0.5024552196057073,
+      "d_peak_time_h": 0.0,
+      "d_strip_time_h": -1.3333333333333357,
+      "high_end": {
+        "peak_core_c": 61.90286020136338,
+        "peak_time_h": 6.0,
+        "strip_h": 41.5
+      },
+      "low_end": {
+        "peak_core_c": 61.400404981757674,
+        "peak_time_h": 6.0,
+        "strip_h": 42.833333333333336
+      },
+      "p05": 0.5075,
+      "p95": 0.6425,
+      "share_of_summed_swing_pct": 1.0695976726739738
+    },
+    "beta": {
+      "d_max_core_anywhere_c": 2.993550377282034,
+      "d_peak_core_c": 2.416897446331511,
+      "d_peak_time_h": 1.333333333333334,
+      "d_strip_time_h": -0.8333333333333357,
+      "high_end": {
+        "peak_core_c": 62.90802783302725,
+        "peak_time_h": 6.666666666666667,
+        "strip_h": 42.0
+      },
+      "low_end": {
+        "peak_core_c": 60.49113038669574,
+        "peak_time_h": 5.333333333333333,
+        "strip_h": 42.833333333333336
+      },
+      "p05": 0.7519631735743675,
+      "p95": 1.0480368264256326,
+      "share_of_summed_swing_pct": 5.144951794343925
+    },
+    "ea_j_mol": {
+      "d_max_core_anywhere_c": 7.504705924675292,
+      "d_peak_core_c": 7.277213432073829,
+      "d_peak_time_h": -0.833333333333333,
+      "d_strip_time_h": -9.333333333333336,
+      "high_end": {
+        "peak_core_c": 68.7949123355302,
+        "peak_time_h": 5.166666666666667,
+        "strip_h": 33.166666666666664
+      },
+      "low_end": {
+        "peak_core_c": 61.51769890345637,
+        "peak_time_h": 6.0,
+        "strip_h": 42.5
+      },
+      "p05": 33450.0,
+      "p95": 41550.0,
+      "share_of_summed_swing_pct": 15.49131195533417
+    },
+    "forecast_z": {
+      "d_max_core_anywhere_c": 1.1293691162679949,
+      "d_peak_core_c": 1.0143105742832645,
+      "d_peak_time_h": 0.16666666666666696,
+      "d_strip_time_h": -5.833333333333329,
+      "high_end": {
+        "peak_core_c": 62.070513712673964,
+        "peak_time_h": 6.166666666666667,
+        "strip_h": 39.333333333333336
+      },
+      "low_end": {
+        "peak_core_c": 61.0562031383907,
+        "peak_time_h": 6.0,
+        "strip_h": 45.166666666666664
+      },
+      "p05": -1.6448536269514722,
+      "p95": 1.6448536269514722,
+      "share_of_summed_swing_pct": 2.159205810367222
+    },
+    "h_cem_j_per_g": {
+      "d_max_core_anywhere_c": 8.974745545759824,
+      "d_peak_core_c": 8.110028052847206,
+      "d_peak_time_h": 0.3333333333333339,
+      "d_strip_time_h": -2.1666666666666643,
+      "high_end": {
+        "peak_core_c": 65.82685294552023,
+        "peak_time_h": 6.166666666666667,
+        "strip_h": 41.333333333333336
+      },
+      "low_end": {
+        "peak_core_c": 57.716824892673024,
+        "peak_time_h": 5.833333333333333,
+        "strip_h": 43.5
+      },
+      "p05": 434.20585492194107,
+      "p95": 565.7941450780589,
+      "share_of_summed_swing_pct": 17.264159654771113
+    },
+    "h_multiplier": {
+      "d_max_core_anywhere_c": -4.518223819786449,
+      "d_peak_core_c": -1.338059712924931,
+      "d_peak_time_h": -0.6666666666666661,
+      "d_strip_time_h": -2.6666666666666643,
+      "high_end": {
+        "peak_core_c": 60.79489485789863,
+        "peak_time_h": 5.666666666666667,
+        "strip_h": 40.833333333333336
+      },
+      "low_end": {
+        "peak_core_c": 62.132954570823564,
+        "peak_time_h": 6.333333333333333,
+        "strip_h": 43.5
+      },
+      "p05": 0.5654899095615699,
+      "p95": 1.7683781497981286,
+      "share_of_summed_swing_pct": 2.848384291771133
+    },
+    "k_w_m_k": {
+      "d_max_core_anywhere_c": -2.45820631487706,
+      "d_peak_core_c": -2.5607827557580194,
+      "d_peak_time_h": -0.3333333333333339,
+      "d_strip_time_h": 0.1666666666666643,
+      "high_end": {
+        "peak_core_c": 60.381342911473496,
+        "peak_time_h": 5.833333333333333,
+        "strip_h": 42.5
+      },
+      "low_end": {
+        "peak_core_c": 62.942125667231515,
+        "peak_time_h": 6.166666666666667,
+        "strip_h": 42.333333333333336
+      },
+      "p05": 1.9285991515530072,
+      "p95": 2.4714008484469927,
+      "share_of_summed_swing_pct": 5.45124653681936
+    },
+    "placement_temp_offset_c": {
+      "d_max_core_anywhere_c": 10.658392613014414,
+      "d_peak_core_c": 10.13626276179199,
+      "d_peak_time_h": -1.666666666666667,
+      "d_strip_time_h": -2.0,
+      "high_end": {
+        "peak_core_c": 66.80804295083949,
+        "peak_time_h": 5.333333333333333,
+        "strip_h": 41.333333333333336
+      },
+      "low_end": {
+        "peak_core_c": 56.6717801890475,
+        "peak_time_h": 7.0,
+        "strip_h": 43.333333333333336
+      },
+      "p05": -4.934560880854416,
+      "p95": 4.934560880854416,
+      "share_of_summed_swing_pct": 21.57749116057034
+    },
+    "rho_cp_j_m3_k": {
+      "d_max_core_anywhere_c": -4.373467538931251,
+      "d_peak_core_c": -3.778968627556253,
+      "d_peak_time_h": 0.3333333333333339,
+      "d_strip_time_h": -0.5,
+      "high_end": {
+        "peak_core_c": 59.92851593572455,
+        "peak_time_h": 6.166666666666667,
+        "strip_h": 42.166666666666664
+      },
+      "low_end": {
+        "peak_core_c": 63.7074845632808,
+        "peak_time_h": 5.833333333333333,
+        "strip_h": 42.666666666666664
+      },
+      "p05": 2103926.347148735,
+      "p95": 2696073.652851265,
+      "share_of_summed_swing_pct": 8.04445031402798
+    },
+    "tau_h": {
+      "d_max_core_anywhere_c": -9.906848762489282,
+      "d_peak_core_c": -9.841116489059338,
+      "d_peak_time_h": 1.5,
+      "d_strip_time_h": 1.0,
+      "high_end": {
+        "peak_core_c": 57.167136099245944,
+        "peak_time_h": 6.666666666666667,
+        "strip_h": 42.833333333333336
+      },
+      "low_end": {
+        "peak_core_c": 67.00825258830528,
+        "peak_time_h": 5.166666666666667,
+        "strip_h": 41.833333333333336
+      },
+      "p05": 12.71576711976504,
+      "p95": 21.04565734108718,
+      "share_of_summed_swing_pct": 20.949200809320786
+    }
+  },
+  "ranked_by_peak_core_swing": [
+    "placement_temp_offset_c",
+    "tau_h",
+    "h_cem_j_per_g",
+    "ea_j_mol",
+    "rho_cp_j_m3_k",
+    "k_w_m_k",
+    "beta",
+    "h_multiplier",
+    "forecast_z",
+    "a_solar"
+  ],
+  "revision": "d8e4dd7",
+  "script": "mc-oat",
+  "written_at": "20260823T193325Z"
+}

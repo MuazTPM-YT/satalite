@@ -1,0 +1,83 @@
+{
+ "n_days": 30,
+ "date_range": [
+  "2025-06-03",
+  "2025-08-29"
+ ],
+ "sampling": {
+  "n_days": 30,
+  "span_days": 88,
+  "consecutive": false,
+  "stride_days": 3,
+  "coverage_pct": 34.09090909090909
+ },
+ "placement_hours": [
+  4,
+  14
+ ],
+ "per_placement_hour": {
+  "4": {
+   "n_days": 30,
+   "pct_days_breaching_def": 0.0,
+   "pct_days_breaching_cracking": 100.0,
+   "pct_days_breaching_evaporation": 100.0,
+   "pct_days_breaching_placement": 60.0,
+   "mean_peak_core_temp_c": 53.227258473454505,
+   "mean_max_core_temp_anywhere_c": 55.65171062852925,
+   "mean_strip_time_h": 44.66111111111111,
+   "median_strip_time_h": 44.583333333333336,
+   "n_days_never_stripped": 0
+  },
+  "14": {
+   "n_days": 30,
+   "pct_days_breaching_def": 0.0,
+   "pct_days_breaching_cracking": 100.0,
+   "pct_days_breaching_evaporation": 100.0,
+   "pct_days_breaching_placement": 100.0,
+   "mean_peak_core_temp_c": 59.08750546696392,
+   "mean_max_core_temp_anywhere_c": 63.55351182226998,
+   "mean_strip_time_h": 45.3,
+   "median_strip_time_h": 45.16666666666667,
+   "n_days_never_stripped": 0
+  }
+ },
+ "delta_14_minus_04": {
+  "pct_days_breaching_def": 0.0,
+  "pct_days_breaching_cracking": 0.0,
+  "pct_days_breaching_evaporation": 0.0,
+  "pct_days_breaching_placement": 40.0,
+  "mean_peak_core_temp_c": 5.8602469935094135,
+  "mean_max_core_temp_anywhere_c": 7.901801193740731,
+  "mean_strip_time_h": 0.6388888888888857,
+  "median_strip_time_h": 0.5833333333333357
+ },
+ "element": {
+  "fixed_on": "2026-08-22",
+  "shape": "slab",
+  "dims_mm": {
+   "width": 3000.0,
+   "thickness": 300.0
+  },
+  "formwork": "plywood_18mm",
+  "on_ground": false,
+  "grade": "4000psi",
+  "cementitious_kg_m3": 400.0,
+  "w_cm": 0.45,
+  "fly_ash_fraction": 0.2
+ },
+ "limits": {
+  "def_c": 68.3,
+  "cracking_diff_c": 19.4,
+  "evaporation_kg_m2_h": 1.0,
+  "placement_c": 32.0,
+  "strip_fraction": 0.75
+ },
+ "assumptions": {
+  "rh_frac": 0.2,
+  "wind_ms": 2.5,
+  "cloud_pct": 10.0,
+  "ghi_daylight_w_m2": 650.0,
+  "placement_above_ambient_c": 3.0,
+  "note": "Humidity, wind, cloud and irradiance are NOT measured. A filter_type=3 heatmap carries air temperature only. Hourly air temperature is a Parton-Logan reconstruction from daily min/mean/max, not an observed hourly series. Strip times use PROVISIONAL strength calibration."
+ }
+}

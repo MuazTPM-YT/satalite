@@ -93,6 +93,27 @@ def test_unknown_shape_is_rejected(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_on_ground_is_refused_rather_than_solved_with_an_insulated_base(
+    client: TestClient,
+) -> None:
+    resp = client.post(
+        "/api/simulate",
+        json={"element": {**ELEMENT, "on_ground": True}, "ambient": ambient_payload()},
+    )
+    assert resp.status_code == 422
+    assert "ground boundary not modelled" in resp.text
+    # the pour-window route shares the same ElementSpec, so it must refuse too
+    resp = client.post(
+        "/api/pour-windows",
+        json={
+            "element": {**ELEMENT, "on_ground": True},
+            "ambient": ambient_payload(),
+            "candidate_offsets_h": [0.0],
+        },
+    )
+    assert resp.status_code == 422
+
+
 def test_unknown_mix_id_is_rejected_not_silently_defaulted(client: TestClient) -> None:
     resp = client.post(
         "/api/simulate",
@@ -142,11 +163,15 @@ def test_pour_windows_leaves_the_ensemble_off_unless_asked(client: TestClient) -
     assert len(resp.json()["candidates"]) == 2
 
 
-# a missing precompute is a 503 that says how to build it, never a fabricated payload
+# a missing season degrades to available=false, never a 503 and never a fake payload
 def test_season_analysis_missing_says_how_to_build_it(client: TestClient) -> None:
     resp = client.get("/api/season-analysis")
-    assert resp.status_code == 503
-    assert "fetch_season" in resp.json()["detail"]
+    # degrades, never 503: a dead endpoint in a live demo reads as a broken backend.
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is False
+    assert body["n_days"] is None
+    assert "fetch_season" in body["detail"]
 
 
 def test_season_analysis_serves_the_precomputed_file(client: TestClient) -> None:
@@ -167,6 +192,7 @@ def test_season_analysis_serves_the_precomputed_file(client: TestClient) -> None
     resp = client.get("/api/season-analysis")
     assert resp.status_code == 200
     assert resp.json()["n_days"] == 2
+    assert resp.json()["available"] is True
 
 
 def _demo_ensemble_payload() -> dict[str, object]:
@@ -265,3 +291,22 @@ def test_allowed_origins_comes_from_settings(monkeypatch: pytest.MonkeyPatch) ->
 
     stranger = client.get("/api/health", headers={"Origin": "https://not-ours.example.com"})
     assert "access-control-allow-origin" not in stranger.headers
+
+
+# master 4.4: T_ref is a config value, never silently hardcoded. It has to be reachable
+# from a request AND visible on the response, because a run integrated at 20 C read
+# against strength parameters fitted at 23 C is an offset nobody can see.
+def test_t_ref_c_is_reachable_and_echoed_in_run_metadata(client: TestClient) -> None:
+    body = {"element": ELEMENT, "ambient": ambient_payload(), "duration_hours": 6.0}
+    default = client.post("/api/simulate", json=body).json()
+    assert default["t_ref_c"] == 20.0
+
+    raised = client.post("/api/simulate", json={**body, "t_ref_c": 23.0}).json()
+    assert raised["t_ref_c"] == 23.0
+    # a higher reference means every hour counts for less, so equivalent age must fall
+    assert raised["equivalent_age_h"][-1] < default["equivalent_age_h"][-1]
+
+
+def test_t_ref_c_outside_the_physical_range_is_rejected(client: TestClient) -> None:
+    body = {"element": ELEMENT, "ambient": ambient_payload(), "t_ref_c": 0.0}
+    assert client.post("/api/simulate", json=body).status_code == 422

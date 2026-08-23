@@ -56,6 +56,10 @@ class Element:
     placement_temp_c: float = 20.0
     formwork: str = "plywood_18mm"
     on_ground: bool = False
+    # where the reported core temperature is sampled, metres from the section origin.
+    # None means the section centroid. A LOCATION, never a cell: the number has to be a
+    # property of the element, comparable to a thermocouple that sat at a known point.
+    probe_xy_m: tuple[float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -84,5 +88,14 @@ class SolveResult:
     peak_core_temp_c: float
     peak_core_time_h: float
     max_core_surface_diff_c: float
+    # same differential measured from the hottest cell instead of the probe. Cracking
+    # happens across the real gradient, and the probe is a nominal point that sits below
+    # it - so this is the conservative one and the flag is evaluated on both.
+    max_anywhere_surface_diff_c: float
+    # hottest cell anywhere in the section, over the whole run. What DEF actually cares
+    # about - the nominal centre is not where the element is hottest.
+    max_core_temp_anywhere_c: float
+    # where core_temp_c was sampled. Echoed so a reader never has to infer it.
+    probe_xy_m: tuple[float, float]
     dt_s: float
     outline_m: list[list[float]] = field(default_factory=list)

@@ -35,17 +35,25 @@ def _load(path: Path, how_to_build: str) -> dict[str, Any]:
     return payload
 
 
-# serve the season replay. never computes.
+# serve the season replay. never computes, never 503s.
+#
+# The other two artifacts are cheap to rebuild; a season is 4220 credits a day of real
+# money and an image can legitimately ship without one. So this route degrades instead
+# of failing: available=False at 200, with the build command in detail.
 @router.get("/season-analysis", response_model=SeasonAnalysisResponse)
 async def season_analysis() -> SeasonAnalysisResponse:
     path = get_settings().cache_dir / SEASON_FILENAME
-    return SeasonAnalysisResponse(
-        **_load(
-            path,
-            "Fetch the season with app.services.season.fetch_season, then run "
-            "physics.season_analysis.season_exposure and write the result here.",
+    if not path.exists():
+        log.info("season-analysis not in this build, serving available=false")
+        return SeasonAnalysisResponse(
+            available=False,
+            detail=(
+                f"{SEASON_FILENAME} is not available in this build. Fetch the season "
+                "with app.services.season.fetch_season, then run "
+                "physics.season_analysis.season_exposure and write the result here."
+            ),
         )
-    )
+    return SeasonAnalysisResponse(**json.loads(path.read_text()))
 
 
 # serve the precomputed demo bands. never computes.

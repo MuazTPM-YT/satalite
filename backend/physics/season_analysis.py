@@ -17,6 +17,7 @@ headline day the UI shows.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date as date_type
 from statistics import mean, median
 from typing import Any
 
@@ -140,6 +141,8 @@ class DayOutcome:
     peak_core_temp_c: float
     peak_core_time_h: float
     max_core_surface_diff_c: float
+    max_anywhere_surface_diff_c: float
+    max_core_temp_anywhere_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float
 
@@ -243,6 +246,8 @@ def _run_day(job: tuple[DayWeather, int, Element, Mix, float, dict[str, Any]]) -
         peak_core_temp_c=result.peak_core_temp_c,
         peak_core_time_h=result.peak_core_time_h,
         max_core_surface_diff_c=result.max_core_surface_diff_c,
+        max_anywhere_surface_diff_c=result.max_anywhere_surface_diff_c,
+        max_core_temp_anywhere_c=result.max_core_temp_anywhere_c,
         peak_evaporation_kg_m2_h=float(
             np.max(evaporation_series_kg_m2_s(result, ambient)) * 3600.0
         ),
@@ -289,6 +294,7 @@ def season_exposure(
     return {
         "n_days": len(days),
         "date_range": [days[0].date, days[-1].date],
+        "sampling": _sampling(days),
         "placement_hours": list(placement_hours),
         "per_placement_hour": per_hour,
         "delta_14_minus_04": _delta(per_hour.get("14"), per_hour.get("4")),
@@ -326,6 +332,29 @@ def season_exposure(
     }
 
 
+# how the days were sampled out of the range they span.
+#
+# n_days and date_range cannot tell a strided sample from a full run: 30 days spanning
+# 2025-06-03..2025-08-29 reads as a covered 30-day window unless something says the span
+# is 88 days on a 3-day stride. A percentage computed off 30 non-consecutive summer days
+# is a fine statistic; presenting it as a covered season is not.
+def _sampling(days: list[DayWeather]) -> dict[str, Any]:
+    first, last = date_type.fromisoformat(days[0].date), date_type.fromisoformat(days[-1].date)
+    span_days = (last - first).days + 1
+    gaps = {
+        (date_type.fromisoformat(b.date) - date_type.fromisoformat(a.date)).days
+        for a, b in zip(days, days[1:], strict=False)
+    }
+    return {
+        "n_days": len(days),
+        "span_days": span_days,
+        "consecutive": len(days) == span_days,
+        # None when the gaps are uneven - a single number would misdescribe them.
+        "stride_days": gaps.pop() if len(gaps) == 1 else None,
+        "coverage_pct": 100.0 * len(days) / span_days,
+    }
+
+
 # breach counts and strip-time centre for one placement hour.
 def _summarise(rows: list[DayOutcome], def_limit_c: float) -> dict[str, Any]:
     n = len(rows)
@@ -336,15 +365,25 @@ def _summarise(rows: list[DayOutcome], def_limit_c: float) -> dict[str, Any]:
 
     return {
         "n_days": n,
-        "pct_days_breaching_def": pct([o.peak_core_temp_c > def_limit_c for o in rows]),
+        # hottest point in the section, not the nominal probe. DEF happens where it is
+        # hottest, and on this element the two differ by about 4 C.
+        "pct_days_breaching_def": pct(
+            [o.max_core_temp_anywhere_c > def_limit_c for o in rows]
+        ),
+        # hottest point again, same reason as DEF above. The probe-based differential
+        # reads about 4.5 C low, so counting days on it alone undercounts cracking.
         "pct_days_breaching_cracking": pct(
-            [o.max_core_surface_diff_c > CRACK_LIMIT_C for o in rows]
+            [
+                max(o.max_core_surface_diff_c, o.max_anywhere_surface_diff_c) > CRACK_LIMIT_C
+                for o in rows
+            ]
         ),
         "pct_days_breaching_evaporation": pct(
             [o.peak_evaporation_kg_m2_h > EVAP_LIMIT_KG_M2_H for o in rows]
         ),
         "pct_days_breaching_placement": pct([o.placement_temp_c > PLACEMENT_MAX_C for o in rows]),
         "mean_peak_core_temp_c": mean(o.peak_core_temp_c for o in rows),
+        "mean_max_core_temp_anywhere_c": mean(o.max_core_temp_anywhere_c for o in rows),
         "mean_strip_time_h": mean(strip_times_h) if strip_times_h else float("nan"),
         "median_strip_time_h": median(strip_times_h) if strip_times_h else float("nan"),
         "n_days_never_stripped": n - len(strip_times_h),
@@ -361,6 +400,7 @@ def _delta(hot: dict[str, Any] | None, cool: dict[str, Any] | None) -> dict[str,
         "pct_days_breaching_evaporation",
         "pct_days_breaching_placement",
         "mean_peak_core_temp_c",
+        "mean_max_core_temp_anywhere_c",
         "mean_strip_time_h",
         "median_strip_time_h",
     )

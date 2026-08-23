@@ -14,6 +14,7 @@ next call goes out, and the cache is checked before any call is made.
 
 import json
 import logging
+from collections.abc import Sequence
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,27 @@ def dates_between(start_date: str, end_date: str) -> list[str]:
     if end < start:
         raise ValueError(f"end_date {end_date} is before start_date {start_date}")
     return [(start + timedelta(days=n)).isoformat() for n in range((end - start).days + 1)]
+
+
+# the days a run covers: the whole inclusive range, or an explicit subset of it.
+#
+# The subset is checked against the range rather than trusted. A day outside it would be
+# fetched and cached but never read back by season_records, which resolves its own list
+# the same way - the two would silently disagree about what the season contains.
+def _days_in_range(
+    start_date: str, end_date: str, days: Sequence[str] | None
+) -> list[str]:
+    in_range = dates_between(start_date, end_date)
+    if days is None:
+        return in_range
+    chosen = list(dict.fromkeys(days))
+    outside = [day for day in chosen if day not in set(in_range)]
+    if outside:
+        raise ValueError(
+            f"{len(outside)} day(s) fall outside {start_date}..{end_date} "
+            f"(first: {outside[0]}). The range names the checkpoint, so it has to hold them."
+        )
+    return sorted(chosen)
 
 
 # the exact params one day's call is made with. also the cache key, so it must be stable.
@@ -148,15 +170,22 @@ def read_checkpoint(path: Path) -> dict[str, Any]:
 
 
 # fetch a season of daily min/mean/max. resumable, checkpointed.
+#
+# `days` overrides the day-by-day walk with an explicit list, which is how a strided
+# sample gets fetched: 30 days on a 3-day stride costs 126,600 credits against 388,240
+# for all 92, and a summer's breach fraction does not need consecutive days. Every day
+# given must fall inside [start_date, end_date] - those two still name the checkpoint,
+# and a marker whose range does not contain its own days is a resume waiting to go wrong.
 def fetch_season(
     polygon: dict[str, Any],
     start_date: str,
     end_date: str,
     max_calls_per_run: int = 25,
     settings: Settings | None = None,
+    days: Sequence[str] | None = None,
 ) -> None:
     settings = settings or get_settings()
-    days = dates_between(start_date, end_date)
+    days = _days_in_range(start_date, end_date, days)
     marker = checkpoint_path(settings.cache_dir, start_date, end_date)
     state = read_checkpoint(marker)
 
@@ -259,10 +288,14 @@ def day_record(day: str, payload: dict[str, Any]) -> dict[str, Any]:
 # A missing day is an error, not a gap to skip over. Quietly returning 40 days when 92
 # were asked for would produce a season statistic that reads like a full summer.
 def season_records(
-    polygon: dict[str, Any], start_date: str, end_date: str, settings: Settings | None = None
+    polygon: dict[str, Any],
+    start_date: str,
+    end_date: str,
+    settings: Settings | None = None,
+    days: Sequence[str] | None = None,
 ) -> list[dict[str, Any]]:
     settings = settings or get_settings()
-    days = dates_between(start_date, end_date)
+    days = _days_in_range(start_date, end_date, days)
     missing = [
         day for day in days if not is_cached(settings.cache_dir, CACHE_NAME,
                                              day_params(polygon, day))

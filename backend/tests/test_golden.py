@@ -115,6 +115,13 @@ def test_golden_1_adiabatic_temperature_rise() -> None:
     # Adiabatic means uniform: with no losses there is nowhere for a gradient to come from.
     assert float(np.nanmax(result.temp_c_frames[-1]) - np.nanmin(result.temp_c_frames[-1])) < 0.01
 
+    # And the REPORTED surface must be the cell it was reconstructed from. surface_temp_c
+    # is not read off the frame - it is rebuilt from the cell centre through a film and an
+    # external flux, both of which are zero on a sealed face. The frame check above cannot
+    # see that reconstruction, which is how a fabricated 23.9 C core-surface differential
+    # survived on a field uniform to twelve digits.
+    assert np.allclose(result.surface_temp_c, result.core_temp_c, atol=1e-9)
+
 
 # ---------------------------------------------------------------------------
 # GOLDEN 2 - no hydration, pure decay

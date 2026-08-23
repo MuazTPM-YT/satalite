@@ -1,11 +1,11 @@
 """Pydantic schemas for the API boundary. Units live in field names."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from physics.constants import H_CEM_BY_TYPE
+from physics.constants import H_CEM_BY_TYPE, T_REF_DEFAULT_C
 from physics.equations.boundary import FORMWORK_R
 from physics.geometry import SHAPES
 
@@ -48,6 +48,8 @@ class ElementSpec(BaseModel):
     placement_temp_c: float = Field(default=20.0, ge=0.0, le=50.0)
     formwork: str = "plywood_18mm"
     on_ground: bool = False
+    # [x, y] metres from the section origin. None samples the section centroid.
+    probe_xy_m: list[float] | None = Field(default=None, min_length=2, max_length=2)
 
     # reject unknown shapes and formwork here, at the boundary, not with a KeyError
     # three layers down inside the solver.
@@ -58,6 +60,17 @@ class ElementSpec(BaseModel):
         if self.formwork not in FORMWORK_R:
             raise ValueError(
                 f"unknown formwork {self.formwork!r}, expected one of {sorted(FORMWORK_R)}"
+            )
+        # geometry.rasterize tags the base GROUND, but the solver counts only EXPOSED and
+        # FORMED faces, so a ground face carries zero h and zero q - a perfectly insulated
+        # base. That over-predicts the core, over-predicts maturity and makes strip times
+        # optimistic, which is the unsafe direction. Refuse rather than solve it. The
+        # semi-infinite soil sink of master 4.6 is the fix and it is not in this build.
+        if self.on_ground:
+            raise ValueError(
+                "ground boundary not modelled in this build: a GROUND face currently "
+                "carries zero flux, which is an insulated base and biases the core HIGH. "
+                "Set on_ground=false."
             )
         return self
 
@@ -146,17 +159,30 @@ class EnsembleResult(BaseModel):
     forecast_error: dict[str, Any]
 
 
+# which quantity crossed a limit. A plain str let a typo through the boundary silently.
+TrippedBy = Literal["probe", "max_anywhere", "both", "none"]
+
+
 class BreachFlags(BaseModel):
     """What this run trips. Thresholds echoed so a reader never has to guess them."""
 
     def_risk: bool
     def_threshold_c: float
+    def_tripped_by: TrippedBy
     cracking: bool
     cracking_limit_c: float
+    cracking_tripped_by: TrippedBy
     evaporation: bool
     evaporation_limit_kg_m2_h: float
     placement: bool
     placement_limit_c: float
+
+
+# maturity reference temperature, celsius. A CHOICE, not a constant - master 4.4 says
+# so and says it must match the strength calibration. Exposed here rather than left at a
+# silent default, because a run at 20 C read against parameters fitted at 23 C is a
+# systematic offset nobody can see.
+T_REF_FIELD = Field(default=T_REF_DEFAULT_C, gt=0.0, le=40.0)
 
 
 class SimulationRequest(BaseModel):
@@ -164,6 +190,7 @@ class SimulationRequest(BaseModel):
     mix: MixSpec = MixSpec()
     ambient: AmbientSpec
     duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
+    t_ref_c: float = T_REF_FIELD
 
 
 class SimulationResult(BaseModel):
@@ -175,6 +202,16 @@ class SimulationResult(BaseModel):
     peak_core_temp_c: float
     peak_core_time_h: float
     max_core_surface_diff_c: float
+    # the same differential from the hottest point, not the probe. The conservative one.
+    max_anywhere_surface_diff_c: float
+    # hottest point anywhere in the section, not the probe. The DEF-relevant number.
+    max_core_temp_anywhere_c: float
+    # where peak_core_temp_c was actually sampled, [x, y] metres. Run metadata.
+    probe_xy_m: list[float]
+    # the maturity reference temperature this run integrated at. Run metadata, and it
+    # must be read next to the strength numbers: master 4.4 requires T_ref match the
+    # strength calibration, and this is the only place a caller can see which one it got.
+    t_ref_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float | None
     breaches: BreachFlags
@@ -186,7 +223,9 @@ class PourWindowCandidate(BaseModel):
     offset_h: float
     placement_temp_c: float
     peak_core_temp_c: float
+    max_core_temp_anywhere_c: float
     max_core_surface_diff_c: float
+    max_anywhere_surface_diff_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float | None
     breaches: BreachFlags
@@ -199,6 +238,7 @@ class PourWindowRequest(BaseModel):
     ambient: AmbientSpec
     candidate_offsets_h: list[float] = Field(min_length=1, max_length=24)
     duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
+    t_ref_c: float = T_REF_FIELD
     # OFF by default. The candidate sweep is seconds; the ensemble on the pick is a
     # minute, and a minute on a request thread is a gateway timeout on a free tier.
     # Ask for it explicitly, or read the precomputed band from /api/demo-ensemble.
@@ -231,16 +271,25 @@ class DemoEnsembleResponse(BaseModel):
 
 
 class SeasonAnalysisResponse(BaseModel):
-    """Precomputed. Served straight from cache, never solved at request time."""
+    """Precomputed. Served straight from cache, never solved at request time.
 
-    n_days: int
-    date_range: list[str]
-    placement_hours: list[int]
-    per_placement_hour: dict[str, dict[str, Any]]
-    delta_14_minus_04: dict[str, float] | None
-    element: dict[str, Any]
-    limits: dict[str, Any]
-    assumptions: dict[str, Any]
+    The artifact is optional: a season costs 4220 credits a day to fetch, so an image
+    can ship without one. available=False says so plainly at 200 - a dead 503 in a live
+    demo reads as a broken backend, which is worse than a feature that is simply absent.
+    """
+
+    available: bool = True
+    detail: str | None = None
+    n_days: int | None = None
+    date_range: list[str] | None = None
+    # how the days were drawn from that range: strided or consecutive, and how densely.
+    sampling: dict[str, Any] | None = None
+    placement_hours: list[int] | None = None
+    per_placement_hour: dict[str, dict[str, Any]] | None = None
+    delta_14_minus_04: dict[str, float] | None = None
+    element: dict[str, Any] | None = None
+    limits: dict[str, Any] | None = None
+    assumptions: dict[str, Any] | None = None
 
 
 class ValidationResponse(BaseModel):

@@ -1,0 +1,103 @@
+{
+  "case": {
+    "date": "2025-07-15",
+    "hours": 72.0,
+    "lat_deg": 33.45,
+    "placement_hour": 14,
+    "probe": "section centroid, bilinear",
+    "safety_factor": 0.35,
+    "thickness_mm": 300.0,
+    "width_mm": 3000.0
+  },
+  "revision": "3b45b92",
+  "script": "grid-cost",
+  "spacings": {
+    "10mm": {
+      "cells": 9000,
+      "dt_s": 9.545454545454543,
+      "limit_s": 27.27272727272727,
+      "max_core_surface_diff_c": 28.857325725865778,
+      "max_core_temp_anywhere_c": 65.98623385973008,
+      "peak_core_temp_c": 61.522535973074405,
+      "peak_core_time_h": 6.013636363636363,
+      "probe_xy_m": [
+        1.5,
+        0.15
+      ],
+      "wall_s": 6.449824748997344
+    },
+    "15mm": {
+      "cells": 4000,
+      "dt_s": 21.477272727272723,
+      "limit_s": 61.36363636363636,
+      "max_core_surface_diff_c": 28.852146503948767,
+      "max_core_temp_anywhere_c": 65.97980005444691,
+      "peak_core_temp_c": 61.51412027517108,
+      "peak_core_time_h": 6.013636363636363,
+      "probe_xy_m": [
+        1.5,
+        0.15
+      ],
+      "wall_s": 1.8234253370028455
+    },
+    "20mm": {
+      "cells": 2250,
+      "dt_s": 38.18181818181817,
+      "limit_s": 109.09090909090908,
+      "max_core_surface_diff_c": 28.90540705508667,
+      "max_core_temp_anywhere_c": 65.96792715720186,
+      "peak_core_temp_c": 61.55746481645697,
+      "peak_core_time_h": 6.109090909090908,
+      "probe_xy_m": [
+        1.5,
+        0.15
+      ],
+      "wall_s": 0.8114026420007576
+    },
+    "5mm": {
+      "cells": 36000,
+      "dt_s": 2.386363636363636,
+      "limit_s": 6.8181818181818175,
+      "max_core_surface_diff_c": 28.861655500896916,
+      "max_core_temp_anywhere_c": 65.98946746391849,
+      "peak_core_temp_c": 61.52676436453637,
+      "peak_core_time_h": 5.989772727272726,
+      "probe_xy_m": [
+        1.5,
+        0.15
+      ],
+      "wall_s": 75.57095250600105
+    }
+  },
+  "width_check": {
+    "100mm": {
+      "cells": 300,
+      "dt_s": 9.545454545454543,
+      "limit_s": 27.27272727272727,
+      "max_core_surface_diff_c": 28.857325725865778,
+      "max_core_temp_anywhere_c": 65.98623385973008,
+      "peak_core_temp_c": 61.522535973074405,
+      "peak_core_time_h": 6.013636363636363,
+      "probe_xy_m": [
+        0.05,
+        0.15
+      ],
+      "wall_s": 2.1178624269959982
+    },
+    "3000mm": {
+      "cells": 9000,
+      "dt_s": 9.545454545454543,
+      "limit_s": 27.27272727272727,
+      "max_core_surface_diff_c": 28.857325725865778,
+      "max_core_temp_anywhere_c": 65.98623385973008,
+      "peak_core_temp_c": 61.522535973074405,
+      "peak_core_time_h": 6.013636363636363,
+      "probe_xy_m": [
+        1.5,
+        0.15
+      ],
+      "wall_s": 6.393266693994519
+    }
+  },
+  "written_at": "20260823T192139Z"
+}

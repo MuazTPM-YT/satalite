@@ -51,6 +51,25 @@ def face_h_discrete(h_face_w_m2_k: FloatArray | float, dx_m: float, k_w_m_k: flo
     return np.asarray(h / (1.0 + h * dx_m / (2.0 * k_w_m_k)), dtype=np.float64)
 
 
+# the SAME series attenuation, applied to an externally imposed face flux.
+#
+# From the identical half-cell balance. Solving it for what actually reaches the centre:
+#     (2k/dx)*(T_face - T_centre) = [h*(T_air - T_centre) + q] / (1 + h*dx/(2k))
+# so q carries exactly the factor h does. Attenuating h and passing q raw leaves a
+# residual of q*h*dx/(2k) - first order in dx, and it needs BOTH terms to be non-zero.
+# That is what the arm sweep measured: baseline p = 0.82, but the q-off arm and the
+# h-off arm were each mesh independent, and halving q raised p from 1.31 to 1.56.
+def face_q_discrete(
+    q_face_w_m2: FloatArray | float,
+    h_face_w_m2_k: FloatArray | float,
+    dx_m: float,
+    k_w_m_k: float,
+) -> FloatArray:
+    h = np.asarray(h_face_w_m2_k, dtype=np.float64)
+    q = np.asarray(q_face_w_m2, dtype=np.float64)
+    return np.asarray(q / (1.0 + h * dx_m / (2.0 * k_w_m_k)), dtype=np.float64)
+
+
 # cell centre back out to the true face temperature. celsius in, celsius out.
 #
 # Steady balance across the half cell: what the film and the external flux deliver to the

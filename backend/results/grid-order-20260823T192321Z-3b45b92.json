@@ -1,0 +1,474 @@
+{
+  "arms": {
+    "A_baseline": {
+      "convergence": {
+        "d_10_20_c": -0.03817675216829031,
+        "d_5_10_c": 0.004743962678773528,
+        "note": "differences below the floor or opposite in sign - order undefined",
+        "order_p": null,
+        "ratio": null,
+        "richardson_c": null
+      },
+      "overrides": {},
+      "spacings": {
+        "10mm": {
+          "cells": 180,
+          "dt_s": 9.545454545454543,
+          "limit_s": 27.27272727272727,
+          "max_core_surface_diff_c": 28.85913414282158,
+          "max_core_temp_anywhere_c": 65.98649807409387,
+          "peak_core_temp_c": 61.52254650601991,
+          "peak_core_time_h": 6.029545454545453,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 2.0865454989980208
+        },
+        "15mm": {
+          "cells": 80,
+          "dt_s": 21.477272727272723,
+          "limit_s": 61.36363636363636,
+          "max_core_surface_diff_c": 28.853707075758095,
+          "max_core_temp_anywhere_c": 65.97999796810115,
+          "peak_core_temp_c": 61.51420519370785,
+          "peak_core_time_h": 6.03153409090909,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.8933213380005327
+        },
+        "20mm": {
+          "cells": 45,
+          "dt_s": 38.18181818181817,
+          "limit_s": 109.09090909090908,
+          "max_core_surface_diff_c": 28.905407055086656,
+          "max_core_temp_anywhere_c": 65.96979465635748,
+          "peak_core_temp_c": 61.5607232581882,
+          "peak_core_time_h": 6.024242424242423,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.531787116000487
+        },
+        "5mm": {
+          "cells": 720,
+          "dt_s": 2.386363636363636,
+          "limit_s": 6.8181818181818175,
+          "max_core_surface_diff_c": 28.86243509027412,
+          "max_core_temp_anywhere_c": 65.98946941814064,
+          "peak_core_temp_c": 61.52729046869868,
+          "peak_core_time_h": 6.015624999999999,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 9.506548391997057
+        }
+      }
+    },
+    "B_q_off": {
+      "convergence": {
+        "d_10_20_c": -0.03132710187445298,
+        "d_5_10_c": 0.004766660687295143,
+        "note": "differences below the floor or opposite in sign - order undefined",
+        "order_p": null,
+        "ratio": null,
+        "richardson_c": null
+      },
+      "overrides": {
+        "evaporative_cooling": false,
+        "solar_absorptivity": 0.0
+      },
+      "spacings": {
+        "10mm": {
+          "cells": 180,
+          "dt_s": 9.545454545454543,
+          "limit_s": 27.27272727272727,
+          "max_core_surface_diff_c": 18.56380555683935,
+          "max_core_temp_anywhere_c": 73.03301277565205,
+          "peak_core_temp_c": 71.71503848335333,
+          "peak_core_time_h": 7.254545454545452,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 1.7724775220049196
+        },
+        "15mm": {
+          "cells": 80,
+          "dt_s": 21.477272727272723,
+          "limit_s": 61.36363636363636,
+          "max_core_surface_diff_c": 18.56884456675963,
+          "max_core_temp_anywhere_c": 73.03909804800598,
+          "peak_core_temp_c": 71.70881633799637,
+          "peak_core_time_h": 7.266477272727271,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.7649867389991414
+        },
+        "20mm": {
+          "cells": 45,
+          "dt_s": 38.18181818181817,
+          "limit_s": 109.09090909090908,
+          "max_core_surface_diff_c": 18.62037261501795,
+          "max_core_temp_anywhere_c": 73.0420432983363,
+          "peak_core_temp_c": 71.74636558522778,
+          "peak_core_time_h": 7.275757575757574,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.43505745700531406
+        },
+        "5mm": {
+          "cells": 720,
+          "dt_s": 2.386363636363636,
+          "limit_s": 6.8181818181818175,
+          "max_core_surface_diff_c": 18.558643538450596,
+          "max_core_temp_anywhere_c": 73.02646693617031,
+          "peak_core_temp_c": 71.71980514404062,
+          "peak_core_time_h": 7.258522727272726,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 8.201490970001032
+        }
+      }
+    },
+    "C_h_off": {
+      "convergence": {
+        "d_10_20_c": -0.032503840470731404,
+        "d_5_10_c": 0.0038811453595997136,
+        "note": "differences below the floor or opposite in sign - order undefined",
+        "order_p": null,
+        "ratio": null,
+        "richardson_c": null
+      },
+      "overrides": {
+        "h_multiplier": 0.0
+      },
+      "spacings": {
+        "10mm": {
+          "cells": 180,
+          "dt_s": 9.545454545454543,
+          "limit_s": 27.27272727272727,
+          "max_core_surface_diff_c": 31.55493806222532,
+          "max_core_temp_anywhere_c": 73.04468179860051,
+          "peak_core_temp_c": 63.11092660213686,
+          "peak_core_time_h": 6.824999999999998,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 2.0809772580032586
+        },
+        "15mm": {
+          "cells": 80,
+          "dt_s": 21.477272727272723,
+          "limit_s": 61.36363636363636,
+          "max_core_surface_diff_c": 31.550760647732435,
+          "max_core_temp_anywhere_c": 73.03909651687074,
+          "peak_core_temp_c": 63.10416862011847,
+          "peak_core_time_h": 6.836931818181816,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.9018598920010845
+        },
+        "20mm": {
+          "cells": 45,
+          "dt_s": 38.18181818181817,
+          "limit_s": 109.09090909090908,
+          "max_core_surface_diff_c": 31.593386018769873,
+          "max_core_temp_anywhere_c": 73.03073991008786,
+          "peak_core_temp_c": 63.14343044260759,
+          "peak_core_time_h": 6.85151515151515,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.5077311770000961
+        },
+        "5mm": {
+          "cells": 720,
+          "dt_s": 2.386363636363636,
+          "limit_s": 6.8181818181818175,
+          "max_core_surface_diff_c": 31.557313491870698,
+          "max_core_temp_anywhere_c": 73.04781659780241,
+          "peak_core_temp_c": 63.11480774749646,
+          "peak_core_time_h": 6.827651515151514,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 9.506211243002326
+        }
+      }
+    },
+    "D_adiabatic": {
+      "convergence": {
+        "d_10_20_c": -0.03946615418652755,
+        "d_5_10_c": -0.0098304270270404,
+        "note": null,
+        "order_p": 2.0052899486887115,
+        "ratio": 4.014693774539867,
+        "richardson_c": 102.61208738488611
+      },
+      "overrides": {
+        "adiabatic": true
+      },
+      "spacings": {
+        "10mm": {
+          "cells": 180,
+          "dt_s": 9.545454545454543,
+          "limit_s": 27.27272727272727,
+          "max_core_surface_diff_c": 2.842170943040401e-14,
+          "max_core_temp_anywhere_c": 102.62517864958431,
+          "peak_core_temp_c": 102.62517864958431,
+          "peak_core_time_h": 72.0,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 2.113245298001857
+        },
+        "15mm": {
+          "cells": 80,
+          "dt_s": 21.477272727272723,
+          "limit_s": 61.36363636363636,
+          "max_core_surface_diff_c": 7.105427357601002e-15,
+          "max_core_temp_anywhere_c": 102.6416377733099,
+          "peak_core_temp_c": 102.6416377733099,
+          "peak_core_time_h": 72.0,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.9284551769960672
+        },
+        "20mm": {
+          "cells": 45,
+          "dt_s": 38.18181818181817,
+          "limit_s": 109.09090909090908,
+          "max_core_surface_diff_c": 1.4210854715202004e-14,
+          "max_core_temp_anywhere_c": 102.66464480377084,
+          "peak_core_temp_c": 102.66464480377084,
+          "peak_core_time_h": 72.0,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.5156677859995398
+        },
+        "5mm": {
+          "cells": 720,
+          "dt_s": 2.386363636363636,
+          "limit_s": 6.8181818181818175,
+          "max_core_surface_diff_c": 2.842170943040401e-14,
+          "max_core_temp_anywhere_c": 102.61534822255727,
+          "peak_core_temp_c": 102.61534822255727,
+          "peak_core_time_h": 72.0,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 9.615291640999203
+        }
+      }
+    },
+    "E_q_half": {
+      "convergence": {
+        "d_10_20_c": -0.03442200489494951,
+        "d_5_10_c": 0.004805345504067304,
+        "note": "differences below the floor or opposite in sign - order undefined",
+        "order_p": null,
+        "ratio": null,
+        "richardson_c": null
+      },
+      "overrides": {
+        "evaporative_cooling": false,
+        "solar_absorptivity": 0.275
+      },
+      "spacings": {
+        "10mm": {
+          "cells": 180,
+          "dt_s": 9.545454545454543,
+          "limit_s": 27.27272727272727,
+          "max_core_surface_diff_c": 19.521752560310368,
+          "max_core_temp_anywhere_c": 75.07999178228332,
+          "peak_core_temp_c": 73.7866310672366,
+          "peak_core_time_h": 6.936363636363635,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 1.788439386000391
+        },
+        "15mm": {
+          "cells": 80,
+          "dt_s": 21.477272727272723,
+          "limit_s": 61.36363636363636,
+          "max_core_surface_diff_c": 19.52720249659064,
+          "max_core_temp_anywhere_c": 75.08982661325199,
+          "peak_core_temp_c": 73.78040368245152,
+          "peak_core_time_h": 6.94431818181818,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.7723666219972074
+        },
+        "20mm": {
+          "cells": 45,
+          "dt_s": 38.18181818181817,
+          "limit_s": 109.09090909090908,
+          "max_core_surface_diff_c": 19.58162312304453,
+          "max_core_temp_anywhere_c": 75.08509990861644,
+          "peak_core_temp_c": 73.82105307213155,
+          "peak_core_time_h": 6.936363636363635,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.43680859499727376
+        },
+        "5mm": {
+          "cells": 720,
+          "dt_s": 2.386363636363636,
+          "limit_s": 6.8181818181818175,
+          "max_core_surface_diff_c": 19.516145828652874,
+          "max_core_temp_anywhere_c": 75.07583387862026,
+          "peak_core_temp_c": 73.79143641274067,
+          "peak_core_time_h": 6.927083333333331,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 8.282830119998835
+        }
+      }
+    },
+    "F_q_full": {
+      "convergence": {
+        "d_10_20_c": -0.038233313503042154,
+        "d_5_10_c": 0.004705227232705056,
+        "note": "differences below the floor or opposite in sign - order undefined",
+        "order_p": null,
+        "ratio": null,
+        "richardson_c": null
+      },
+      "overrides": {
+        "evaporative_cooling": false,
+        "solar_absorptivity": 0.55
+      },
+      "spacings": {
+        "10mm": {
+          "cells": 180,
+          "dt_s": 9.545454545454543,
+          "limit_s": 27.27272727272727,
+          "max_core_surface_diff_c": 20.471688916011566,
+          "max_core_temp_anywhere_c": 77.10521124355482,
+          "peak_core_temp_c": 75.892546021063,
+          "peak_core_time_h": 6.634090909090908,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 1.9050290020022658
+        },
+        "15mm": {
+          "cells": 80,
+          "dt_s": 21.477272727272723,
+          "limit_s": 61.36363636363636,
+          "max_core_surface_diff_c": 20.477756500980114,
+          "max_core_temp_anywhere_c": 77.12041370747134,
+          "peak_core_temp_c": 75.88658233472441,
+          "peak_core_time_h": 6.640056818181817,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.8291238140009227
+        },
+        "20mm": {
+          "cells": 45,
+          "dt_s": 38.18181818181817,
+          "limit_s": 109.09090909090908,
+          "max_core_surface_diff_c": 20.535368523433327,
+          "max_core_temp_anywhere_c": 77.10461964678362,
+          "peak_core_temp_c": 75.93077933456604,
+          "peak_core_time_h": 6.660606060606059,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 0.48033572300482774
+        },
+        "5mm": {
+          "cells": 720,
+          "dt_s": 2.386363636363636,
+          "limit_s": 6.8181818181818175,
+          "max_core_surface_diff_c": 20.465483660409056,
+          "max_core_temp_anywhere_c": 77.10440122114065,
+          "peak_core_temp_c": 75.8972512482957,
+          "peak_core_time_h": 6.645359848484847,
+          "probe_xy_m": [
+            0.03,
+            0.15
+          ],
+          "record_every_s": 60.0,
+          "wall_s": 8.511986220000836
+        }
+      }
+    }
+  },
+  "case": {
+    "date": "2025-07-15",
+    "hours": 72.0,
+    "lat_deg": 33.45,
+    "placement_hour": 14,
+    "probe": "section centroid, bilinear",
+    "record_every_s": 60.0,
+    "safety_factor": 0.35,
+    "thickness_mm": 300.0,
+    "width_mm": 60.0
+  },
+  "revision": "3b45b92",
+  "script": "grid-order",
+  "width_check": {
+    "delta_c": 1.0532945907471003e-05,
+    "stored_3000mm_dx10_peak_core_c": 61.522535973074,
+    "strip_dx10_peak_core_c": 61.52254650601991
+  },
+  "written_at": "20260823T192321Z"
+}
