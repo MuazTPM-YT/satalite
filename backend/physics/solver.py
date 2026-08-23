@@ -93,6 +93,10 @@ def solve(
     n_exposed_b = n_exposed[boundary_rows, boundary_cols]
     n_formed_b = n_formed[boundary_rows, boundary_cols]
     n_exposed_s = n_exposed[surf_rows, surf_cols]
+    # 1.0 where the face actually gets flux, 0.0 where it is sealed. adiabatic zeroes
+    # n_exposed, so the film and the external flux vanish with it and the reconstructed
+    # surface collapses back onto the cell centre - which is the truth on a sealed face.
+    open_s = (n_exposed_s > 0.0).astype(np.float64)
 
     # free-surface cells are a subset of boundary cells. this maps one index into the other.
     order = np.zeros(mask.shape, dtype=np.int64)
@@ -130,7 +134,7 @@ def solve(
         face_c = conduction.face_temp_c(
             now_c[surf_rows, surf_cols],
             float(weather["air_temp_c"][i]),
-            film[exposed_in_boundary],
+            film[exposed_in_boundary] * open_s,
             q_face,
             dx_m,
             mix.k_w_m_k,
@@ -170,6 +174,7 @@ def solve(
             q_face_w_m2 = q_face_w_m2 - LATENT_HEAT_VAP * boundary.evaporation_rate_kg_m2_s(
                 surf_temp_c, air_temp_c, float(weather["rh_frac"][i]), float(weather["wind_ms"][i])
             )
+        q_face_w_m2 = q_face_w_m2 * open_s
         q_sum[surf_rows, surf_cols] = n_exposed_s * q_face_w_m2
 
         if i % record_every == 0:
