@@ -156,8 +156,53 @@ export function createTBeamGrid(dx_m = 0.0125): GridData {
   return { nx, ny, dx_m, mask, outline };
 }
 
+// point-in-polygon test, ray cast method
+function pointInPolygon(x: number, y: number, poly: [number, number][]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i];
+    const [xj, yj] = poly[j];
+    if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// raster grid from any closed outline — used by IFC import path
+export function createGridFromOutline(
+  outline: [number, number][],
+  dx_m = 0.0125
+): GridData {
+  const xs = outline.map((p) => p[0]);
+  const ys = outline.map((p) => p[1]);
+  const x0 = Math.min(...xs);
+  const y0 = Math.min(...ys);
+  const w = Math.max(...xs) - x0;
+  const h = Math.max(...ys) - y0;
+
+  const nx = Math.max(4, Math.round(w / dx_m));
+  const ny = Math.max(4, Math.round(h / dx_m));
+
+  const mask: number[][] = [];
+  for (let j = 0; j < ny; j++) {
+    const row: number[] = [];
+    const y = y0 + (j + 0.5) * dx_m;
+    for (let i = 0; i < nx; i++) {
+      const x = x0 + (i + 0.5) * dx_m;
+      row.push(pointInPolygon(x, y, outline) ? 1 : 0);
+    }
+    mask.push(row);
+  }
+
+  return { nx, ny, dx_m, mask, outline };
+}
+
 // generate realistic synthetic thermal simulation result
-export function generateMockThermalSimulation(): ThermalSimulationResult {
+// grid override lets imported IFC outlines run through the same pipeline
+export function generateMockThermalSimulation(
+  gridOverride?: GridData
+): ThermalSimulationResult {
   const dt_h = 0.5;
   const max_time_h = 72;
   const num_steps = Math.round(max_time_h / dt_h) + 1;
@@ -167,7 +212,7 @@ export function generateMockThermalSimulation(): ThermalSimulationResult {
     times_h.push(Number((s * dt_h).toFixed(1)));
   }
 
-  const grid = createTBeamGrid(0.0125);
+  const grid = gridOverride ?? createTBeamGrid(0.0125);
   const { nx, ny, dx_m, mask, outline } = grid;
 
   // find distance to boundary for every cell to shape temperature field
@@ -196,9 +241,14 @@ export function generateMockThermalSimulation(): ThermalSimulationResult {
     dist_field.push(d_row);
   }
 
-  // core coordinate inside web
-  const core_j = Math.round(0.2 / dx_m);
-  const core_i = Math.round(0.3 / dx_m);
+  // core = deepest cell (max boundary distance), works for any outline
+  const dist_flat = dist_field.flatMap((r) => r);
+  let max_i = 0;
+  for (let k = 1; k < dist_flat.length; k++) {
+    if (dist_flat[k] > dist_flat[max_i]) max_i = k;
+  }
+  const core_j = Math.floor(max_i / nx);
+  const core_i = max_i % nx;
 
   const core_temp_c: number[] = [];
   const surface_temp_c: number[] = [];

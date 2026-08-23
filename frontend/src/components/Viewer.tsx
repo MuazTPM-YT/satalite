@@ -9,6 +9,7 @@ import TBeamMesh from "@/components/TBeamMesh";
 import type { ProbeResult } from "@/components/TBeamMesh";
 import ThermalLegend from "@/components/ThermalLegend";
 import type { ThermalSimulationResult } from "@/lib/mockThermalField";
+import { fmtLen, type LengthUnit } from "@/lib/units";
 
 // camera preset angles. front = default opening framing
 type PresetView = "top" | "front" | "iso";
@@ -24,11 +25,11 @@ interface ControlsLike {
   update: () => void;
 }
 
-// camera preset pill style, same as TopBar tabs
-function camClass(active: boolean): string {
+// camera preset pill style, shared with Section2D toolbar
+export function camClass(active: boolean): string {
   return active
-    ? "px-3 py-1 text-xs rounded bg-bg-elevated text-text-primary font-medium"
-    : "px-3 py-1 text-xs rounded text-text-secondary hover:text-text-primary transition-colors";
+    ? "px-3 py-1 text-xs rounded-sm bg-bg-elevated text-text-primary font-medium"
+    : "px-3 py-1 text-xs rounded-sm text-text-secondary hover:text-text-primary transition-colors";
 }
 
 interface ViewerProps {
@@ -36,6 +37,8 @@ interface ViewerProps {
   timeIndex: number;
   // element length from shared LeftPanel config state
   length_m: number;
+  // dimension display unit for clip-depth label
+  units: LengthUnit;
 }
 
 // inside-canvas controller: snaps camera, clears highlight on manual orbit
@@ -92,7 +95,7 @@ function CameraRig({
   );
 }
 
-export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
+export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps) {
   // clip plane position along Z axis (0 = fully open, 1 = fully closed)
   const [clipFrac, setClipFrac] = useState(1.0);
   // active camera preset, null once user orbits away
@@ -101,6 +104,8 @@ export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
   // probe state
   const [probe, setProbe] = useState<ProbeResult | null>(null);
   const [probePos, setProbePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // transient hover tooltip state — temp only, no maturity/strength
+  const [hover, setHover] = useState<{ temp_c: number; x: number; y: number } | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
 
   // compute clip plane and slice Z coordinate from fraction
@@ -114,8 +119,7 @@ export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
     };
   }, [clipFrac, length_m]);
 
-  // depth label in mm for clip slider
-  const clipDepth_mm = Math.round(clipFrac * length_m * 1000);
+
 
   // handle probe click from mesh — position near click point with boundary clamping
   const handleProbe = useCallback(
@@ -133,6 +137,16 @@ export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
     },
     []
   );
+
+  // hover feed from mesh — temp only, mesh already throttles to ~25/s
+  const handleHover = useCallback(
+    (temp_c: number, event: { offsetX: number; offsetY: number }) => {
+      setHover({ temp_c, x: event.offsetX, y: event.offsetY });
+    },
+    []
+  );
+
+  const handleHoverEnd = useCallback(() => setHover(null), []);
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -210,6 +224,8 @@ export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
             clippingPlane={clippingPlane}
             clipZ={clipZ}
             onProbe={handleProbe}
+            onHover={handleHover}
+            onHoverEnd={handleHoverEnd}
           />
           <CameraRig preset={camView} onDrift={() => setCamView(null)} />
         </Canvas>
@@ -233,9 +249,20 @@ export default function Viewer({ sim, timeIndex, length_m }: ViewerProps) {
             }}
           />
           <span className="text-[9px] text-text-muted tabular-nums">
-            {clipDepth_mm} mm
+            {fmtLen(clipFrac * length_m, units)} {units}
           </span>
         </div>
+
+        {/* transient hover tooltip — single-line chip, visually distinct from
+            the bordered probe card; never blocks the cursor */}
+        {hover && (
+          <div
+            className="absolute z-10 pointer-events-none px-2 py-0.5 rounded-sm bg-black/85 border border-accent-blue text-[10px] font-medium text-text-primary tabular-nums"
+            style={{ left: `${hover.x + 14}px`, top: `${hover.y - 22}px` }}
+          >
+            {hover.temp_c.toFixed(1)} °C
+          </div>
+        )}
 
         {/* probe popup */}
         {probe && (

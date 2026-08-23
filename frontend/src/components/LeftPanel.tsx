@@ -1,15 +1,67 @@
 // left panel. element geometry, mix design, pour details — reads/writes shared element config
+// geometry inputs display in the selected length unit, canonical state stays mm
 "use client";
 
+import { useRef } from "react";
 import type { ElementConfig } from "@/lib/elementConfig";
+import { mToUnit, unitToM, fmtLen, roundDisp, type LengthUnit } from "@/lib/units";
+
+// shape value used when geometry came from an IFC file
+export const IMPORTED_SHAPE = "Imported (IFC)";
+
+export interface IfcUiState {
+  busy: boolean;
+  error: string | null;
+  name: string | null;
+}
 
 interface LeftPanelProps {
   config: ElementConfig;
   onChange: <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => void;
+  units: LengthUnit;
+  ifc: IfcUiState;
+  // file chosen by user, parent runs the import
+  onImportIfc: (file: File) => void;
+  // extracted outline metres, drives preview when shape imported
+  importedOutline?: [number, number][] | null;
 }
 
-// dynamic T-beam cross-section SVG preview from shared config dims
-function CrossSectionPreview({ config }: { config: ElementConfig }) {
+// dynamic cross-section SVG preview from config dims, or real outline when imported
+function CrossSectionPreview({
+  config,
+  units,
+  outline,
+}: {
+  config: ElementConfig;
+  units: LengthUnit;
+  outline?: [number, number][];
+}) {
+  // imported path: draw the real extracted outline
+  if (outline && outline.length >= 3) {
+    const xs = outline.map((p) => p[0]);
+    const ys = outline.map((p) => p[1]);
+    const w = Math.max(...xs);
+    const h = Math.max(...ys);
+    const scale = Math.min(160 / w, 140 / h);
+    const px = outline.map(([x, y]) => `${(20 + x * scale).toFixed(1)},${(10 + (h - y) * scale).toFixed(1)}`).join(" ");
+    return (
+      <div className="mt-2 p-2 bg-bg-primary rounded-sm border border-border-default">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
+            Cross-Section
+          </span>
+          <span className="text-[10px] text-text-muted">IFC</span>
+        </div>
+        <svg viewBox="0 0 200 160" className="w-full" xmlns="http://www.w3.org/2000/svg">
+          <polygon points={px} fill="none" stroke="#8b949e" strokeWidth="1.5" />
+          <text x="100" y="158" textAnchor="middle" fill="#6e7681" fontSize="7">
+            {fmtLen(w, units)} × {fmtLen(h, units)}
+          </text>
+        </svg>
+      </div>
+    );
+  }
+
   const fw = config.flange_width_mm;
   const fd = config.flange_depth_mm;
   const ww = config.web_width_mm;
@@ -53,21 +105,21 @@ function CrossSectionPreview({ config }: { config: ElementConfig }) {
         <line x1={x0} y1={y0 - 5} x2={x0 + fw_px} y2={y0 - 5} stroke="#6e7681" strokeWidth="0.5" />
         <line x1={x0} y1={y0 - 8} x2={x0} y2={y0 - 2} stroke="#6e7681" strokeWidth="0.5" />
         <line x1={x0 + fw_px} y1={y0 - 8} x2={x0 + fw_px} y2={y0 - 2} stroke="#6e7681" strokeWidth="0.5" />
-        <text x={x0 + fw_px / 2} y={y0 - 6} textAnchor="middle" fill="#6e7681" fontSize="7">{fw}</text>
+        <text x={x0 + fw_px / 2} y={y0 - 6} textAnchor="middle" fill="#6e7681" fontSize="7">{fmtLen(fw / 1000, units)}</text>
         <line x1={webX} y1={y0 + td_px + 5} x2={webX + ww_px} y2={y0 + td_px + 5} stroke="#6e7681" strokeWidth="0.5" />
         <line x1={webX} y1={y0 + td_px + 2} x2={webX} y2={y0 + td_px + 8} stroke="#6e7681" strokeWidth="0.5" />
         <line x1={webX + ww_px} y1={y0 + td_px + 2} x2={webX + ww_px} y2={y0 + td_px + 8} stroke="#6e7681" strokeWidth="0.5" />
-        <text x={webX + ww_px / 2} y={y0 + td_px + 14} textAnchor="middle" fill="#6e7681" fontSize="7">{ww}</text>
+        <text x={webX + ww_px / 2} y={y0 + td_px + 14} textAnchor="middle" fill="#6e7681" fontSize="7">{fmtLen(ww / 1000, units)}</text>
         <line x1={x0 + fw_px + 10} y1={y0} x2={x0 + fw_px + 10} y2={y0 + td_px} stroke="#6e7681" strokeWidth="0.5" />
         <line x1={x0 + fw_px + 7} y1={y0} x2={x0 + fw_px + 13} y2={y0} stroke="#6e7681" strokeWidth="0.5" />
         <line x1={x0 + fw_px + 7} y1={y0 + td_px} x2={x0 + fw_px + 13} y2={y0 + td_px} stroke="#6e7681" strokeWidth="0.5" />
-        <text x={x0 + fw_px + 16} y={y0 + td_px / 2} textAnchor="middle" fill="#6e7681" fontSize="7" transform={`rotate(90 ${x0 + fw_px + 16} ${y0 + td_px / 2})`}>{td}</text>
+        <text x={x0 + fw_px + 16} y={y0 + td_px / 2} textAnchor="middle" fill="#6e7681" fontSize="7" transform={`rotate(90 ${x0 + fw_px + 16} ${y0 + td_px / 2})`}>{fmtLen(td / 1000, units)}</text>
       </svg>
     </div>
   );
 }
 
-// form row with label + controlled input
+// form row with label + controlled input, readOnly when driven by IFC outline
 function FormRow({
   label,
   value,
@@ -75,13 +127,15 @@ function FormRow({
   type = "number",
   id,
   onChange,
+  readOnly = false,
 }: {
   label: string;
   value: string | number;
   unit?: string;
   type?: string;
   id: string;
-  onChange: (value: string) => void;
+  onChange?: (value: string) => void;
+  readOnly?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-2 py-1">
@@ -93,7 +147,8 @@ function FormRow({
           id={id}
           type={type}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange?.(e.target.value)}
+          readOnly={readOnly}
           className="w-16 text-right text-xs"
         />
         {unit && (
@@ -144,9 +199,20 @@ function SectionHeader({ title, icon }: { title: string; icon: string }) {
   );
 }
 
-export default function LeftPanel({ config, onChange }: LeftPanelProps) {
+export default function LeftPanel({ config, onChange, units, ifc, onImportIfc, importedOutline }: LeftPanelProps) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const isImported = config.shape === IMPORTED_SHAPE;
+
+  // mm canonical -> display-unit number for inputs
+  const disp = (mm: number) => roundDisp(mToUnit(mm / 1000, units));
+  // display-unit string -> mm canonical
+  const setDim =
+    (key: keyof ElementConfig) =>
+    (v: string) =>
+      onChange(key, unitToM(Number(v), units) * 1000);
+
   return (
-    <aside className="w-[260px] shrink-0 bg-bg-surface border-r border-border-default overflow-y-auto">
+    <aside className="w-[260px] shrink-0 bg-bg-surface overflow-y-auto">
       <div className="p-3">
         {/* ELEMENT section */}
         <SectionHeader title="Element" icon="◧" />
@@ -155,14 +221,62 @@ export default function LeftPanel({ config, onChange }: LeftPanelProps) {
           id="shape"
           label="Shape"
           value={config.shape}
-          options={["T-Beam", "Rectangle", "I-Beam", "Box"]}
+          options={isImported ? ["T-Beam", "Rectangle", "I-Beam", "Box", IMPORTED_SHAPE] : ["T-Beam", "Rectangle", "I-Beam", "Box"]}
           onChange={(v) => onChange("shape", v)}
         />
-        <FormRow id="flange-width" label="Flange width" value={config.flange_width_mm} unit="mm" onChange={(v) => onChange("flange_width_mm", Number(v))} />
-        <FormRow id="flange-depth" label="Flange depth" value={config.flange_depth_mm} unit="mm" onChange={(v) => onChange("flange_depth_mm", Number(v))} />
-        <FormRow id="web-width" label="Web width" value={config.web_width_mm} unit="mm" onChange={(v) => onChange("web_width_mm", Number(v))} />
-        <FormRow id="total-depth" label="Total depth" value={config.total_depth_mm} unit="mm" onChange={(v) => onChange("total_depth_mm", Number(v))} />
-        <FormRow id="length" label="Length" value={config.length_mm} unit="mm" onChange={(v) => onChange("length_mm", Number(v))} />
+
+        {/* IFC import picker + status */}
+        <div className="flex items-center justify-between gap-2 py-1">
+          <label htmlFor="ifc-file" className="text-xs text-text-secondary whitespace-nowrap">
+            Import IFC
+          </label>
+          <input
+            ref={fileRef}
+            id="ifc-file"
+            type="file"
+            accept=".ifc"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImportIfc(f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            className="px-2 py-1 text-[10px] font-medium rounded-sm border border-border-default text-text-secondary hover:text-text-primary hover:border-border-strong transition-colors"
+            onClick={() => fileRef.current?.click()}
+            disabled={ifc.busy}
+          >
+            {ifc.busy ? "Parsing…" : "Choose file…"}
+          </button>
+        </div>
+        {ifc.error && (
+          <p className="mt-1 mb-2 text-[10px] leading-relaxed text-status-red bg-status-red-dim border border-status-red rounded-sm px-2 py-1.5">
+            {ifc.error}
+          </p>
+        )}
+        {isImported && ifc.name && (
+          <p className="mt-1 mb-2 text-[10px] text-text-muted">
+            Geometry from IFC: <span className="text-text-secondary">{ifc.name}</span>. Flange/web inputs are preset-only — pick a preset shape to edit them.
+          </p>
+        )}
+
+        {isImported ? (
+          <>
+            <FormRow readOnly id="flange-width" label="Section width" value={disp(config.flange_width_mm)} unit={units} />
+            <FormRow readOnly id="total-depth" label="Section depth" value={disp(config.total_depth_mm)} unit={units} />
+            <FormRow readOnly id="length" label="Length" value={disp(config.length_mm)} unit={units} />
+          </>
+        ) : (
+          <>
+            <FormRow id="flange-width" label="Flange width" value={disp(config.flange_width_mm)} unit={units} onChange={setDim("flange_width_mm")} />
+            <FormRow id="flange-depth" label="Flange depth" value={disp(config.flange_depth_mm)} unit={units} onChange={setDim("flange_depth_mm")} />
+            <FormRow id="web-width" label="Web width" value={disp(config.web_width_mm)} unit={units} onChange={setDim("web_width_mm")} />
+            <FormRow id="total-depth" label="Total depth" value={disp(config.total_depth_mm)} unit={units} onChange={setDim("total_depth_mm")} />
+            <FormRow id="length" label="Length" value={disp(config.length_mm)} unit={units} onChange={setDim("length_mm")} />
+          </>
+        )}
 
         <SelectRow
           id="formwork"
@@ -186,7 +300,7 @@ export default function LeftPanel({ config, onChange }: LeftPanelProps) {
           onChange={(v) => onChange("soffit", v)}
         />
 
-        <CrossSectionPreview config={config} />
+        <CrossSectionPreview config={config} units={units} outline={importedOutline ?? undefined} />
 
         {/* MIX section */}
         <SectionHeader title="Mix" icon="◇" />

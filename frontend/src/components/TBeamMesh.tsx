@@ -28,6 +28,9 @@ interface TBeamMeshProps {
   clippingPlane?: THREE.Plane | null;
   clipZ?: number | null;
   onProbe?: (result: ProbeResult | null, event?: { offsetX: number; offsetY: number }) => void;
+  // hover tooltip feed: temp at cursor, throttled inside
+  onHover?: (temp_c: number, event: { offsetX: number; offsetY: number }) => void;
+  onHoverEnd?: () => void;
 }
 
 export default function TBeamMesh({
@@ -37,6 +40,8 @@ export default function TBeamMesh({
   clippingPlane = null,
   clipZ = null,
   onProbe,
+  onHover,
+  onHoverEnd,
 }: TBeamMeshProps) {
   const { grid, fields } = sim;
   const matRef = useRef<THREE.MeshStandardMaterial>(null);
@@ -98,6 +103,12 @@ export default function TBeamMesh({
       offset: new THREE.Vector3(cx, cy, cz),
     };
   }, [grid, length_m]);
+
+  // crisp edge lines for the glass look, rebuilt with the geometry
+  const edgesGeometry = useMemo(
+    () => new THREE.EdgesGeometry(geometry, 20),
+    [geometry]
+  );
 
   // rebuild heatmap texture when time index changes
   const texture = useMemo(() => {
@@ -164,31 +175,87 @@ export default function TBeamMesh({
     [onProbe, offset, grid, fields, timeIndex]
   );
 
+  // last hover fire time — throttles the raycast-driven tooltip updates
+  const lastHoverRef = useRef(0);
+
+  // hover handler: temp-only tooltip at cursor, time-throttled so orbit stays smooth
+  const handleHoverMove = useCallback(
+    (e: ThreeEvent<PointerEvent>) => {
+      if (!onHover) return;
+      const now = performance.now();
+      if (now - lastHoverRef.current < 40) return;
+      lastHoverRef.current = now;
+
+      const pt = e.point;
+      const local_x = pt.x + offset.x;
+      const local_y = pt.y + offset.y;
+      const i = Math.floor(local_x / grid.dx_m);
+      const j = Math.floor(local_y / grid.dx_m);
+      if (i < 0 || i >= grid.nx || j < 0 || j >= grid.ny) return;
+      if (grid.mask[j][i] === 0) return;
+
+      const ti = Math.max(
+        0,
+        Math.min(timeIndex, fields.temperature_c.length - 1)
+      );
+      const nativeEvt = e.nativeEvent as PointerEvent;
+      onHover(
+        fields.temperature_c[ti][j][i],
+        { offsetX: nativeEvt.offsetX, offsetY: nativeEvt.offsetY }
+      );
+    },
+    [onHover, offset, grid, fields, timeIndex]
+  );
+
   return (
     <group>
-      {/* main extruded beam */}
-      <mesh geometry={geometry} onClick={handleClick}>
+      {/* main extruded beam — glassy: heat colours show, far side faintly visible */}
+      <mesh
+        geometry={geometry}
+        onClick={handleClick}
+        onPointerMove={handleHoverMove}
+        onPointerOut={onHoverEnd}
+      >
         <meshStandardMaterial
           ref={matRef}
           map={texture}
           side={THREE.DoubleSide}
-          roughness={0.6}
+          transparent
+          opacity={0.62}
+          depthWrite={false}
+          roughness={0.35}
           metalness={0.05}
           clippingPlanes={clippingPlanes}
           clipShadows
         />
       </mesh>
 
-      {/* cut plane cap: renders solid cross-section heatmap at the slice location */}
+      {/* crisp CAD-style outline on the beam edges, clipped with the body */}
+      <lineSegments geometry={edgesGeometry}>
+        <lineBasicMaterial
+          color="#9aa4b2"
+          transparent
+          opacity={0.7}
+          clippingPlanes={clippingPlanes}
+        />
+      </lineSegments>
+
+      {/* cut plane cap: near-solid cross-section so the slice stays readable
+          through the translucent walls */}
       {clipZ !== null && clipZ !== undefined && (
         <mesh
           geometry={capGeometry}
           position={[0, 0, clipZ]}
           onClick={handleClick}
+          onPointerMove={handleHoverMove}
+          onPointerOut={onHoverEnd}
         >
           <meshStandardMaterial
             map={texture}
             side={THREE.DoubleSide}
+            transparent
+            opacity={0.95}
+            depthWrite
             roughness={0.6}
             metalness={0.05}
           />

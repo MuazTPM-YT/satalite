@@ -11,7 +11,7 @@ export default function ChecksPanel({ flags }: ChecksPanelProps) {
   const { def_risk, cracking, placement, evaporation, strip_ready } = flags;
 
   return (
-    <aside className="w-[280px] shrink-0 bg-bg-surface border-l border-border-default overflow-y-auto">
+    <aside className="w-[280px] shrink-0 bg-bg-surface overflow-y-auto">
       <div className="p-3">
         {/* header */}
         <div className="flex items-center justify-between mb-3">

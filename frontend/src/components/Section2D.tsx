@@ -5,6 +5,8 @@ import { useMemo } from "react";
 import type { ThermalSimulationResult } from "@/lib/mockThermalField";
 import { tempToColor } from "@/lib/thermalColormap";
 import ThermalLegend from "@/components/ThermalLegend";
+import { camClass } from "@/components/Viewer";
+import { fmtLen, type LengthUnit } from "@/lib/units";
 
 // same temp scale as 3D viewer so colours line up across views
 const TEMP_MIN_C = 25;
@@ -21,6 +23,8 @@ interface Section2DProps {
   timeIndex: number;
   // element length from shared LeftPanel config state
   length_m: number;
+  // dimension display unit
+  units: LengthUnit;
 }
 
 // clamp temp into contour band index
@@ -210,21 +214,28 @@ function HistoryChart({
   );
 }
 
-export default function Section2D({ sim, timeIndex, length_m }: Section2DProps) {
+export default function Section2D({ sim, timeIndex, length_m, units }: Section2DProps) {
   const { grid, fields } = sim;
   const current_h = sim.times_h[timeIndex] ?? 0;
 
   // dims derived from outline — same source of truth as 3D mesh, no second copy
+  // dims from outline. T-specific values only when outline really is a T:
+  // web bottom edge inset from full width + exactly 3 distinct y levels
   const dims = useMemo(() => {
     const pts = grid.outline;
     const xs = pts.map((p) => p[0]);
     const ys = [...new Set(pts.map((p) => p[1]))].sort((a, b) => a - b);
     const flangeWidth = Math.max(...xs);
-    const totalDepth = Math.max(...pts.map((p) => p[1]));
+    const totalDepth = Math.max(...ys);
     const webBottom = pts.filter((p) => p[1] === 0);
-    const webWidth = webBottom[1][0] - webBottom[0][0];
-    const flangeDepth = totalDepth - ys[1];
-    return { flangeWidth, totalDepth, webWidth, flangeDepth, webLeft: webBottom[0][0] };
+    const isT =
+      ys.length === 3 &&
+      webBottom.length === 2 &&
+      webBottom[0][0] > Math.min(...xs) &&
+      webBottom[1][0] < flangeWidth;
+    const webWidth = isT ? webBottom[1][0] - webBottom[0][0] : 0;
+    const flangeDepth = isT ? totalDepth - ys[1] : 0;
+    return { flangeWidth, totalDepth, webWidth, flangeDepth, webLeft: isT ? webBottom[0][0] : 0, isT };
   }, [grid]);
 
   // contour-band geometry: one path per band + boundary lines between bands
@@ -288,11 +299,20 @@ export default function Section2D({ sim, timeIndex, length_m }: Section2DProps) 
     <div className="flex-1 flex flex-col min-h-0">
       {/* header row */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-border-default">
-        <div className="px-3 py-1 text-xs rounded-md bg-bg-primary border border-border-default text-text-primary font-medium">
+        <div className="flex items-center gap-0.5 bg-bg-primary rounded-sm p-0.5">
+          <button
+            aria-pressed={true}
+            title="Section view"
+            className={camClass(true)}
+          >
+            ◧ Front
+          </button>
+        </div>
+        <div className="px-3 py-1 text-xs rounded-sm bg-bg-primary border border-border-default text-text-primary font-medium">
           Section A-A
         </div>
         <span className="text-xs text-text-secondary">
-          mid-span (z = {Math.round((length_m / 2) * 1000)} mm) ·{" "}
+          mid-span (z = {fmtLen(length_m / 2, units)} {units}) ·{" "}
           <span className="font-semibold text-text-primary">{current_h.toFixed(1)} h</span>
         </span>
         <div className="flex-1" />
@@ -325,20 +345,32 @@ export default function Section2D({ sim, timeIndex, length_m }: Section2DProps) 
               <line x1={MARGIN.left} y1={shapeTop} x2={MARGIN.left} y2={shapeTop - 34} />
               <line x1={MARGIN.left + shapeW} y1={shapeTop} x2={MARGIN.left + shapeW} y2={shapeTop - 34} />
               <line x1={MARGIN.left} y1={shapeTop} x2={MARGIN.left - 80} y2={shapeTop} />
-              <line x1={MARGIN.left} y1={flangeBottomY} x2={MARGIN.left - 46} y2={flangeBottomY} />
+              {dims.isT && (
+                <line x1={MARGIN.left} y1={flangeBottomY} x2={MARGIN.left - 46} y2={flangeBottomY} />
+              )}
               <line x1={MARGIN.left} y1={shapeBottom} x2={MARGIN.left - 80} y2={shapeBottom} />
-              <line x1={MARGIN.left + dims.webLeft * SCALE} y1={shapeBottom} x2={MARGIN.left + dims.webLeft * SCALE} y2={shapeBottom + 26} />
-              <line x1={MARGIN.left + (dims.webLeft + dims.webWidth) * SCALE} y1={shapeBottom} x2={MARGIN.left + (dims.webLeft + dims.webWidth) * SCALE} y2={shapeBottom + 26} />
+              {dims.isT && (
+                <>
+                  <line x1={MARGIN.left + dims.webLeft * SCALE} y1={shapeBottom} x2={MARGIN.left + dims.webLeft * SCALE} y2={shapeBottom + 26} />
+                  <line x1={MARGIN.left + (dims.webLeft + dims.webWidth) * SCALE} y1={shapeBottom} x2={MARGIN.left + (dims.webLeft + dims.webWidth) * SCALE} y2={shapeBottom + 26} />
+                </>
+              )}
             </g>
 
-            {/* dimension annotations */}
-            <DimH x1={MARGIN.left} x2={MARGIN.left + shapeW} y={shapeTop - 28} label={`${Math.round(dims.flangeWidth * 1000)}`} />
-            <DimV y1={shapeTop} y2={flangeBottomY} x={MARGIN.left - 38} label={`${Math.round(dims.flangeDepth * 1000)}`} />
-            <DimV y1={shapeTop} y2={shapeBottom} x={MARGIN.left - 72} label={`${Math.round(dims.totalDepth * 1000)}`} />
-            <DimH x1={MARGIN.left + dims.webLeft * SCALE} x2={MARGIN.left + (dims.webLeft + dims.webWidth) * SCALE} y={shapeBottom + 20} label={`${Math.round(dims.webWidth * 1000)}`} />
+            {/* dimension annotations — overall dims always, T dims only for real T */}
+            <DimH x1={MARGIN.left} x2={MARGIN.left + shapeW} y={shapeTop - 28} label={fmtLen(dims.flangeWidth, units)} />
+            {dims.isT && (
+              <DimV y1={shapeTop} y2={flangeBottomY} x={MARGIN.left - 38} label={fmtLen(dims.flangeDepth, units)} />
+            )}
+            <DimV y1={shapeTop} y2={shapeBottom} x={MARGIN.left - 72} label={fmtLen(dims.totalDepth, units)} />
+            {dims.isT && (
+              <DimH x1={MARGIN.left + dims.webLeft * SCALE} x2={MARGIN.left + (dims.webLeft + dims.webWidth) * SCALE} y={shapeBottom + 20} label={fmtLen(dims.webWidth, units)} />
+            )}
 
             {/* web centreline marker */}
-            <line x1={webMidX} y1={shapeBottom + 8} x2={webMidX} y2={shapeBottom - 8} stroke="rgba(240,246,252,0.4)" strokeDasharray="2 2" />
+            {dims.isT && (
+              <line x1={webMidX} y1={shapeBottom + 8} x2={webMidX} y2={shapeBottom - 8} stroke="rgba(240,246,252,0.4)" strokeDasharray="2 2" />
+            )}
           </svg>
         </div>
 

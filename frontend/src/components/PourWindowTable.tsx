@@ -18,7 +18,7 @@ function statusIcon(pass: boolean | undefined, status?: "pass" | "warn" | "fail"
 
 export default function PourWindowTable({ candidates }: PourWindowTableProps) {
   return (
-    <div className="border-t border-border-default bg-bg-surface">
+    <div className="bg-bg-surface">
       <div className="p-3">
           {/* header */}
           <div className="flex items-center gap-1.5 mb-2">
