@@ -1,9 +1,11 @@
 """TASK 5 - what does a coarser mesh actually cost, in degrees and in seconds?
 
-Golden test 5 measures the gap between 10 mm and 5 mm on its own element: 0.0978 C
-against a 0.1 C assertion, 2.2 percent of headroom. The 0.057 C this file used to quote
-predates the centroid probe fix. Nobody has measured 15 mm or 20 mm, and the ensemble
-already runs at 20 mm without that number ever being checked.
+ANSWERED, and the answer changed once the q attenuation landed. It used to be dear:
+20 mm cost 0.335 C against the 5 mm reference and golden test 5 sat at 0.0978 C against
+a 0.1 C assertion, 2 percent of headroom. The missing q*h*dx/(2k) term was carrying all
+of it. Now 10 mm costs -0.004 C, 15 mm -0.013 C and 20 mm +0.031 C, and golden 5 reads
+0.000368 C. The ensemble's 20 mm mesh is defensible on these numbers; before, it was not
+measured at all.
 
 Run:  cd backend && .venv/bin/python -m scripts.grid_cost
 

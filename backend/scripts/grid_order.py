@@ -1,9 +1,22 @@
 """TASK 2 - which part of the surface treatment drags the scheme down to first order?
 
-The stored dx sweep gives p = log2(0.2142 / 0.1210) = 0.82 on peak core temperature.
-That is first order, not second. The adiabatic case cannot discriminate: with every face
-sealed the field stays spatially uniform and exact at every dx, so there is no dx error
-to measure at all. Arm D runs it anyway, as a control that shows the degeneracy.
+ANSWERED: the external face flux was going into the cell unattenuated. face_h_discrete
+put the surface film in series with the half cell of concrete between face and centre;
+the same factor applies to q and was not applied, leaving a q*h*dx/(2k) residual that is
+first order in dx. This sweep is what identified it - baseline p = 0.82, but the q-off
+arm (B) and the h-off arm (C) were each mesh independent, and the dose-response arms
+fell from 1.56 to 1.31 as a_solar doubled. The error needed BOTH terms.
+
+Post-fix the arms read differently and it is worth saying why. A, B, C, E and F all
+report UNDEFINED now, carrying the same residual within a few percent of each other
+whatever q is doing: d(5-10) = +4.7e-3, d(10-20) = -3.4e-2. That is the dt policy, not
+the mesh. dt = SAFETY x the stability limit scales as dx**2, so the 20 mm point runs at
+dt = 38 s and its temporal truncation dominates what little dx error survives. Arm A
+joined the collapsed group; it did not become second order.
+
+The adiabatic case cannot discriminate: with every face sealed the field stays spatially
+uniform and exact at every dx, so there is no dx error to measure at all. Arm D runs it
+anyway, as a control that shows the degeneracy, and still returns p = 2.005.
 
 Run:  cd backend && .venv/bin/python -m scripts.grid_order
 
