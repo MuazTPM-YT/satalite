@@ -142,11 +142,15 @@ def test_pour_windows_leaves_the_ensemble_off_unless_asked(client: TestClient) -
     assert len(resp.json()["candidates"]) == 2
 
 
-# a missing precompute is a 503 that says how to build it, never a fabricated payload
+# a missing season degrades to available=false, never a 503 and never a fake payload
 def test_season_analysis_missing_says_how_to_build_it(client: TestClient) -> None:
     resp = client.get("/api/season-analysis")
-    assert resp.status_code == 503
-    assert "fetch_season" in resp.json()["detail"]
+    # degrades, never 503: a dead endpoint in a live demo reads as a broken backend.
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["available"] is False
+    assert body["n_days"] is None
+    assert "fetch_season" in body["detail"]
 
 
 def test_season_analysis_serves_the_precomputed_file(client: TestClient) -> None:
@@ -167,6 +171,7 @@ def test_season_analysis_serves_the_precomputed_file(client: TestClient) -> None
     resp = client.get("/api/season-analysis")
     assert resp.status_code == 200
     assert resp.json()["n_days"] == 2
+    assert resp.json()["available"] is True
 
 
 def _demo_ensemble_payload() -> dict[str, object]:

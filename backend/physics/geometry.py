@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from physics import FloatArray
+from physics import FloatArray, IntArray
 
 SHAPES = ("slab", "wall", "rect_column", "circular_column", "beam", "t_section", "l_section")
 
@@ -47,6 +47,54 @@ class Section:
     @property
     def area_m2(self) -> float:
         return float(self.mask.sum()) * self.dx_m**2
+
+    # mask-weighted centroid, metres. NOT the bounding-box centre: a T or an L carries
+    # its area off to one side and the box centre can miss the concrete entirely.
+    @property
+    def centroid_m(self) -> tuple[float, float]:
+        rows, cols = np.nonzero(self.mask)
+        return (
+            float((cols.mean() + 0.5) * self.dx_m),
+            float((rows.mean() + 0.5) * self.dx_m),
+        )
+
+    # bilinear stencil for a physical point: rows, cols and weights that sum to 1.
+    # Falls back to the nearest solid cell when the 2x2 would straddle a hole or the
+    # outside, so a probe can never read a cell that holds no concrete.
+    def probe_stencil(self, x_m: float, y_m: float) -> tuple[IntArray, IntArray, FloatArray]:
+        ny, nx = self.mask.shape
+        fx = min(max(x_m / self.dx_m - 0.5, 0.0), nx - 1.0)
+        fy = min(max(y_m / self.dx_m - 0.5, 0.0), ny - 1.0)
+        j0, i0 = int(np.floor(fx)), int(np.floor(fy))
+        j1, i1 = min(j0 + 1, nx - 1), min(i0 + 1, ny - 1)
+        tx, ty = fx - j0, fy - i0
+
+        rows = np.array([i0, i0, i1, i1], dtype=np.int64)
+        cols = np.array([j0, j1, j0, j1], dtype=np.int64)
+        weights = np.array(
+            [(1.0 - tx) * (1.0 - ty), tx * (1.0 - ty), (1.0 - tx) * ty, tx * ty],
+            dtype=np.float64,
+        )
+        if bool(self.mask[rows, cols].all()):
+            return rows, cols, weights
+
+        solid_rows, solid_cols = np.nonzero(self.mask)
+        k = int(np.argmin((solid_cols - fx) ** 2 + (solid_rows - fy) ** 2))
+        return (
+            np.array([solid_rows[k]], dtype=np.int64),
+            np.array([solid_cols[k]], dtype=np.int64),
+            np.array([1.0], dtype=np.float64),
+        )
+
+    # where a stencil actually samples, metres. exact for bilinear, honest for the
+    # nearest-cell fallback - the metadata must not claim a point that was not read.
+    def stencil_xy_m(
+        self, rows: IntArray, cols: IntArray, weights: FloatArray
+    ) -> tuple[float, float]:
+        return (
+            float(np.dot(cols + 0.5, weights) * self.dx_m),
+            float(np.dot(rows + 0.5, weights) * self.dx_m),
+        )
 
 
 # shape name plus mm dimensions in, closed outline polygon in metres out.

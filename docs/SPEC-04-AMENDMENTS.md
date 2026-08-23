@@ -126,18 +126,22 @@ for age at loading.
 That's a **narrower and more defensible** gap than what I originally wrote — and stating
 the correct mechanism will read far better than repeating a forum misconception.
 
-### We can also compute a modulus estimate
+### We can also compute a modulus estimate — ❌ **withdrawn, see SPEC-05 [34]**
 
 fib Model Code 2010:
 ```
 f_c(t)   = f_c,28 · exp[ s·(1 − √(28/t)) ]              t in days
-E_28     = 21.5 GPa · α · (f_c,28 / 10 MPa)^0.3         α = aggregate stiffness factor
+E_28     = 21.5 GPa · α · (f_c,28 / 10 MPa)^(1/3)      α = aggregate stiffness factor
 ```
+🔴 Exponent is **1/3**, not the `0.3` this section originally printed. 4.7% at 40 MPa.
+
 `s` depends on f_c,28 and cement type; `α` = 1.0 for quartz aggregates (and the study
 found no distinction needed between quartz and limestone for this correlation).
 
-So we **can** display an estimated E(t) alongside strength. Cheap, and it directly answers
-the objection.
+We **could** display an estimated E(t) alongside strength. **We do not, and the stub has
+been deleted.** It crosses the "not structural analysis" boundary, and the risk it appears
+to answer is creep — which this same amendment establishes we do not model. Full reasoning
+in SPEC-05 [34].
 
 ---
 
@@ -219,7 +223,7 @@ differential is 20 °C or 19.4 °C (35 °F), and the ACI 347 strength fraction f
 | MASTER §4.4 | E defaults to 33,500 J/mol, calibratable, MC range 33,000–42,000 |
 | MASTER §4.9 | Δt = 10 s. Runtime assert against `min(Fo)` over node types |
 | MASTER §5 | Max-temperature threshold becomes SCM-dependent, not flat |
-| MASTER §10 F1 | **Rewrite.** The gap is creep, not modulus. Add estimated E(t) display |
+| MASTER §10 F1 | **Rewrite.** The gap is creep, not modulus. E(t) display cut — SPEC-05 [34] |
 | SPEC-01 | K1 and K4 now answered — Muaz is unblocked on `conduction.py` |
 | SPEC-02 | R1 done. R2 reduced to one sign check. R7 reframed |
 | SPEC-03 | K1, K4 delivered — Krish verifies rather than derives |

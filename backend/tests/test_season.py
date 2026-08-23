@@ -90,6 +90,41 @@ def test_fetch_season_resumes_without_refetching(monkeypatch: pytest.MonkeyPatch
     assert json.loads(marker.read_text())["complete"] is True
 
 
+# a strided sample must fetch exactly the days asked for and nothing between them.
+# fetching the gaps is the expensive mistake this argument exists to prevent.
+def test_fetch_season_days_argument_fetches_only_the_stride(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = get_settings()
+    calls: list[str] = []
+
+    def fake_fetch(params: dict[str, Any], _settings: Any = None) -> dict[str, Any]:
+        calls.append(params["start_date"])
+        path = season.cache_path(settings.cache_dir, season.CACHE_NAME, params)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"activity_id": "fake", "result": {}}))
+        return {"activity_id": "fake"}
+
+    monkeypatch.setattr(season, "fetch_heatmap", fake_fetch)
+    monkeypatch.setattr(season, "check_credits", lambda *_a, **_k: 2_000_000.0)
+
+    stride = ["2025-07-01", "2025-07-04", "2025-07-07", "2025-07-10"]
+    season.fetch_season(PHOENIX, "2025-07-01", "2025-07-10", days=stride)
+    assert calls == stride
+
+    # rerunning is free, and season_records must resolve the same list
+    calls.clear()
+    season.fetch_season(PHOENIX, "2025-07-01", "2025-07-10", days=stride)
+    assert calls == []
+    assert season._days_in_range("2025-07-01", "2025-07-10", stride) == stride
+
+
+# a day outside the range would be bought and then never read back. crash instead.
+def test_days_outside_the_range_are_rejected() -> None:
+    with pytest.raises(ValueError, match="outside"):
+        season._days_in_range("2025-07-01", "2025-07-10", ["2025-07-01", "2025-08-15"])
+
+
 def test_low_balance_stops_before_spending(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(season, "check_credits", lambda *_a, **_k: 99_000.0)
     monkeypatch.setattr(

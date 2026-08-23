@@ -10,7 +10,6 @@ from physics.equations import strength
     ("call", "match"),
     [
         (lambda: strength.strength_mpa(24.0, 40.0, 20.0, 1.0), "not researched"),
-        (lambda: strength.elastic_modulus_gpa(35.0), "alpha_e"),
         (lambda: strength.strength_fraction(24.0, 40.0, 20.0, 1.0), "calibration"),
     ],
 )

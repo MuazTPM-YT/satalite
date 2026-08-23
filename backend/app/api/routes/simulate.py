@@ -1,4 +1,5 @@
 import logging
+from dataclasses import replace
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -18,7 +19,6 @@ from app.services.simulate import (
     to_mix,
 )
 from physics.season_analysis import PLACEMENT_ABOVE_AMBIENT_C
-from physics.types import Element
 
 log = logging.getLogger(__name__)
 
@@ -61,13 +61,9 @@ async def pour_windows(request: PourWindowRequest) -> PourWindowResult:
     for offset_h in request.candidate_offsets_h:
         shifted = to_ambient(request.ambient, offset_h)
         # placed at whatever the air is doing at that hour: the whole point of the sweep
-        placed = Element(
-            shape=element.shape,
-            dims_mm=element.dims_mm,
-            dx_m=element.dx_m,
+        placed = replace(
+            element,
             placement_temp_c=float(shifted.air_temp_c[0]) + PLACEMENT_ABOVE_AMBIENT_C,
-            formwork=element.formwork,
-            on_ground=element.on_ground,
         )
         _, payload = run_deterministic(
             placed, mix, shifted, request.duration_hours, request.mix.grade

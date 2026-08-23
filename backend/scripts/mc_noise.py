@@ -6,11 +6,17 @@ movement is pure Monte Carlo noise, because the physics did not change.
 
 Run:  cd backend && .venv/bin/python -m scripts.mc_noise
 
-Costs about 17 minutes. Reports only - changes nothing, and does not touch the default
-sample count.
+Runs BOTH samplers so the "Sobol beat pseudorandom" claim has a before and an after.
+The pcg64 arm is the same marginals fed by an iid uniform point set, NOT a byte-for-byte
+replay of the pre-60853fa rng calls - identical transforms, only the point set differs,
+which is the controlled comparison.
+
+Costs about 35 minutes for both arms. Reports only - changes nothing, and does not touch
+the default sample count.
 """
 
 import time
+from dataclasses import replace
 
 import numpy as np
 
@@ -26,6 +32,7 @@ from physics.season_analysis import (
 )
 from physics.types import Ambient, Element, Mix
 from physics.uncertainty import run_ensemble
+from scripts import _results
 
 # one fixed hot Phoenix day. STATED, not measured: no season is in the cache, so the
 # day is written down here rather than pulled, and every run uses this same one.
@@ -38,25 +45,22 @@ PLACEMENT_HOUR = 14
 SAMPLE_COUNTS = (64, 128, 300, 600)
 SEEDS = (0, 1, 2, 3, 4)
 CRITERION_C = 0.1
+SAMPLERS = ("sobol", "pcg64")
 
 
 # the production case: standard element, standard mix, ensemble mesh, forecast spread on.
 def case() -> tuple[Element, Mix, Ambient]:
     ambient = build_ambient(HOT_DAY, LAT_DEG, PLACEMENT_HOUR, hours=SIM_HOURS)
-    placed = Element(
-        shape=STANDARD_ELEMENT.shape,
-        dims_mm=STANDARD_ELEMENT.dims_mm,
-        dx_m=STANDARD_ELEMENT.dx_m,
+    placed = replace(
+        STANDARD_ELEMENT,
         placement_temp_c=float(ambient.air_temp_c[0]) + PLACEMENT_ABOVE_AMBIENT_C,
-        formwork=STANDARD_ELEMENT.formwork,
-        on_ground=STANDARD_ELEMENT.on_ground,
     )
     return placed, standard_mix(), ambient
 
 
-# p05 and p95 of peak core temperature for one (n, seed). degC.
+# p05 and p95 of peak core temperature for one (n, seed, sampler). degC.
 def band_edges_c(
-    element: Element, mix: Mix, ambient: Ambient, n: int, seed: int
+    element: Element, mix: Mix, ambient: Ambient, n: int, seed: int, sampler: str
 ) -> tuple[float, float]:
     ensemble = run_ensemble(
         element,
@@ -67,6 +71,7 @@ def band_edges_c(
         hours=SIM_HOURS,
         grade=STANDARD_GRADE,
         forecast_sigma_c=provisional_error(),
+        sampler=sampler,
     )
     p05, p95 = np.percentile(ensemble.peak_core_temp_c(), [5.0, 95.0])
     return float(p05), float(p95)
@@ -78,28 +83,68 @@ def main() -> None:
           f"placement {element.placement_temp_c:.1f} C, dx 0.02 m, dt 30 s, {SIM_HOURS:.0f} h")
     print(f"seeds: {list(SEEDS)}\n")
 
-    header = f"{'N':>5} {'p05 mean':>9} {'p05 sd':>7} {'p05 rng':>8} " \
+    header = f"{'sampler':>8} {'N':>5} {'p05 mean':>9} {'p05 sd':>7} {'p05 rng':>8} " \
              f"{'p95 mean':>9} {'p95 sd':>7} {'p95 rng':>8} {'width':>7} {'wall s':>7}"
     print(header)
     print("-" * len(header))
 
-    for n in SAMPLE_COUNTS:
-        started = time.perf_counter()
-        edges = np.asarray(
-            [band_edges_c(element, mix, ambient, n, seed) for seed in SEEDS],
-            dtype=np.float64,
-        )
-        elapsed_s = time.perf_counter() - started
-        p05, p95 = edges[:, 0], edges[:, 1]
-        print(
-            f"{n:>5} {p05.mean():>9.3f} {p05.std(ddof=1):>7.3f} {np.ptp(p05):>8.3f} "
-            f"{p95.mean():>9.3f} {p95.std(ddof=1):>7.3f} {np.ptp(p95):>8.3f} "
-            f"{(p95 - p05).mean():>7.3f} {elapsed_s:>7.1f}"
-        )
+    table: dict[str, dict[str, dict[str, float]]] = {}
+    for sampler in SAMPLERS:
+        table[sampler] = {}
+        for n in SAMPLE_COUNTS:
+            started = time.perf_counter()
+            edges = np.asarray(
+                [band_edges_c(element, mix, ambient, n, seed, sampler) for seed in SEEDS],
+                dtype=np.float64,
+            )
+            elapsed_s = time.perf_counter() - started
+            p05, p95 = edges[:, 0], edges[:, 1]
+            row = {
+                "p05_mean_c": float(p05.mean()),
+                "p05_sd_c": float(p05.std(ddof=1)),
+                "p05_range_c": float(np.ptp(p05)),
+                "p95_mean_c": float(p95.mean()),
+                "p95_sd_c": float(p95.std(ddof=1)),
+                "p95_range_c": float(np.ptp(p95)),
+                "band_width_c": float((p95 - p05).mean()),
+                "wall_s": elapsed_s,
+                "per_seed_p05_c": p05.tolist(),
+                "per_seed_p95_c": p95.tolist(),
+            }
+            table[sampler][str(n)] = row
+            print(
+                f"{sampler:>8} {n:>5} {row['p05_mean_c']:>9.3f} {row['p05_sd_c']:>7.3f} "
+                f"{row['p05_range_c']:>8.3f} {row['p95_mean_c']:>9.3f} "
+                f"{row['p95_sd_c']:>7.3f} {row['p95_range_c']:>8.3f} "
+                f"{row['band_width_c']:>7.3f} {elapsed_s:>7.1f}"
+            )
+        print()
+
+    # smallest N where BOTH edges are quiet enough. None when no tested N gets there.
+    crossings = {}
+    for sampler, rows in table.items():
+        passing = [
+            int(n) for n in SAMPLE_COUNTS
+            if max(rows[str(n)]["p05_sd_c"], rows[str(n)]["p95_sd_c"]) < CRITERION_C
+        ]
+        crossings[sampler] = min(passing) if passing else None
+        print(f"{sampler}: both edge sd below {CRITERION_C} C from N = {crossings[sampler]}")
 
     print(f"\ncriterion: seed-to-seed sd of both band edges below {CRITERION_C} C.")
     print("sd from 5 seeds is itself uncertain by roughly +/-30%, so treat 0.07-0.15 C")
     print("as too close to call rather than a pass or a fail.")
+
+    path = _results.write("mc-noise", {
+        "case": {
+            "date": HOT_DAY.date, "placement_hour": PLACEMENT_HOUR, "hours": SIM_HOURS,
+            "lat_deg": LAT_DEG, "placement_temp_c": element.placement_temp_c,
+            "dx_m": 0.02, "dt_s": 30.0, "seeds": list(SEEDS),
+            "criterion_c": CRITERION_C,
+        },
+        "samplers": table,
+        "n_at_which_both_edges_quiet": crossings,
+    })
+    print(f"\nwrote {path}")
 
 
 # non-fork start method re-imports this module in every worker. without the guard the

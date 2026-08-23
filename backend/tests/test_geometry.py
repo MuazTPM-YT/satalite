@@ -84,3 +84,44 @@ def test_t_section_soffits_are_formed() -> None:
 def test_unknown_shape_raises() -> None:
     with pytest.raises(ValueError, match="unknown shape"):
         g.rasterize("trapezoid", {"width": 1.0}, dx_m=0.01)
+
+
+# the core probe is a LOCATION. the old argmax-of-distance-transform cell walked up to
+# 7.5 mm in y across dx = 5..20 mm and snapped back at 20 mm because ny was odd there.
+# 3000 x 300 mm divides exactly at all four spacings, so the answer must be bit-identical.
+def test_centroid_probe_is_identical_at_every_spacing() -> None:
+    points = set()
+    for dx_m in (0.005, 0.010, 0.015, 0.020):
+        s = g.rasterize("slab", {"thickness": 300.0, "width": 3000.0}, dx_m=dx_m)
+        points.add(s.stencil_xy_m(*s.probe_stencil(*s.centroid_m)))
+    assert points == {(1.5, 0.15)}
+
+
+# where dx does not divide the dimension the rasterised block really is a different
+# element - a 700 mm beam at 15 mm cells is 705 mm tall. The probe still lands on that
+# block's centroid, so the residual is quantisation of the SHAPE, bounded by dx/2.
+def test_probe_residual_is_only_rasterisation_quantisation() -> None:
+    for shape, dims in (
+        ("beam", {"width": 300.0, "height": 700.0}),
+        ("rect_column", {"width": 400.0, "height": 600.0}),
+    ):
+        for dx_m in (0.005, 0.010, 0.015, 0.020):
+            s = g.rasterize(shape, dims, dx_m=dx_m)
+            ny, nx = s.mask.shape
+            probe = s.stencil_xy_m(*s.probe_stencil(*s.centroid_m))
+            assert probe == pytest.approx((nx * dx_m / 2.0, ny * dx_m / 2.0))
+            nominal = (dims["width"] / 2000.0, dims["height"] / 2000.0)
+            assert np.max(np.abs(np.subtract(probe, nominal))) <= dx_m / 2.0
+
+
+# a bilinear sample of a constant field is that constant, whatever the point.
+def test_probe_stencil_weights_sum_to_one_and_stay_on_concrete() -> None:
+    s = g.rasterize("t_section", {
+        "flange_width": 900.0, "flange_thickness": 150.0,
+        "web_width": 300.0, "height": 750.0,
+    }, dx_m=0.01)
+    rows, cols, w = s.probe_stencil(*s.centroid_m)
+    assert w.sum() == pytest.approx(1.0)
+    # a T-section centroid sits low in the web, but the fallback must land on concrete
+    # even for a section whose centroid misses the mask entirely.
+    assert s.mask[rows, cols].all()

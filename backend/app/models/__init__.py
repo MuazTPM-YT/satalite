@@ -48,6 +48,8 @@ class ElementSpec(BaseModel):
     placement_temp_c: float = Field(default=20.0, ge=0.0, le=50.0)
     formwork: str = "plywood_18mm"
     on_ground: bool = False
+    # [x, y] metres from the section origin. None samples the section centroid.
+    probe_xy_m: list[float] | None = Field(default=None, min_length=2, max_length=2)
 
     # reject unknown shapes and formwork here, at the boundary, not with a KeyError
     # three layers down inside the solver.
@@ -151,8 +153,12 @@ class BreachFlags(BaseModel):
 
     def_risk: bool
     def_threshold_c: float
+    # which quantity tripped def_risk: "max_anywhere", "probe", "both" or "none".
+    def_tripped_by: str
     cracking: bool
     cracking_limit_c: float
+    # which quantity tripped cracking: "max_anywhere", "probe", "both" or "none".
+    cracking_tripped_by: str
     evaporation: bool
     evaporation_limit_kg_m2_h: float
     placement: bool
@@ -175,6 +181,12 @@ class SimulationResult(BaseModel):
     peak_core_temp_c: float
     peak_core_time_h: float
     max_core_surface_diff_c: float
+    # the same differential from the hottest point, not the probe. The conservative one.
+    max_anywhere_surface_diff_c: float
+    # hottest point anywhere in the section, not the probe. The DEF-relevant number.
+    max_core_temp_anywhere_c: float
+    # where peak_core_temp_c was actually sampled, [x, y] metres. Run metadata.
+    probe_xy_m: list[float]
     peak_evaporation_kg_m2_h: float
     strip_time_h: float | None
     breaches: BreachFlags
@@ -186,7 +198,9 @@ class PourWindowCandidate(BaseModel):
     offset_h: float
     placement_temp_c: float
     peak_core_temp_c: float
+    max_core_temp_anywhere_c: float
     max_core_surface_diff_c: float
+    max_anywhere_surface_diff_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float | None
     breaches: BreachFlags
@@ -231,16 +245,25 @@ class DemoEnsembleResponse(BaseModel):
 
 
 class SeasonAnalysisResponse(BaseModel):
-    """Precomputed. Served straight from cache, never solved at request time."""
+    """Precomputed. Served straight from cache, never solved at request time.
 
-    n_days: int
-    date_range: list[str]
-    placement_hours: list[int]
-    per_placement_hour: dict[str, dict[str, Any]]
-    delta_14_minus_04: dict[str, float] | None
-    element: dict[str, Any]
-    limits: dict[str, Any]
-    assumptions: dict[str, Any]
+    The artifact is optional: a season costs 4220 credits a day to fetch, so an image
+    can ship without one. available=False says so plainly at 200 - a dead 503 in a live
+    demo reads as a broken backend, which is worse than a feature that is simply absent.
+    """
+
+    available: bool = True
+    detail: str | None = None
+    n_days: int | None = None
+    date_range: list[str] | None = None
+    # how the days were drawn from that range: strided or consecutive, and how densely.
+    sampling: dict[str, Any] | None = None
+    placement_hours: list[int] | None = None
+    per_placement_hour: dict[str, dict[str, Any]] | None = None
+    delta_14_minus_04: dict[str, float] | None = None
+    element: dict[str, Any] | None = None
+    limits: dict[str, Any] | None = None
+    assumptions: dict[str, Any] | None = None
 
 
 class ValidationResponse(BaseModel):

@@ -14,7 +14,7 @@ import multiprocessing as mp
 import warnings
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import numpy as np
@@ -118,6 +118,26 @@ SAMPLED_PARAMETERS = (
 )
 
 
+# the raw point set in the unit hypercube, and nothing else. Every distribution is
+# applied downstream of this, so swapping samplers isolates the point set and changes
+# no marginal - which is what makes "sobol beat pseudorandom" a measurable claim.
+def _unit_points(n: int, seed: int, sampler: str) -> FloatArray:
+    if sampler == "pcg64":
+        return np.asarray(
+            np.random.default_rng(seed).random((n, len(SAMPLED_PARAMETERS))),
+            dtype=np.float64,
+        )
+    if sampler != "sobol":
+        raise ValueError(f"unknown sampler {sampler!r}, expected 'sobol' or 'pcg64'")
+    with warnings.catch_warnings():
+        # we know, and the comment on draw_parameters says what it costs.
+        warnings.filterwarnings("ignore", message=".*balance properties.*")
+        return np.asarray(
+            qmc.Sobol(d=len(SAMPLED_PARAMETERS), scramble=True, seed=seed).random(n),
+            dtype=np.float64,
+        )
+
+
 # sample the uncertain params. seeded, so demo repeats.
 #
 # Scrambled Sobol, not pseudorandom. A low-discrepancy sequence fills the ten-dimensional
@@ -137,12 +157,13 @@ SAMPLED_PARAMETERS = (
 # range alone. Every dimension is drawn in one block here, so the substitution cannot
 # shift any OTHER parameter no matter what it replaces.
 def draw_parameters(
-    base: Mix, n: int, seed: int = 0, tau_h_samples: Sequence[float] | None = None
+    base: Mix,
+    n: int,
+    seed: int = 0,
+    tau_h_samples: Sequence[float] | None = None,
+    sampler: str = "sobol",
 ) -> list[ParamSample]:
-    with warnings.catch_warnings():
-        # we know, and the docstring above says what it costs.
-        warnings.filterwarnings("ignore", message=".*balance properties.*")
-        unit = qmc.Sobol(d=len(SAMPLED_PARAMETERS), scramble=True, seed=seed).random(n)
+    unit = _unit_points(n, seed, sampler)
     # norm.ppf(0) is -inf, and a scrambled draw can legitimately land on the open bound.
     unit = np.clip(unit, 1e-12, 1.0 - 1e-12)
 
@@ -249,13 +270,9 @@ def _activation_energy(ea_j_mol: float) -> Iterator[None]:
 # one ensemble member. top level so multiprocessing can pickle it.
 def _run_one(job: tuple[Element, Mix, Ambient, ParamSample, dict[str, Any]]) -> SolveResult:
     element, base_mix, ambient, sample, options = job
-    perturbed = Element(
-        shape=element.shape,
-        dims_mm=element.dims_mm,
-        dx_m=element.dx_m,
+    perturbed = replace(
+        element,
         placement_temp_c=element.placement_temp_c + sample.placement_temp_offset_c,
-        formwork=element.formwork,
-        on_ground=element.on_ground,
     )
     with _activation_energy(sample.ea_j_mol):
         return solve(
@@ -310,16 +327,10 @@ def run_ensemble(
     processes: int | None = None,
     adiabatic: bool = False,
     tau_h_samples: Sequence[float] | None = None,
+    sampler: str = "sobol",
 ) -> Ensemble:
-    samples = draw_parameters(mix, n, seed, tau_h_samples)
-    coarse = Element(
-        shape=element.shape,
-        dims_mm=element.dims_mm,
-        dx_m=dx_m,
-        placement_temp_c=element.placement_temp_c,
-        formwork=element.formwork,
-        on_ground=element.on_ground,
-    )
+    samples = draw_parameters(mix, n, seed, tau_h_samples, sampler)
+    coarse = replace(element, dx_m=dx_m)
     options = {
         "dt_s": dt_s,
         "hours": hours,

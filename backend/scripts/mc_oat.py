@@ -29,6 +29,7 @@ from physics.season_analysis import (
 )
 from physics.types import Ambient, Element, Mix
 from physics.uncertainty import ParamSample, _run_one, _sigma_on_hours, shift_ambient
+from scripts import _results
 
 # same fixed day as scripts/mc_noise.py, so the two tasks describe the same case.
 HOT_DAY = DayWeather(
@@ -98,27 +99,25 @@ def run(element: Element, mix: Mix, ambient: Ambient, sample: ParamSample) -> tu
         result.peak_core_temp_c,
         result.peak_core_time_h,
         deterministic_strip_time_h(result, STANDARD_GRADE),
+        result.max_core_temp_anywhere_c,
     )
 
 
 def main() -> None:
     ambient = build_ambient(HOT_DAY, LAT_DEG, PLACEMENT_HOUR, hours=SIM_HOURS)
     mix = standard_mix()
-    element = Element(
-        shape=STANDARD_ELEMENT.shape,
-        dims_mm=STANDARD_ELEMENT.dims_mm,
+    element = replace(
+        STANDARD_ELEMENT,
         dx_m=0.02,
         placement_temp_c=float(ambient.air_temp_c[0]) + PLACEMENT_ABOVE_AMBIENT_C,
-        formwork=STANDARD_ELEMENT.formwork,
-        on_ground=STANDARD_ELEMENT.on_ground,
     )
 
     base = nominal(mix)
-    base_peak_c, base_time_h, base_strip_h = run(element, mix, ambient, base)
+    base_peak_c, base_time_h, base_strip_h, base_hot_c = run(element, mix, ambient, base)
     print(f"case: {HOT_DAY.date} placement hour {PLACEMENT_HOUR}, "
           f"placement {element.placement_temp_c:.1f} C, dx 0.02 m, dt 30 s, {SIM_HOURS:.0f} h")
     print(f"nominal: peak core {base_peak_c:.3f} C at {base_time_h:.2f} h, "
-          f"strip {base_strip_h:.2f} h\n")
+          f"hottest anywhere {base_hot_c:.3f} C, strip {base_strip_h:.2f} h\n")
 
     rows = []
     for name, (low, high) in ends(mix).items():
@@ -129,23 +128,68 @@ def main() -> None:
     rows.sort(key=lambda r: -abs(r[4][0] - r[3][0]))
 
     header = f"{'parameter':>24} {'p05':>10} {'p95':>10} {'dPeak C':>9} " \
-             f"{'dPeak t h':>10} {'dStrip h':>9}"
+             f"{'dHottest C':>11} {'dPeak t h':>10} {'dStrip h':>9} {'share %':>8}"
     print(header)
     print("-" * len(header))
+
+    # share of the summed absolute peak-core swing. NOT a variance decomposition: OAT
+    # swings do not add up to the band, so this ranks contributors, it does not partition.
+    total_swing_c = sum(abs(hi[0] - lo[0]) for _, _, _, lo, hi in rows)
+    table = {}
     for name, low, high, lo, hi in rows:
+        share_pct = 100.0 * abs(hi[0] - lo[0]) / total_swing_c
+        table[name] = {
+            "p05": low, "p95": high,
+            "d_peak_core_c": hi[0] - lo[0],
+            "d_max_core_anywhere_c": hi[3] - lo[3],
+            "d_peak_time_h": hi[1] - lo[1],
+            "d_strip_time_h": hi[2] - lo[2],
+            "share_of_summed_swing_pct": share_pct,
+            "low_end": {"peak_core_c": lo[0], "peak_time_h": lo[1], "strip_h": lo[2]},
+            "high_end": {"peak_core_c": hi[0], "peak_time_h": hi[1], "strip_h": hi[2]},
+        }
         print(
             f"{name:>24} {low:>10.4g} {high:>10.4g} {hi[0] - lo[0]:>9.3f} "
-            f"{hi[1] - lo[1]:>10.2f} {hi[2] - lo[2]:>9.2f}"
+            f"{hi[3] - lo[3]:>11.3f} {hi[1] - lo[1]:>10.2f} {hi[2] - lo[2]:>9.2f} "
+            f"{share_pct:>8.1f}"
         )
 
+    top_name = rows[0][0]
+    top_share = table[top_name]["share_of_summed_swing_pct"]
     small = [name for name, _, _, lo, hi in rows if abs(hi[0] - lo[0]) < SMALL_SWING_C]
-    print(f"\nswing below {SMALL_SWING_C} C in peak core: {small or 'none'}")
+    print(f"\nlargest single contributor: {top_name}, "
+          f"{abs(rows[0][4][0] - rows[0][3][0]):.3f} C swing, {top_share:.1f}% of the summed swing")
+    print(f"swing below {SMALL_SWING_C} C in peak core: {small or 'none'}")
     print(
         "\nCAVEAT: one-at-a-time misses interactions. Arrhenius rate depends on\n"
         "temperature and hydration heat feeds back into temperature, so T_placement,\n"
         "E_a, tau and H_cem all push the same feedback loop and their joint effect is\n"
         "larger than the sum of these columns."
     )
+
+    path = _results.write("mc-oat", {
+        "case": {
+            "date": HOT_DAY.date, "placement_hour": PLACEMENT_HOUR, "hours": SIM_HOURS,
+            "lat_deg": LAT_DEG, "placement_temp_c": element.placement_temp_c,
+            "dx_m": 0.02, "dt_s": OPTIONS["dt_s"], "z95": Z95,
+            "small_swing_c": SMALL_SWING_C,
+        },
+        "nominal": {
+            "peak_core_temp_c": base_peak_c,
+            "peak_core_time_h": base_time_h,
+            "strip_time_h": base_strip_h,
+        },
+        "ranked_by_peak_core_swing": list(table),
+        "parameters": table,
+        "largest_contributor": {"name": top_name, "share_pct": top_share},
+        "below_small_swing_c": small,
+        "caveat": (
+            "one-at-a-time misses interactions; Arrhenius rate depends on T and "
+            "hydration heat feeds back into T, so the feedback-loop parameters "
+            "(placement_temp_offset_c, ea_j_mol, tau_h, h_cem_j_per_g) are understated"
+        ),
+    })
+    print(f"\nwrote {path}")
 
 
 # non-fork start method re-imports this module in every worker, so keep the guard even

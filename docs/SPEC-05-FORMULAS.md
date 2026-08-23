@@ -38,8 +38,8 @@ PHASE 5  COUPLED SOLVE   ┌──────── LOOP over timesteps ──�
                          │ [30] stability assert               │
                          └─────────────────────────────────────┘
                                       ↓
-PHASE 6  OUTPUTS         [31–36] maturity, strength, modulus,
-                                 gradient, flags
+PHASE 6  OUTPUTS         [31–36] maturity, strength, gradient, flags
+                                 ([34] modulus CUT — not shipped)
 
 PHASE 7  UNCERTAINTY     [37] Monte Carlo → P(f'c ≥ target | t)
 ```
@@ -627,10 +627,10 @@ f_c(t) = f_c,28 · exp[ s·( 1 − √(28/t) ) ]
 **When:** feeds [34] only. Do **not** use as the primary strength path — it's calendar-
 based, which is exactly what we exist to replace.
 
-## 34) Elastic Modulus (fib Model Code 2010)
+## 34) Elastic Modulus (fib Model Code 2010) — ❌ **CUT. NOT SHIPPED.**
 
 ```
-E_28 = 21.5 GPa · α_E · ( f_c,28 / 10 MPa )^0.3
+E_28 = 21.5 GPa · α_E · ( f_c,28 / 10 MPa )^(1/3)
 ```
 
 | | |
@@ -638,11 +638,27 @@ E_28 = 21.5 GPa · α_E · ( f_c,28 / 10 MPa )^0.3
 | `E_28` | 28-day Young's modulus **(GPa)** |
 | `α_E` | aggregate stiffness factor **(dimensionless)** — 1.0 for quartz *and* limestone |
 
-**Why we added this:** it answers the deflection objection. Modulus tracks strength
-closely, so we can display an estimated E(t) beside strength.
-🔴 **The real deflection risk is CREEP, not stiffness.** Early-loaded concrete is
-significantly more creep-active even when strength and stiffness look mature. We do not
-model creep — disclose it.
+🔴 **Exponent is 1/3, not 0.3.** This section and SPEC-04 R7 both carried `0.3`. At
+f_c,28 = 40 MPa that is 32.59 vs 34.13 GPa — 4.7%, and silent. Corrected here for the
+record only; nothing implements it.
+
+### Scope decision — removed deliberately, not overlooked
+
+`physics/equations/strength.py` carried `elastic_modulus_gpa()` as a `NotImplementedError`
+stub. **It has been deleted, and no E(t) display will ship.** Two reasons:
+
+1. It crosses the **"not structural analysis"** product boundary. Reporting a stiffness
+   invites the reader to size a deflection, which is not what this tool does.
+2. It answers the wrong objection. The early-loading deflection risk is **creep**, not
+   stiffness — SPEC-04 R7 establishes this — and **we do not model creep**. Shipping E(t)
+   would look like an answer to a question we cannot answer.
+
+The original "why we added this" was: *it answers the deflection objection; modulus tracks
+strength closely, so we can display an estimated E(t) beside strength.* That reasoning is
+withdrawn. Displaying a number adjacent to the real risk is not the same as covering it.
+
+Anyone re-adding this should read this section first — the stub's absence is the decision,
+not a gap waiting to be filled.
 
 ## 35) Core–Surface Differential
 
