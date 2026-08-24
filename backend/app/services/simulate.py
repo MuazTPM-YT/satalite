@@ -17,6 +17,7 @@ from app.models import (
     BreachFlags,
     ElementSpec,
     EnsembleResult,
+    FieldFrames,
     MixSpec,
     PourWindowCandidate,
     SimulationResult,
@@ -172,6 +173,43 @@ def _tripped_by(by_probe: bool, by_anywhere: bool) -> TrippedBy:
 # nan is not valid json. a time that was never reached is null, never a made-up number.
 def _or_none(value: float) -> float | None:
     return None if np.isnan(value) else float(value)
+
+
+# thin the recorded frames down to something a browser can hold, and pack them.
+#
+# The FRAME axis is the only one thinned. x and y are handed over exactly as solved,
+# because a resampled cell is a number the solver never computed. Frame 0, the peak-core
+# frame and the last frame are always kept whatever the stride: the peak is the one a
+# caller checks the probe against, and dropping it would make peak_core_temp_c
+# unreproducible from the field it came from.
+def to_field_frames(result: SolveResult, dx_m: float, stride_h: float) -> FieldFrames:
+    n_frames, ny, nx = result.temp_c_frames.shape
+    frame_dt_h = (
+        float(result.times_h[1] - result.times_h[0]) if n_frames > 1 else 0.0
+    )
+    step = max(int(round(stride_h / frame_dt_h)), 1) if frame_dt_h > 0.0 else 1
+
+    keep = set(range(0, n_frames, step))
+    keep.add(0)
+    keep.add(n_frames - 1)
+    keep.add(int(np.argmax(result.core_temp_c)))
+    indices = sorted(keep)
+
+    # nan is not valid json and it is not zero either. Outside the mask there is no
+    # concrete, so there is no temperature - null says that and a number would lie.
+    frames = np.round(result.temp_c_frames[indices], 2)
+    temp_c = [
+        [[None if np.isnan(v) else float(v) for v in row] for row in frame]
+        for frame in frames
+    ]
+    return FieldFrames(
+        nx=nx,
+        ny=ny,
+        dx_m=dx_m,
+        times_h=[float(result.times_h[i]) for i in indices],
+        frame_indices=indices,
+        temp_c=temp_c,
+    )
 
 
 # one deterministic solve, packaged for the wire.
