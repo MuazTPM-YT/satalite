@@ -172,7 +172,15 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
 
       {open && (
         <>
-          <div className="grid grid-cols-1 gap-px border-t border-border-default bg-border-default lg:grid-cols-3">
+          {/* Three across on a wide screen. Narrower, they SCROLL sideways rather
+              than stacking: stacked, the dock was 570 px of a 656 px window and the
+              viewer it annotates had nothing left to be. */}
+          <div
+            className={cx(
+              "flex snap-x snap-mandatory gap-px overflow-x-auto border-t border-border-default bg-border-default",
+              "lg:grid lg:grid-cols-3 lg:overflow-x-visible",
+            )}
+          >
             <TemperatureTrack {...track} onZoom={setZoomed} />
             <StrengthTrack {...track} onZoom={setZoomed} />
             <DifferentialTrack {...track} onZoom={setZoomed} />
@@ -273,7 +281,16 @@ function Track({
   const unit = TRACK_UNIT[id];
   const g = tall ? FULL : DOCK;
   return (
-    <div className={cx("flex min-w-0 flex-col bg-bg-surface px-3 pb-1 pt-2", tall && "min-h-0 flex-1")}>
+    <div
+      className={cx(
+        "flex flex-col bg-bg-surface px-3 pb-1 pt-2",
+        tall
+          ? "min-h-0 flex-1"
+          // basis-0 + grow so the three share the row evenly once they are a grid,
+          // and a floor wide enough that a scrolled one is still a readable plot.
+          : "w-[min(100%,26rem)] shrink-0 snap-start lg:w-auto lg:min-w-0",
+      )}
+    >
       {/* Expanded, the dialog's own header already names the plot and its unit, so
           this row keeps only the readout — at a size that belongs to the picture it
           is annotating rather than to the dock it came from. */}

@@ -349,6 +349,17 @@ button,
   background-clip: content-box;
 }
 
+/* A strip that scrolls but must not show a bar: the command bar's control pill on a
+   narrow window. The scroll is the overflow behaviour, not a feature to decorate. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 /* ── Floating palettes ──────────────────────────────────────────────────────────
    A closed palette is hidden with `visibility`, not `display`.
 

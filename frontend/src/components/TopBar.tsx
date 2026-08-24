@@ -145,7 +145,7 @@ export default function TopBar({
         </span>
         <span className="truncate text-[15px] font-semibold tracking-tight text-text-primary">
           SatAlite
-          <span className="font-normal text-text-muted"> Studio</span>
+          <span className="hidden font-normal text-text-muted sm:inline"> Studio</span>
         </span>
       </div>
 
@@ -161,9 +161,12 @@ export default function TopBar({
 
       {/* right: launchers, units, backend reachability */}
       <div className="z-10 flex min-w-0 items-center gap-2">
-        <div className="hidden items-center gap-0.5 rounded-xl bg-elevate-1 p-1 ring-1 ring-inset ring-hairline md:flex">
+        {/* Scrolls rather than disappearing. It used to be `hidden md:flex`, which on a
+            narrow window left no view switcher, no palette launchers and no way back to
+            a palette once it was closed - the studio simply stopped having controls. */}
+        <div className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-elevate-1 p-1 ring-1 ring-inset ring-hairline">
           {/* the switcher moves in here below lg, where the centred copy is hidden */}
-          <div className="lg:hidden">
+          <div className="shrink-0 lg:hidden">
             <Segmented
               value={viewMode}
               options={VIEW_OPTIONS}
@@ -172,7 +175,7 @@ export default function TopBar({
               size="sm"
             />
           </div>
-          <div className="lg:hidden">
+          <div className="shrink-0 lg:hidden">
             <ToolbarDivider />
           </div>
 
@@ -190,7 +193,7 @@ export default function TopBar({
           <ToolbarDivider />
 
           {/* length units. Dimensions only - °C never converts. */}
-          <div className="flex items-center gap-1.5 pl-1 pr-0.5">
+          <div className="flex shrink-0 items-center gap-1.5 pl-1 pr-0.5">
             <Ruler className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} />
             <Select<LengthUnit>
               value={units}
