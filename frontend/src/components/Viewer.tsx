@@ -14,16 +14,15 @@ import {
   sectionFeatures,
   type ProbeGeometry,
 } from "@/lib/sectionMetrics";
-import { frameRange, type ProbePick } from "@/lib/probe";
+import { frameRange, sampleField, type ProbePick } from "@/lib/probe";
 import {
   Box,
   ChevronDown,
-  Crosshair,
-  Move3d,
   RotateCcw,
   Scan,
   SquareDashedBottom,
   Tags,
+  Target,
   View,
 } from "lucide-react";
 import { Toolbar, ToolbarButton, ToolbarDivider, Readout, SectionLabel, cx } from "@/components/ui";
@@ -331,10 +330,6 @@ export default function Viewer({
   const [camView, setCamView] = useState<PresetView | null>("iso");
   const [showTakeoff, setShowTakeoff] = useState(false);
 
-  // Where the marker goes. It travels with the pick rather than being derived from
-  // the section coordinates, because only the viewer that took the reading knows how
-  // far along the length the ray actually hit.
-  const probeWorld = pick?.source === "3d" ? pick.world : null;
   // transient hover tooltip — temperature only, no maturity or strength
   const [hover, setHover] = useState<{ temp_c: number; x: number; y: number } | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -410,6 +405,45 @@ export default function Viewer({
       (Math.max(...ys) + Math.min(...ys)) / 2,
     ];
   }, [sim.outline_m]);
+
+  // Read the point the backend sampled its own core temperature at.
+  //
+  // The 2D sheet has had this since it was built and the 3D view had not, which meant
+  // the same question had a control in one viewer and none in the other. It needs no
+  // ray: the point is a section coordinate the response carries, so this samples the
+  // field directly and puts the marker where the geometry actually sits.
+  const probeBackendPoint = useCallback(() => {
+    const fields = sim.fields;
+    const frame = fields?.temp_c[Math.min(frameIndex, fields.temp_c.length - 1)];
+    if (!fields || !frame) return;
+    const [x_m, y_m] = sim.probe_xy_m;
+    const s = sampleField(frame, fields.dx_m, x_m, y_m);
+    if (!s) return;
+    onPick({
+      sample: s,
+      section_m: [x_m, y_m],
+      source: "3d",
+      view: null,
+      isSection: true,
+      uv: null,
+      // mid-length, which is the only z the backend's 2D point can honestly claim
+      world: [s.xy_m[0] - meshOffset[0], s.xy_m[1] - meshOffset[1], 0],
+    });
+  }, [sim, frameIndex, meshOffset, onPick]);
+
+  // Where the marker goes.
+  //
+  // A pick taken here carries its own world point, because only the ray knows how far
+  // along the length it hit. A pick taken on the 2D sheet does not - the solver is 2D,
+  // so its reading is true at every z - and mid-length is the only z it can honestly
+  // be drawn at. Not drawing it at all was worse: the palette showed a reading and the
+  // scene showed nothing, leaving the reader to wonder which one had gone stale.
+  const probeWorld = useMemo((): [number, number, number] | null => {
+    if (!pick) return null;
+    if (pick.world) return pick.world;
+    if (!pick.isSection) return null;
+    return [pick.section_m[0] - meshOffset[0], pick.section_m[1] - meshOffset[1], 0];
+  }, [pick, meshOffset]);
 
   // probe click from the mesh — published to the studio, which owns the readout
   const handleProbe = useCallback(
@@ -500,6 +534,13 @@ export default function Viewer({
           title="Name every edge with a letter and every corner with a number, so the distances in the Probe palette can be traced to lines you can see"
         >
           Labels
+        </ToolbarButton>
+        <ToolbarButton
+          icon={Target}
+          onClick={probeBackendPoint}
+          title="Read the point the backend sampled its own core temperature at, and send it to the Probe palette"
+        >
+          Backend point
         </ToolbarButton>
       </Toolbar>
 
@@ -643,32 +684,6 @@ export default function Viewer({
           {hover.temp_c.toFixed(1)} °C
         </div>
       )}
-
-      {/* The interaction hints. The paragraph that used to sit above them said what the
-          extrusion is and is not; it is a standing fact about the model rather than
-          something the reader needs on screen at all times, and it read as a caption
-          on the drawing. The status bar already carries the same claim in four words. */}
-      <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex max-w-[19rem] flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {[
-            { icon: RotateCcw, label: "Orbit", how: "Left drag" },
-            { icon: Move3d, label: "Pan", how: "Right drag" },
-            { icon: Crosshair, label: "Probe", how: "Click surface" },
-          ].map((h) => (
-            <div
-              key={h.label}
-              className={cx(
-                "flex items-center gap-2 rounded-lg border border-hairline",
-                "bg-bg-surface/80 px-2.5 py-1.5 backdrop-blur-xl",
-              )}
-            >
-              <h.icon className="h-3.5 w-3.5 shrink-0 text-accent-blue" strokeWidth={2} />
-              <span className="text-[11px] font-medium text-text-primary">{h.label}</span>
-              <span className="font-mono text-[10px] text-text-muted">{h.how}</span>
-            </div>
-          ))}
-        </div>
-      </div>
 
       <div className="pointer-events-none absolute right-4 top-1/2 z-10 -translate-y-1/2">
         <ThermalLegend

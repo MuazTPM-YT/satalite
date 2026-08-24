@@ -17,7 +17,9 @@ import { sampleField, frameRange, type Frame, type ProbePick } from "@/lib/probe
 import { tempToColor } from "@/lib/thermalColormap";
 import { elevationLines, sectionFeatures, type ProbeGeometry } from "@/lib/sectionMetrics";
 import ThermalLegend from "@/components/ThermalLegend";
-import { Maximize2, Minus, Plus, SquareDashed, Tags, Target } from "lucide-react";
+// `Frame` is also the name of a field frame in lib/probe, so the icon is aliased
+// rather than shadowing the type this file reads on every render.
+import { Frame as FrameIcon, Minus, Plus, SquareDashed, Tags, Target } from "lucide-react";
 import { Toolbar, ToolbarButton, ToolbarDivider, ToolbarToggle, Flag, cx } from "@/components/ui";
 import { ScrubField } from "@/components/fields";
 import { fmtLen, type LengthUnit } from "@/lib/units";
@@ -66,6 +68,9 @@ interface Section2DProps {
   frameIndex: number;
   length_m: number;
   units: LengthUnit;
+  // fixed colour-scale bounds, shared with the 3D view so the two agree
+  scale_min_c?: number;
+  scale_max_c?: number;
   /** the reading on screen, owned by the studio so the Probe palette shares it */
   pick: ProbePick | null;
   onPick: (pick: ProbePick | null) => void;
@@ -221,6 +226,8 @@ export default function Section2D({
   frameIndex,
   length_m,
   units,
+  scale_min_c,
+  scale_max_c,
   pick,
   onPick,
   geometry,
@@ -344,22 +351,19 @@ export default function Section2D({
 
   // Fixed across the run so frames are comparable, and taken from the run's own
   // extremes rather than a hardcoded pair that could clip the very peak.
-  const scaleBounds = useMemo(() => {
-    if (!fields) return null;
-    let lo = Infinity;
-    let hi = -Infinity;
-    for (const f of fields.temp_c) {
-      const r = frameRange(f);
-      if (!r) continue;
-      lo = Math.min(lo, r.min_c);
-      hi = Math.max(hi, r.max_c);
-    }
-    if (lo === Infinity) return null;
-    return {
-      min_c: Math.floor(lo / BAND_STEP_C) * BAND_STEP_C,
-      max_c: Math.ceil(hi / BAND_STEP_C) * BAND_STEP_C,
-    };
-  }, [fields]);
+  //
+  // The STUDIO computes it, once, and hands the same pair to both viewers. This file
+  // used to compute its own copy with the same rule — two scans of the whole frame
+  // stack, and two places for the rule to change in.
+  // Memoised only so the object identity is stable: `drawing` below depends on it,
+  // and a fresh literal every render would rebuild every contour path every render.
+  const scaleBounds = useMemo(
+    () =>
+      scale_min_c === undefined || scale_max_c === undefined
+        ? null
+        : { min_c: scale_min_c, max_c: scale_max_c },
+    [scale_min_c, scale_max_c],
+  );
 
   // Every patch this view draws, in view metres. One list for all six views, so the
   // renderer below has no idea which one it is painting.
@@ -670,10 +674,19 @@ export default function Section2D({
     [geometry],
   );
 
-  // the marker belongs to the view it was read in: a point sampled on the top plan is
-  // not at those coordinates in the front section, and drawing it there would claim
-  // a reading that was never taken.
-  const marker = pick && pick.source === "2d" && pick.view === view ? pick.uv : null;
+  // Where the marker goes.
+  //
+  // A reading belongs to the view it was taken in: a point sampled on the top plan is
+  // not at those coordinates in the front section, and drawing it there would claim a
+  // reading that was never taken. A reading taken in the 3D scene is the exception -
+  // it IS a section point, so the two section views can draw it exactly.
+  const marker = useMemo((): [number, number] | null => {
+    if (!pick) return null;
+    if (pick.source === "2d") return pick.view === view ? pick.uv : null;
+    if (view === "front") return pick.section_m;
+    if (view === "back") return [w_m - pick.section_m[0], pick.section_m[1]];
+    return null;
+  }, [pick, view, w_m]);
 
   const peakFrameIdx = fields
     ? fields.frame_indices.indexOf(sim.core_temp_c.indexOf(Math.max(...sim.core_temp_c)))
@@ -908,9 +921,11 @@ export default function Section2D({
           the ones a drag cannot express. */}
       <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
         <Toolbar>
-          <ToolbarToggle icon={Minus} label="Zoom out" onClick={() => zoomAbout(0.8)} />
-          <ToolbarToggle icon={Plus} label="Zoom in" onClick={() => zoomAbout(1.25)} />
-          <ToolbarToggle icon={Maximize2} label="Fit the sheet" onClick={fitView} />
+          <ToolbarToggle icon={Minus} label="Zoom out" hint="Or scroll the wheel down over the sheet." onClick={() => zoomAbout(0.8)} />
+          <ToolbarToggle icon={Plus} label="Zoom in" hint="Or scroll the wheel up over the sheet." onClick={() => zoomAbout(1.25)} />
+          {/* Frame, not Maximize: the scopes dock uses Maximize for "fill the screen",
+              and one icon meaning two different things is worse than two icons. */}
+          <ToolbarToggle icon={FrameIcon} label="Fit the sheet" hint="Back to 100 % zoom, centred." onClick={fitView} />
           <ToolbarDivider />
           {/* the label column shrinks to its own word here: the panel's 74px column
               exists to line a stack of rows up, and this row has no stack. */}

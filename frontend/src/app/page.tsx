@@ -78,11 +78,15 @@ const Viewer = dynamic(() => import("@/components/Viewer"), {
 // overshoot back to `width - w - margin`, so asking for "further right than possible"
 // is how a palette says "dock me right" without knowing the viewport.
 const DOCK_RIGHT = 100_000;
+// and the same trick downward, for a palette that belongs at the foot of the viewer
+const DOCK_BOTTOM = 100_000;
 
 // where each palette opens before first drag/resize
 const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }> = {
   element: { x: 16, y: 16, w: 340, h: 600, minW: 300, minH: 260 },
-  probe: { x: DOCK_RIGHT, y: 16, w: 300, h: 440, minW: 260, minH: 180 },
+  // Bottom-left, which is the one corner nothing else claims. Docking it to the right
+  // put it exactly on top of Checks, which opens there by default.
+  probe: { x: 16, y: DOCK_BOTTOM, w: 300, h: 336, minW: 260, minH: 150 },
   checks: { x: DOCK_RIGHT, y: 16, w: 316, h: 600, minW: 268, minH: 240 },
   pour: { x: 380, y: 340, w: 860, h: 300, minW: 420, minH: 200 },
   ensemble: { x: 60, y: 60, w: 940, h: 700, minW: 620, minH: 360 },
@@ -515,6 +519,8 @@ export default function StudioPage() {
                 frameIndex={frameIndex}
                 length_m={length_m}
                 units={units}
+                scale_min_c={bounds?.min_c}
+                scale_max_c={bounds?.max_c}
                 pick={pick}
                 onPick={handlePick}
                 geometry={pickGeometry}

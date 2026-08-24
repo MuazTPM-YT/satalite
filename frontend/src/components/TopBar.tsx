@@ -82,7 +82,7 @@ const PANELS: { id: PanelId; icon: Icon; label: string; hint: string }[] = [
     id: "pour",
     icon: CalendarClock,
     label: "Pour window",
-    hint: "The same element solved at six candidate start hours. Costs six solves, so it runs only while this is open.",
+    hint: "The same element solved at every candidate start hour the ambient series has room for. One full solve each, so the sweep runs only while this is open.",
   },
   {
     id: "ensemble",

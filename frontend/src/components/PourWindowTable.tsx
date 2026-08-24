@@ -5,6 +5,7 @@
 "use client";
 
 import type { PourWindowCandidate } from "@/lib/api";
+import { Flag, SectionTitle, cx } from "@/components/ui";
 
 interface PourWindowTableProps {
   candidates: PourWindowCandidate[];
@@ -21,18 +22,14 @@ function Cell({ value, over }: { value: string; over: boolean }) {
   );
 }
 
-import { Flag, SectionLabel, cx } from "@/components/ui";
-
 export default function PourWindowTable({ candidates, best_offset_h }: PourWindowTableProps) {
   return (
     <div className="h-full w-full overflow-y-auto bg-bg-surface">
       <div className="p-3">
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
-          <SectionLabel>Pour Window</SectionLabel>
-          <span className="text-[10px] text-text-muted ml-1">
-            · {candidates.length} candidate offsets · fewest breaches wins, ties on the cooler core
-          </span>
-        </div>
+        <SectionTitle
+          title="Pour window"
+          subtitle={`${candidates.length} candidate start${candidates.length === 1 ? "" : "s"} across the room the ambient series has · fewest breaches wins, ties on the cooler core`}
+        />
 
         <div className="-mx-1 overflow-x-auto px-1">
         <table className="w-full min-w-[760px] text-[11px]">

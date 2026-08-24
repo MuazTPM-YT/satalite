@@ -51,6 +51,28 @@ export function SectionLabel({
   );
 }
 
+/**
+ * A region's name with its qualifier beside it.
+ *
+ * Distinct from SectionLabel's `note`, which right-aligns to the far edge of the row:
+ * this sits immediately after the name, which is what a subtitle is. It existed
+ * privately and identically in two panels before, and had already started to drift.
+ */
+export function SectionTitle({
+  title,
+  subtitle,
+}: {
+  title: ReactNode;
+  subtitle?: ReactNode;
+}) {
+  return (
+    <div className="mb-1 flex items-baseline gap-2">
+      <SectionLabel>{title}</SectionLabel>
+      {subtitle && <span className="text-[10px] leading-snug text-text-muted">{subtitle}</span>}
+    </div>
+  );
+}
+
 /** A horizontal rule that carries a label - the divider between panel sections. */
 export function SectionRule({ icon, children }: { icon?: Icon; children: ReactNode }) {
   return (

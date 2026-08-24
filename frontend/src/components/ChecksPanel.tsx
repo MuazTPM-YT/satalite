@@ -12,6 +12,7 @@
 
 import type { SimulationRequest, SimulationResult, TrippedBy } from "@/lib/api";
 import { Flag, SectionLabel, cx } from "@/components/ui";
+import { useTooltip } from "@/components/Tooltip";
 
 interface ChecksPanelProps {
   sim: SimulationResult;
@@ -140,6 +141,30 @@ export default function ChecksPanel({ sim, request }: ChecksPanelProps) {
   );
 }
 
+/** One measured quantity under the bar, with the response field it came from. */
+function Measured({ measure, dp, unit }: { measure: Measure; dp: number; unit: string }) {
+  const tip = useTooltip(
+    <>
+      <span className="block font-mono text-[10px] text-text-secondary">{measure.field}</span>
+      <span className="mt-0.5 block font-mono tabular-nums">
+        {measure.value.toFixed(dp)} {unit}
+      </span>
+    </>,
+    "top",
+  );
+  return (
+    <>
+      <span
+        {...tip.trigger}
+        className="font-mono text-[10px] tabular-nums text-text-muted decoration-dotted underline-offset-2 hover:underline"
+      >
+        {measure.label} <span className="text-text-secondary">{measure.value.toFixed(dp)}</span>
+      </span>
+      {tip.node}
+    </>
+  );
+}
+
 /**
  * One threshold.
  *
@@ -204,7 +229,7 @@ function Check({
           i === governing ? null : (
             <div
               key={m.field}
-              title={`${m.label} ${m.value.toFixed(dp)} ${unit}`}
+              aria-label={`${m.label} ${m.value.toFixed(dp)} ${unit}`}
               className="absolute inset-y-0 w-px bg-text-primary/70"
               style={{ left: `${pct(m.value)}%` }}
             />
@@ -215,15 +240,12 @@ function Check({
 
       <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
         {measures.map((m) => (
-          <span key={m.field} title={m.field} className="font-mono text-[10px] tabular-nums text-text-muted">
-            {m.label}{" "}
-            <span className="text-text-secondary">{m.value.toFixed(dp)}</span>
-          </span>
+          <Measured key={m.field} measure={m} dp={dp} unit={unit} />
         ))}
         <Flag tone={over ? "amber" : "green"}>{over ? "over" : "under"}</Flag>
       </div>
 
-      <p className="mt-1 text-[9px] leading-relaxed text-text-muted" title={cite}>
+      <p className="mt-1 text-[9px] leading-relaxed text-text-muted">
         {tripped && <span className="text-status-amber">crossed by {tripped} · </span>}
         {cite}
       </p>
