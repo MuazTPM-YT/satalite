@@ -1,35 +1,75 @@
 @import "tailwindcss";
 
-/* dark-only palette matching mockup reference images */
+/* ─────────────────────────────────────────────────────────────────────────────
+   SatAlite Studio — dark-only token system.
+
+   The palette is Vectorium Studio's, adopted wholesale so the two products read
+   as one house: a sleek dark grey ground rather than pure black, near-white ink,
+   and a single saturated brand blue (#6F9BFF) that is only ever used as a FILLED
+   surface or a tint — never as a hover wash, which is what makes shadcn-style
+   `hover:bg-accent` pairings turn into dark-on-bright.
+
+   Everything is oklch so lightness steps are perceptually even: 0.15 ground,
+   0.18 panel, 0.22 raised control, 0.28 border. Those four numbers are the whole
+   elevation system.
+   ───────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --bg-primary: #0d1117;
-  --bg-surface: #151b23;
-  --bg-elevated: #1c2333;
-  --bg-input: #0d1117;
+  /* Surfaces. */
+  --bg-primary: oklch(0.15 0.002 240); /* app ground, viewer canvas */
+  --bg-surface: oklch(0.18 0.003 240); /* bars, panels, docks */
+  --bg-elevated: oklch(0.22 0.004 240); /* raised control, active pill */
+  --bg-input: oklch(0.22 0.004 240);
 
-  --border-default: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.15);
+  /* Translucent lifts, for controls that sit ON a surface rather than beside it.
+     Alpha-based so they compose over any of the four surfaces above. */
+  --elevate-1: oklch(1 0 0 / 4%);
+  --elevate-2: oklch(1 0 0 / 8%);
+  --elevate-3: oklch(1 0 0 / 12%);
+  --hairline: oklch(1 0 0 / 10%);
 
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-muted: #6e7681;
+  --border-default: oklch(0.28 0.005 240);
+  --border-strong: oklch(0.36 0.006 240);
 
-  --accent-blue: #3b82f6;
-  --accent-blue-dim: rgba(59, 130, 246, 0.15);
+  /* Ink. Three steps, and only three - a fourth would stop being a hierarchy. */
+  --text-primary: oklch(0.98 0.002 240);
+  --text-secondary: oklch(0.8 0.006 240);
+  --text-muted: oklch(0.65 0.008 240);
 
-  --status-green: #22c55e;
-  --status-green-dim: rgba(34, 197, 94, 0.15);
-  --status-amber: #f59e0b;
-  --status-amber-dim: rgba(245, 158, 11, 0.15);
-  --status-red: #ef4444;
-  --status-red-dim: rgba(239, 68, 68, 0.15);
+  /* Brand blue, from the mark's leading edge. Filled surfaces only. */
+  --accent-blue: oklch(0.7 0.148 267);
+  --accent-blue-dim: oklch(0.7 0.148 267 / 16%);
+
+  /* Status. Reserved for state - never reused as a data series colour. */
+  --status-green: oklch(0.74 0.15 155);
+  --status-green-dim: oklch(0.74 0.15 155 / 16%);
+  --status-amber: oklch(0.79 0.15 75);
+  --status-amber-dim: oklch(0.79 0.15 75 / 16%);
+  --status-red: oklch(0.65 0.2 25);
+  --status-red-dim: oklch(0.65 0.2 25 / 16%);
+
+  /* Drafting accents, for dimension lines and reference geometry. */
+  --draft-line: oklch(1 0 0 / 22%);
+  --draft-line-strong: oklch(1 0 0 / 42%);
+
+  --radius: 0.75rem;
+
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 @theme inline {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+
   --color-bg-primary: var(--bg-primary);
   --color-bg-surface: var(--bg-surface);
   --color-bg-elevated: var(--bg-elevated);
   --color-bg-input: var(--bg-input);
+
+  --color-elevate-1: var(--elevate-1);
+  --color-elevate-2: var(--elevate-2);
+  --color-elevate-3: var(--elevate-3);
+  --color-hairline: var(--hairline);
 
   --color-border-default: var(--border-default);
   --color-border-strong: var(--border-strong);
@@ -47,6 +87,14 @@
   --color-status-amber-dim: var(--status-amber-dim);
   --color-status-red: var(--status-red);
   --color-status-red-dim: var(--status-red-dim);
+
+  --color-draft-line: var(--draft-line);
+  --color-draft-line-strong: var(--draft-line-strong);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 * {
@@ -60,20 +108,67 @@ body {
   overflow: hidden;
 }
 
-/* dark form inputs */
+/* Every measured quantity is mono and tabular. Engineering readouts get compared
+   down a column; digits that change width make that impossible. */
+.tabular-nums,
+[class*="tabular-nums"] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Focus ────────────────────────────────────────────────────────────────────
+   One ring, everywhere, keyboard-only. Never removed - it is the only way a
+   keyboard user knows where they are. */
+:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Anything that acts like a control says so under the pointer. */
+button:not(:disabled),
+select:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+[role="slider"],
+summary,
+a[href] {
+  cursor: pointer;
+}
+
+button:disabled,
+select:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── Form controls ────────────────────────────────────────────────────────────
+   Inputs are recessed (darker than the panel they sit in), which is the opposite
+   of a button. That single inversion is what tells you at a glance which things
+   you type into and which things you press. */
 input[type="number"],
 input[type="text"],
 input[type="date"],
 input[type="time"],
 select {
-  background: var(--bg-input);
+  background: var(--bg-primary);
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
-  padding: 4px 8px;
-  font-size: 13px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
   outline: none;
-  transition: border-color 0.15s ease;
+  transition:
+    border-color 150ms var(--ease-out-strong),
+    background-color 150ms var(--ease-out-strong);
+}
+
+input[type="number"]:hover:not(:read-only),
+input[type="text"]:hover:not(:read-only),
+input[type="date"]:hover,
+input[type="time"]:hover,
+select:hover:not(:disabled) {
+  border-color: var(--border-strong);
 }
 
 input[type="number"]:focus,
@@ -82,6 +177,41 @@ input[type="date"]:focus,
 input[type="time"]:focus,
 select:focus {
   border-color: var(--accent-blue);
+  outline: none;
+}
+
+/* A read-only field is showing you a solved number, not offering an edit. It
+   loses the input affordance entirely rather than looking broken. */
+input:read-only {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+select {
+  appearance: none;
+  /* room for the chevron drawn as a background image */
+  padding-right: 26px;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    right 13px center,
+    right 8px center;
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  color: var(--text-secondary);
+}
+
+select:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+option {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
 }
 
 /* remove number input spinners */
@@ -95,7 +225,11 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* range slider base */
+/* ── Range sliders ────────────────────────────────────────────────────────────
+   The drafting-scale signature. The rail carries a tick lattice painted as a
+   static repeating gradient - rasterised once, never repainted as the thumb
+   moves, because only the thumb's transform changes. It reads as a scale rule
+   rather than a media player's progress bar. */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -104,10 +238,31 @@ input[type="range"] {
   width: 100%;
 }
 
-input[type="range"]::-webkit-slider-track {
-  background: var(--border-strong);
-  height: 4px;
-  border-radius: 2px;
+.scale-rail {
+  position: relative;
+}
+
+.scale-rail::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  top: 50%;
+  height: 10px;
+  translate: 0 -50%;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--draft-line) 0 1px,
+    transparent 1px 5%
+  );
+  opacity: 0.6;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  height: 6px;
+  border-radius: 3px;
 }
 
 input[type="range"]::-webkit-slider-thumb {
@@ -118,27 +273,64 @@ input[type="range"]::-webkit-slider-thumb {
   background: var(--accent-blue);
   margin-top: -5px;
   border: 2px solid var(--bg-primary);
-  box-shadow: 0 0 0 2px var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+  transition: transform 160ms var(--ease-out-strong);
 }
 
 input[type="range"]::-moz-range-track {
-  background: var(--border-strong);
-  height: 4px;
-  border-radius: 2px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-default);
+  height: 6px;
+  border-radius: 3px;
 }
 
 input[type="range"]::-moz-range-thumb {
-  height: 10px;
-  width: 10px;
+  height: 12px;
+  width: 12px;
   border-radius: 50%;
   background: var(--accent-blue);
   border: 2px solid var(--bg-primary);
-  box-shadow: 0 0 0 2px var(--accent-blue);
+  box-shadow: 0 0 0 1px var(--accent-blue);
+  transition: transform 160ms var(--ease-out-strong);
 }
 
-/* scrollbar styling */
+@media (hover: hover) and (pointer: fine) {
+  input[type="range"]:hover::-webkit-slider-thumb {
+    transform: scale(1.15);
+  }
+  input[type="range"]:hover::-moz-range-thumb {
+    transform: scale(1.15);
+  }
+}
+
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(0.94);
+}
+
+/* ── Press feedback ───────────────────────────────────────────────────────────
+   Any pressable element confirms it heard the press. Gated behind a real pointer
+   because touch fires a false hover on tap. Subtle by design: 0.97, 160ms. */
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active {
+    transform: scale(0.97);
+  }
+}
+
+button,
+[role="button"] {
+  transition:
+    transform 160ms var(--ease-out-strong),
+    background-color 150ms var(--ease-out-strong),
+    color 150ms var(--ease-out-strong),
+    border-color 150ms var(--ease-out-strong);
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────────────
+   Thin and neutral. They are furniture, not a feature. */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -146,10 +338,109 @@ input[type="range"]::-moz-range-thumb {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
+  background: var(--elevate-3);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--border-strong);
+  background-clip: content-box;
+}
+
+/* ── Floating palettes ──────────────────────────────────────────────────────────
+   A closed palette is hidden with `visibility`, not `display`.
+
+   `display: none` + `transition-behavior: allow-discrete` + `@starting-style` is
+   the fashionable way to do this, and it proved unreliable here: a palette could
+   land with `display: flex` but stuck on its @starting-style `opacity: 0`,
+   permanently invisible while reporting itself open. `visibility` needs neither
+   feature - it flips to `visible` immediately on the way in and waits for the fade
+   on the way out, which is exactly the behaviour wanted.
+
+   Nothing is lost by keeping a closed palette in the layout: every one of them is
+   absolutely positioned, so it never occupied layout space to begin with, and
+   `visibility: hidden` also takes it out of the accessibility tree. The Rnd
+   wrapper carries `pointer-events: none` when closed, so it cannot eat clicks.
+
+   Both directions are TRANSITIONS, not keyframes, so spamming a launcher retargets
+   from the current state instead of restarting from zero.
+
+   Exit is faster than enter: opening a palette is the deliberate act, closing it is
+   the system responding.
+
+   transform-origin is `top center` because every palette is launched from the
+   command bar directly above the viewer - it should read as coming from up there
+   rather than growing out of its own middle. */
+.floating-panel {
+  display: flex;
+  visibility: hidden;
+  opacity: 0;
+  transform: scale(0.97);
+  transform-origin: top center;
+  /* visibility is never INTERPOLATED - it is switched with a delay. Transitioning
+     it as a duration property left a palette able to settle on `hidden` while its
+     own [data-open="true"] rule said otherwise. Here the hide simply waits out the
+     fade (150ms) and then flips; the show flips at 0s. Nothing to get stuck in. */
+  transition:
+    opacity 150ms var(--ease-out-strong),
+    transform 150ms var(--ease-out-strong),
+    visibility 0s linear 150ms;
+}
+
+.floating-panel[data-open="true"] {
+  visibility: visible;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 200ms var(--ease-out-strong),
+    transform 200ms var(--ease-out-strong),
+    visibility 0s linear;
+}
+
+/* ── Dropdown lists ───────────────────────────────────────────────────────────
+   A listbox is trigger-anchored, not a modal: it grows out of the control that
+   opened it. 120ms is the shortest duration that still reads as a movement rather
+   than a flash, and the 4px is a slide from the trigger, not a pop from nowhere. */
+@keyframes select-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* A number field being scrubbed should not also be selecting its own text. */
+input[role="spinbutton"] {
+  user-select: none;
+}
+
+/* The 2D sheet handles its own wheel and drag; the browser must not also try to
+   scroll or text-select while a pan is in progress. */
+svg.touch-none {
+  touch-action: none;
+  user-select: none;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────────
+   Gentler, not zero. Fades and colour changes aid comprehension and stay; every
+   position and scale change goes. */
+@media (prefers-reduced-motion: reduce) {
+  .floating-panel,
+  .floating-panel[data-open="true"] {
+    transform: none;
+  }
+
+  [role="listbox"] {
+    animation: none;
+  }
+
+  button:not(:disabled):active,
+  [role="button"]:not([aria-disabled="true"]):active,
+  input[type="range"]:hover::-webkit-slider-thumb,
+  input[type="range"]:active::-webkit-slider-thumb,
+  input[type="range"]:hover::-moz-range-thumb,
+  input[type="range"]:active::-moz-range-thumb {
+    transform: none;
+  }
 }

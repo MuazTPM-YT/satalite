@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { getHealth, type Health } from "@/lib/api";
+import { cx } from "@/components/ui";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -29,20 +30,41 @@ export default function HealthProbe() {
     };
   }, []);
 
-  const dot =
-    probe.state === "ok" ? "#3fb950" : probe.state === "error" ? "#f85149" : "#8b949e";
+  const dot = {
+    pending: "bg-text-muted",
+    ok: "bg-status-green",
+    error: "bg-status-red",
+  }[probe.state];
+
+  // The full detail is the title. The chip itself says only whether the backend
+  // answered: a version string is metadata about the build, not about the run on
+  // screen, and it earned a permanent seat in the command bar it did not deserve.
+  const detail =
+    probe.state === "ok"
+      ? `backend ${probe.health.status} · v${probe.health.version} · ${API_URL}`
+      : probe.state === "error"
+        ? `backend unreachable · ${API_URL} · ${probe.message}`
+        : `probing ${API_URL}/api/health`;
 
   return (
     <div
-      className="inline-flex items-center gap-2 px-2 py-1 rounded-sm bg-bg-primary border border-border-default text-[10px] tabular-nums max-w-[420px]"
-      title={API_URL}
+      title={detail}
+      className={cx(
+        "flex h-9 min-w-0 shrink items-center gap-2 rounded-xl px-2.5",
+        "bg-elevate-1 ring-1 ring-inset ring-hairline",
+      )}
     >
-      <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: dot }} />
-      <span className="text-text-secondary truncate">
-        {probe.state === "pending" && `probing ${API_URL}/api/health`}
-        {probe.state === "ok" && `backend ${probe.health.status} · v${probe.health.version} · ${API_URL}`}
-        {probe.state === "error" && `backend unreachable · ${API_URL} · ${probe.message}`}
+      <span className="relative flex h-2 w-2 shrink-0">
+        {probe.state === "ok" && (
+          <span className="absolute inline-flex h-full w-full rounded-full bg-status-green opacity-40" />
+        )}
+        <span className={cx("relative inline-flex h-2 w-2 rounded-full", dot)} />
       </span>
+      {probe.state !== "ok" && (
+        <span className="hidden truncate font-mono text-[11px] text-text-muted xl:inline">
+          {probe.state === "error" ? "unreachable" : "probing…"}
+        </span>
+      )}
     </div>
   );
 }

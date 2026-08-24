@@ -32,7 +32,16 @@ export interface LoadedRun {
     demo: DemoEnsembleResponse;
 }
 
-// pull the demo scenario, then solve it live with the per-cell field attached.
+// the scenario artifact. The studio reads its AMBIENT series and solves whatever the
+// input panel currently describes against it - the artifact is the weather, not the
+// element, and every other field of the scenario is only there so a panel can say what
+// the precomputed band was computed for.
+export function demoScenario(): Promise<DemoEnsembleResponse> {
+    return demoEnsemble();
+}
+
+// pull the demo scenario and solve it exactly as shipped. Used by the live self-checks,
+// which have to compare against the artifact's own element rather than the UI's.
 export async function loadDemoRun(): Promise<LoadedRun> {
     const demo = await demoEnsemble();
     const request = demo.scenario;

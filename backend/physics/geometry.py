@@ -10,7 +10,16 @@ import numpy as np
 
 from physics import FloatArray, IntArray
 
-SHAPES = ("slab", "wall", "rect_column", "circular_column", "beam", "t_section", "l_section")
+SHAPES = (
+    "slab",
+    "wall",
+    "rect_column",
+    "circular_column",
+    "beam",
+    "t_section",
+    "i_section",
+    "l_section",
+)
 
 # face directions, in the order face_tags stores them. y increases upward, row 0 is the base.
 UP, DOWN, LEFT, RIGHT = 0, 1, 2, 3
@@ -116,6 +125,13 @@ def outline(shape: str, dims_mm: dict[str, float]) -> list[list[float]]:
         fw, ft, ww, h = mm("flange_width"), mm("flange_thickness"), mm("web_width"), mm("height")
         a, b, y = (fw - ww) / 2.0, (fw + ww) / 2.0, h - ft
         return [[a, 0.0], [b, 0.0], [b, y], [fw, y], [fw, h], [0.0, h], [0.0, y], [a, y]]
+    if shape == "i_section":
+        fw, ft, ww, h = mm("flange_width"), mm("flange_thickness"), mm("web_width"), mm("height")
+        a, b = (fw - ww) / 2.0, (fw + ww) / 2.0
+        return [
+            [0.0, 0.0], [fw, 0.0], [fw, ft], [b, ft], [b, h - ft], [fw, h - ft],
+            [fw, h], [0.0, h], [0.0, h - ft], [a, h - ft], [a, ft], [0.0, ft],
+        ]
     if shape == "l_section":
         w, h, t = mm("width"), mm("height"), mm("leg_thickness")
         return [[0.0, 0.0], [w, 0.0], [w, t], [t, t], [t, h], [0.0, h]]

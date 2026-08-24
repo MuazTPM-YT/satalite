@@ -8,6 +8,7 @@
 "use client";
 
 import type { ValidationCase, ValidationResponse } from "@/lib/api";
+import { SectionLabel } from "@/components/ui";
 
 interface ValidationPanelProps {
   validation: ValidationResponse;
@@ -21,10 +22,10 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
   const fieldPassed = field.filter((c) => c.passed).length;
 
   return (
-    <div className="bg-bg-surface h-full overflow-y-auto">
+    <div className="h-full w-full overflow-y-auto bg-bg-surface">
       <div className="p-3">
         {/* the headline, stated plainly and first */}
-        <div className="p-3 rounded-lg bg-bg-elevated border-l-[3px] border-l-status-red">
+        <div className="rounded-lg border border-border-default bg-elevate-1 p-3">
           <div className="text-lg font-semibold text-text-primary tabular-nums">
             {passed} of {cases.length} cases pass
           </div>
@@ -71,7 +72,7 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
               title="Laboratory case"
               subtitle="a different test, reported separately on purpose"
             />
-            <p className="mb-1.5 p-2 rounded-lg bg-bg-elevated border-l-[3px] border-l-status-amber text-[10px] text-text-secondary leading-relaxed">
+            <p className="mb-1.5 rounded-lg border border-border-default bg-elevate-1 p-2 text-[10px] leading-relaxed text-text-secondary">
               This is an adiabatic calorimeter measurement: no boundary, no weather, no
               geometry — it tests the hydration heat alone against a single checkpoint. It
               says nothing about whether the solver reproduces a real placement, and the two
@@ -86,10 +87,10 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
 
         {/* what the whole exercise is conditional on */}
         {validation.notes.length > 0 && (
-          <div className="mt-3 p-2.5 rounded-lg bg-bg-elevated border border-border-default">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
+          <div className="mt-3 p-2.5 rounded-lg border border-border-default bg-elevate-1">
+            <SectionLabel className="mb-1.5">
               Report notes — all {validation.notes.length}, verbatim
-            </div>
+            </SectionLabel>
             <ul className="flex flex-col gap-1.5">
               {validation.notes.map((n, i) => (
                 <li key={i} className="text-[10px] text-text-secondary leading-relaxed pl-3 border-l border-border-strong">
@@ -101,10 +102,8 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
         )}
 
         {Object.keys(validation.assumed_chemistry_ranges).length > 0 && (
-          <div className="mt-3 p-2.5 rounded-lg bg-bg-elevated border border-border-default">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1">
-              assumed_chemistry_ranges
-            </div>
+          <div className="mt-3 p-2.5 rounded-lg border border-border-default bg-elevate-1">
+            <SectionLabel className="mb-1">assumed_chemistry_ranges</SectionLabel>
             <p className="mb-1.5 text-[10px] text-status-amber leading-relaxed">
               ASSUMPTIONS, not measurements. The source reports no oxide analysis; these are
               typical published ASTM C150 ranges for the stated cement type.
@@ -132,12 +131,10 @@ function CaseCard({ c, warn_c }: { c: ValidationCase; warn_c: number | null }) {
   const b = c.bands;
   const failed = c.passed === false;
 
+  // The verdict is the word FAIL or PASS, in its own colour, one line down. A coloured
+  // edge saying the same thing again is decoration.
   return (
-    <div
-      className={`mt-1.5 p-2.5 rounded-lg bg-bg-elevated border-l-[3px] ${
-        failed ? "border-l-status-red" : "border-l-status-green"
-      }`}
-    >
+    <div className="mt-1.5 rounded-lg border border-border-default bg-elevate-1 p-2.5">
       <div className="flex items-baseline justify-between gap-2 flex-wrap">
         <div>
           <span className={`text-xs font-semibold ${failed ? "text-status-red" : "text-status-green"}`}>
@@ -277,20 +274,20 @@ function CaseChart({ c }: { c: ValidationCase }) {
 
       {n > 1 ? (
         <>
-          <path d={areaD} fill="#58a6ff" opacity={0.18} />
-          <path d={p50.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)} ${y(v)}`).join(" ")} fill="none" stroke="#58a6ff" strokeWidth="1.5" />
+          <path d={areaD} fill="#5d82e9" opacity={0.18} />
+          <path d={p50.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)} ${y(v)}`).join(" ")} fill="none" stroke="#5d82e9" strokeWidth="1.5" />
         </>
       ) : (
         <>
-          <line x1={x(0)} y1={y(p05[0])} x2={x(0)} y2={y(p95[0])} stroke="#58a6ff" strokeWidth="8" opacity={0.3} />
-          <circle cx={x(0)} cy={y(p50[0])} r="3" fill="#58a6ff" />
+          <line x1={x(0)} y1={y(p05[0])} x2={x(0)} y2={y(p95[0])} stroke="#5d82e9" strokeWidth="8" opacity={0.3} />
+          <circle cx={x(0)} cy={y(p50[0])} r="3" fill="#5d82e9" />
         </>
       )}
 
       {measured.map((m, i) => (
         <g key={i}>
-          <circle cx={x(i)} cy={y(m)} r="3.5" fill={inside[i] ? "#3fb950" : "#f85149"} stroke="#0d1117" strokeWidth="1" />
-          <text x={x(i)} y={y(m) - 6} textAnchor="middle" fontSize="8" fill={inside[i] ? "#3fb950" : "#f85149"} className="tabular-nums">
+          <circle cx={x(i)} cy={y(m)} r="3.5" fill={inside[i] ? "#00a99c" : "#e5484d"} stroke="#0a0b0c" strokeWidth="1" />
+          <text x={x(i)} y={y(m) - 6} textAnchor="middle" fontSize="8" fill={inside[i] ? "#00a99c" : "#e5484d"} className="tabular-nums">
             {m.toFixed(1)}
           </text>
         </g>
@@ -319,7 +316,7 @@ function Fragment({ label, value, warn }: { label: string; value: string; warn?:
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="flex items-baseline gap-2 mb-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary">{title}</span>
+      <SectionLabel>{title}</SectionLabel>
       <span className="text-[10px] text-text-muted">{subtitle}</span>
     </div>
   );

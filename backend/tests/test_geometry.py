@@ -46,6 +46,10 @@ def test_column_is_formed_all_round() -> None:
         # T: flange 900x150 plus web 300x(750-150)
         ("t_section", {"flange_width": 900.0, "flange_thickness": 150.0,
                        "web_width": 300.0, "height": 750.0}, 0.9 * 0.15 + 0.3 * 0.6),
+        # I: two 600x120 flanges plus the 180-wide web between them
+        ("i_section", {"flange_width": 600.0, "flange_thickness": 120.0,
+                       "web_width": 180.0, "height": 800.0},
+         0.6 * 0.12 * 2 + 0.18 * (0.8 - 0.24)),
         # L: full 500x500 minus the missing 400x400 corner
         ("l_section", {"width": 500.0, "height": 500.0, "leg_thickness": 100.0},
          0.5 * 0.5 - 0.4 * 0.4),

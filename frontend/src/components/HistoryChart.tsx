@@ -1,13 +1,23 @@
-// thermal history and the threshold comparisons.
+// Thermal history — the scopes row.
 //
-// This panel ANNOTATES. It states the measured value, the threshold, and where the
-// threshold comes from. It never says a pour will crack or is safe to strip - that call
-// belongs to the engineer reading it, not to the chart.
+// This dock ANNOTATES. It states the measured value, the threshold, and where the
+// threshold comes from. It never says a pour will crack or is safe to strip - that
+// call belongs to the engineer reading it, not to the chart.
 //
 // Everything drawn is a field of the response. Nothing is derived, smoothed or filled.
+//
+// Three panels rather than one: temperature, strength and differential are three
+// different quantities in three different units. They used to share a plot, with
+// strength on a second right-hand axis - which silently invites the reader to
+// compare a curve in °C against a curve in %, a comparison that means nothing. Small
+// multiples on a shared time axis let them be read together without pretending they
+// live on the same scale.
 "use client";
 
+import { useState } from "react";
+import { ChevronDown } from "lucide-react";
 import type { SimulationResult, TrippedBy } from "@/lib/api";
+import { SectionLabel, cx } from "@/components/ui";
 
 interface HistoryChartProps {
   sim: SimulationResult;
@@ -23,11 +33,32 @@ const TRIPPED: Record<TrippedBy, string> = {
   none: "neither",
 };
 
-const W = 920;
-const ML = 46;
-const MR = 62;
+/* Series colours. Validated as a categorical set against the dock surface
+   (#101213) for lightness band, chroma floor, CVD separation and contrast - the
+   two temperature series are the only pair that ever share a plot. */
+const CORE = "#da720d";
+const SURFACE = "#5d82e9";
+const STRENGTH = "#00a99c";
+const LIMIT = "#e5484d";
+const MEASURED = "#c2933c";
+
+const W = 520;
+const H = 168;
+const ML = 40;
+const MR = 12;
+const MT = 12;
+const MB = 24;
+
+const GRID = "rgba(255,255,255,0.06)";
+const AXIS = "rgba(255,255,255,0.22)";
+const INK = "rgba(255,255,255,0.45)";
 
 export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
+  const [open, setOpen] = useState(true);
+  // hover time in hours, or null. Shared across all three panels so one pointer
+  // reads every quantity at the same instant.
+  const [hover, setHover] = useState<number | null>(null);
+
   const max_h = sim.times_h[sim.times_h.length - 1] ?? 0;
   const x = (h: number) => ML + (max_h > 0 ? h / max_h : 0) * (W - ML - MR);
 
@@ -39,227 +70,407 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
 
   const tick_hs = [0, 0.25, 0.5, 0.75, 1].map((f) => f * max_h);
 
-  return (
-    <div className="border-t border-border-default bg-bg-surface px-4 py-2">
-      <TemperatureTrack sim={sim} x={x} now_h={now_h} seriesIdx={seriesIdx} tick_hs={tick_hs} />
-      <DifferentialTrack sim={sim} x={x} now_h={now_h} tick_hs={tick_hs} />
+  // nearest sample to a hovered time — the series is what exists, so the readout
+  // never interpolates a value the solver did not produce.
+  const hoverIdx =
+    hover === null
+      ? null
+      : sim.times_h.reduce(
+          (best, t, i) =>
+            Math.abs(t - hover) < Math.abs(sim.times_h[best] - hover) ? i : best,
+          0,
+        );
 
-      {/* why each flag reads the way it does, in the response's own terms */}
-      <div className="mt-1.5 flex flex-wrap gap-x-6 gap-y-1 text-[10px] text-text-muted">
-        <span>
-          DEF crossed by{" "}
-          <span className={sim.breaches.def_risk ? "text-status-amber" : "text-text-secondary"}>
-            {TRIPPED[sim.breaches.def_tripped_by]}
-          </span>
+  const track = { x, tick_hs, now_h, hover, hoverIdx, setHover, max_h, sim };
+
+  return (
+    <section className="shrink-0 border-t border-border-default bg-bg-surface">
+      <header className="flex items-center gap-4 px-4 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex items-center gap-2 rounded-md text-text-secondary hover:text-text-primary"
+        >
+          <ChevronDown
+            className={cx(
+              "h-3.5 w-3.5 transition-transform duration-200",
+              !open && "-rotate-90",
+            )}
+            strokeWidth={2.5}
+          />
+          <SectionLabel>Thermal history</SectionLabel>
+        </button>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <Key color={CORE} label="core_temp_c" />
+          <Key color={SURFACE} label="surface_temp_c" />
+          <Key color={STRENGTH} label="strength_fraction" />
+          <Key color={LIMIT} label="threshold" dashed />
+        </div>
+
+        <div className="ml-auto hidden shrink-0 items-center gap-4 font-mono text-[10px] tabular-nums text-text-muted xl:flex">
+          <span>peak_core_time_h {sim.peak_core_time_h.toFixed(1)} h</span>
+          <span>t_ref {sim.t_ref_c.toFixed(1)} °C</span>
+        </div>
+      </header>
+
+      {open && (
+        <>
+          <div className="grid grid-cols-1 gap-px border-t border-border-default bg-border-default lg:grid-cols-3">
+            <TemperatureTrack {...track} />
+            <StrengthTrack {...track} />
+            <DifferentialTrack {...track} />
+          </div>
+
+          {/* why each flag reads the way it does, in the response's own terms */}
+          <div className="flex flex-wrap gap-x-6 gap-y-1 px-4 py-2 text-[10px] text-text-muted">
+            <span>
+              DEF crossed by{" "}
+              <span className={sim.breaches.def_risk ? "text-status-amber" : "text-text-secondary"}>
+                {TRIPPED[sim.breaches.def_tripped_by]}
+              </span>
+            </span>
+            <span>
+              Cracking differential crossed by{" "}
+              <span className={sim.breaches.cracking ? "text-status-amber" : "text-text-secondary"}>
+                {TRIPPED[sim.breaches.cracking_tripped_by]}
+              </span>
+            </span>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/* ── Shared track chrome ────────────────────────────────────────────────────── */
+
+interface TrackProps {
+  sim: SimulationResult;
+  x: (h: number) => number;
+  tick_hs: number[];
+  now_h: number;
+  max_h: number;
+  hover: number | null;
+  hoverIdx: number | null;
+  setHover: (h: number | null) => void;
+}
+
+/** A titled panel with a readout slot, wrapping one plot. */
+function Track({
+  title,
+  unit,
+  readout,
+  children,
+  onHover,
+  onLeave,
+}: {
+  title: string;
+  unit: string;
+  readout?: React.ReactNode;
+  children: React.ReactNode;
+  onHover: (e: React.PointerEvent<SVGSVGElement>) => void;
+  onLeave: () => void;
+}) {
+  return (
+    <div className="min-w-0 bg-bg-surface px-3 pb-1 pt-2">
+      <div className="mb-0.5 flex items-baseline gap-2">
+        <SectionLabel>{title}</SectionLabel>
+        <span className="font-mono text-[9px] text-text-muted">{unit}</span>
+        <span className="ml-auto truncate font-mono text-[10px] tabular-nums text-text-primary">
+          {readout}
         </span>
-        <span>
-          Cracking differential crossed by{" "}
-          <span className={sim.breaches.cracking ? "text-status-amber" : "text-text-secondary"}>
-            {TRIPPED[sim.breaches.cracking_tripped_by]}
-          </span>
-        </span>
-        <span className="tabular-nums">
-          peak_core_time_h {sim.peak_core_time_h.toFixed(1)} h
-        </span>
-        <span className="tabular-nums">t_ref {sim.t_ref_c.toFixed(1)} °C</span>
       </div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-[150px] w-full touch-none"
+        preserveAspectRatio="xMidYMid meet"
+        onPointerMove={onHover}
+        onPointerLeave={onLeave}
+        role="img"
+        aria-label={`${title} against time, in ${unit}`}
+      >
+        {children}
+      </svg>
     </div>
   );
 }
 
-// core, surface and strength against time, with the DEF threshold and the two peaks it
-// is tested against.
-function TemperatureTrack({
-  sim,
-  x,
-  now_h,
-  seriesIdx,
+/** x-axis, y grid + labels — identical on every track so they read as one instrument. */
+function Frame({
+  ticks,
+  y,
+  fmt,
   tick_hs,
+  x,
 }: {
-  sim: SimulationResult;
-  x: (h: number) => number;
-  now_h: number;
-  seriesIdx: number;
+  ticks: number[];
+  y: (v: number) => number;
+  fmt: (v: number) => string;
   tick_hs: number[];
+  x: (h: number) => number;
 }) {
-  const H = 178;
-  const mt = 10;
-  const mb = 22;
-  const def_c = sim.breaches.def_threshold_c;
-
-  const values = [
-    ...sim.core_temp_c,
-    ...sim.surface_temp_c,
-    def_c,
-    sim.max_core_temp_anywhere_c,
-  ];
-  const T_MIN = Math.floor(Math.min(...values) / 10) * 10;
-  const T_MAX = Math.ceil(Math.max(...values) / 10) * 10;
-
-  const y = (t: number) => mt + ((T_MAX - t) / (T_MAX - T_MIN || 1)) * (H - mt - mb);
-  const strY = (p: number) => mt + (1 - p / 100) * (H - mt - mb);
-  const path = (vals: number[], f: (v: number) => number) =>
-    vals.map((v, i) => `${i === 0 ? "M" : "L"}${x(sim.times_h[i]).toFixed(1)} ${f(v).toFixed(1)}`).join(" ");
-
-  const ticks: number[] = [];
-  for (let t = T_MIN; t <= T_MAX; t += 10) ticks.push(t);
-
   return (
     <>
-      <div className="flex items-center gap-4 mb-1 flex-wrap">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
-          Thermal history
-        </span>
-        <Key color="#f0883e" label="core_temp_c (probe)" />
-        <Key color="#58a6ff" label="surface_temp_c" />
-        <Key color="#3fb950" label="strength_fraction" dashed />
-      </div>
-
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 160 }} role="img" aria-label="Core and surface temperature against time">
-        <line x1={ML} y1={mt} x2={ML} y2={H - mb} stroke="rgba(240,246,252,0.25)" />
-        {ticks.map((t) => (
-          <g key={t}>
-            <line x1={ML} y1={y(t)} x2={W - MR} y2={y(t)} stroke="rgba(240,246,252,0.08)" />
-            <text x={ML - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill="rgba(240,246,252,0.45)">{t}</text>
-          </g>
-        ))}
-        <text x={ML - 6} y={mt - 1} textAnchor="end" fontSize="8" fill="rgba(240,246,252,0.35)">°C</text>
-
-        <line x1={W - MR} y1={mt} x2={W - MR} y2={H - mb} stroke="rgba(63,185,80,0.4)" />
-        {[0, 25, 50, 75, 100].map((p) => (
-          <g key={p}>
-            <line x1={W - MR} y1={strY(p)} x2={W - MR + 4} y2={strY(p)} stroke="rgba(63,185,80,0.4)" />
-            <text x={W - MR + 7} y={strY(p) + 3} fontSize="9" fill="#3fb950" opacity={0.75}>{p}%</text>
-          </g>
-        ))}
-
-        <line x1={ML} y1={H - mb} x2={W - MR} y2={H - mb} stroke="rgba(240,246,252,0.25)" />
-        {tick_hs.map((h) => (
-          <g key={h}>
-            <line x1={x(h)} y1={H - mb} x2={x(h)} y2={H - mb + 4} stroke="rgba(240,246,252,0.3)" />
-            <text x={x(h)} y={H - mb + 15} textAnchor="middle" fontSize="9" fill="rgba(240,246,252,0.45)">{h.toFixed(0)}h</text>
-          </g>
-        ))}
-
-        {/* the two quantities the DEF flag is tested against, drawn where they peak */}
-        <Marker y={y(sim.max_core_temp_anywhere_c)} color="#d29922"
-          label={`max_core_temp_anywhere_c ${sim.max_core_temp_anywhere_c.toFixed(2)} °C`} />
-        <Marker y={y(sim.peak_core_temp_c)} color="#f0883e" labelX={ML + 300}
-          label={`peak_core_temp_c ${sim.peak_core_temp_c.toFixed(2)} °C`} />
-
-        {/* the threshold, with its source */}
-        <Threshold y={y(def_c)} label={`DEF ${def_c} °C · USBR DSO-12-02 (155 °F design max)`} />
-
-        <path d={path(sim.strength_fraction.map((s) => s * 100), strY)} fill="none" stroke="#3fb950" strokeWidth="1.5" strokeDasharray="4 3" />
-        <path d={path(sim.surface_temp_c, y)} fill="none" stroke="#58a6ff" strokeWidth="1.5" />
-        <path d={path(sim.core_temp_c, y)} fill="none" stroke="#f0883e" strokeWidth="2" />
-
-        <line x1={x(now_h)} y1={mt} x2={x(now_h)} y2={H - mb} stroke="rgba(240,246,252,0.6)" strokeWidth="1" strokeDasharray="4 4" />
-        <circle cx={x(now_h)} cy={y(sim.core_temp_c[seriesIdx] ?? 0)} r="3" fill="#f0883e" />
-        <circle cx={x(now_h)} cy={y(sim.surface_temp_c[seriesIdx] ?? 0)} r="3" fill="#58a6ff" />
-      </svg>
+      {ticks.map((t) => (
+        <g key={t}>
+          <line x1={ML} y1={y(t)} x2={W - MR} y2={y(t)} stroke={GRID} />
+          <text x={ML - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill={INK} fontFamily="var(--font-mono)">
+            {fmt(t)}
+          </text>
+        </g>
+      ))}
+      <line x1={ML} y1={MT} x2={ML} y2={H - MB} stroke={AXIS} />
+      <line x1={ML} y1={H - MB} x2={W - MR} y2={H - MB} stroke={AXIS} />
+      {tick_hs.map((h) => (
+        <g key={h}>
+          <line x1={x(h)} y1={H - MB} x2={x(h)} y2={H - MB + 4} stroke={AXIS} />
+          <text
+            x={x(h)}
+            y={H - MB + 15}
+            textAnchor="middle"
+            fontSize="9"
+            fill={INK}
+            fontFamily="var(--font-mono)"
+          >
+            {h.toFixed(0)}h
+          </text>
+        </g>
+      ))}
     </>
   );
 }
 
-// the cracking limit is a GAP, not a level, so it cannot share the temperature axis -
-// 19.4 °C plotted next to a 60 °C core would read as a threshold the core is nowhere
-// near. It gets its own axis, in °C of differential.
-function DifferentialTrack({
-  sim,
+/** The scrubbed frame and, when hovering, the pointer's own time. */
+function Cursors({
   x,
   now_h,
-  tick_hs,
+  hover,
 }: {
-  sim: SimulationResult;
   x: (h: number) => number;
   now_h: number;
-  tick_hs: number[];
+  hover: number | null;
 }) {
-  const H = 108;
-  const mt = 14;
-  const mb = 20;
-  const limit_c = sim.breaches.cracking_limit_c;
-
-  const D_MAX = Math.ceil(Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c) * 1.2 / 5) * 5;
-  const y = (d: number) => mt + ((D_MAX - d) / (D_MAX || 1)) * (H - mt - mb);
-
-  const ticks: number[] = [];
-  for (let d = 0; d <= D_MAX; d += D_MAX > 30 ? 20 : 10) ticks.push(d);
-
   return (
-    <div className="mt-2">
-      <div className="flex items-center gap-4 mb-1 flex-wrap">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
-          Core–surface differential
-        </span>
-        <span className="text-[10px] text-text-muted">
-          the response carries the maxima over the run, not a differential series — no curve is drawn
-        </span>
-      </div>
-
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: 104 }} role="img" aria-label="Core to surface differential against the cracking limit">
-        <line x1={ML} y1={mt} x2={ML} y2={H - mb} stroke="rgba(240,246,252,0.25)" />
-        {ticks.map((d) => (
-          <g key={d}>
-            <line x1={ML} y1={y(d)} x2={W - MR} y2={y(d)} stroke="rgba(240,246,252,0.08)" />
-            <text x={ML - 6} y={y(d) + 3} textAnchor="end" fontSize="9" fill="rgba(240,246,252,0.45)">{d}</text>
-          </g>
-        ))}
-        <text x={ML - 6} y={mt - 1} textAnchor="end" fontSize="8" fill="rgba(240,246,252,0.35)">ΔT °C</text>
-
-        <line x1={ML} y1={H - mb} x2={W - MR} y2={H - mb} stroke="rgba(240,246,252,0.25)" />
-        {tick_hs.map((h) => (
-          <line key={h} x1={x(h)} y1={H - mb} x2={x(h)} y2={H - mb + 4} stroke="rgba(240,246,252,0.3)" />
-        ))}
-
-        <Marker y={y(sim.max_anywhere_surface_diff_c)} color="#d29922"
-          label={`max_anywhere_surface_diff_c ${sim.max_anywhere_surface_diff_c.toFixed(2)} °C`} />
-        <Marker y={y(sim.max_core_surface_diff_c)} color="#f0883e" labelX={ML + 320}
-          label={`max_core_surface_diff_c ${sim.max_core_surface_diff_c.toFixed(2)} °C`} />
-
-        <Threshold y={y(limit_c)} label={`cracking ${limit_c} °C · 35 °F, ACI 207`} />
-
-        <line x1={x(now_h)} y1={mt} x2={x(now_h)} y2={H - mb} stroke="rgba(240,246,252,0.25)" strokeWidth="1" strokeDasharray="4 4" />
-      </svg>
-    </div>
+    <>
+      <line
+        x1={x(now_h)}
+        y1={MT}
+        x2={x(now_h)}
+        y2={H - MB}
+        stroke="rgba(255,255,255,0.5)"
+        strokeWidth="1"
+        strokeDasharray="4 4"
+      />
+      {hover !== null && (
+        <line x1={x(hover)} y1={MT} x2={x(hover)} y2={H - MB} stroke="#7599fa" strokeWidth="1" />
+      )}
+    </>
   );
 }
 
-// a measured value, drawn where it sits
-function Marker({
-  y,
-  color,
-  label,
-  labelX = ML + 4,
-}: {
-  y: number;
-  color: string;
-  label: string;
-  labelX?: number;
-}) {
+/** Turn a pointer event into a time in hours, clamped to the plot area. */
+function useHourFromPointer(max_h: number) {
+  return (e: React.PointerEvent<SVGSVGElement>): number => {
+    const r = e.currentTarget.getBoundingClientRect();
+    // the viewBox is letterboxed by xMidYMid meet — recover the mapping
+    const k = Math.min(r.width / W, r.height / H);
+    const ox = (r.width - W * k) / 2;
+    const vx = (e.clientX - r.left - ox) / k;
+    const f = (vx - ML) / (W - ML - MR);
+    return Math.max(0, Math.min(1, f)) * max_h;
+  };
+}
+
+/* ── Tracks ─────────────────────────────────────────────────────────────────── */
+
+/** Core and surface temperature against the DEF threshold. */
+function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover }: TrackProps) {
+  const def_c = sim.breaches.def_threshold_c;
+  const values = [...sim.core_temp_c, ...sim.surface_temp_c, def_c, sim.max_core_temp_anywhere_c];
+  const T_MIN = Math.floor(Math.min(...values) / 10) * 10;
+  const T_MAX = Math.ceil(Math.max(...values) / 10) * 10;
+  const y = (t: number) => MT + ((T_MAX - t) / (T_MAX - T_MIN || 1)) * (H - MT - MB);
+
+  const ticks: number[] = [];
+  for (let t = T_MIN; t <= T_MAX; t += 10) ticks.push(t);
+
+  const path = (vals: number[]) =>
+    vals.map((v, i) => `${i === 0 ? "M" : "L"}${x(sim.times_h[i]).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
+
+  const at = hoverIdx ?? null;
+  const toHour = useHourFromPointer(max_h);
+
+  return (
+    <Track
+      title="Temperature"
+      unit="°C"
+      onHover={(e) => setHover(toHour(e))}
+      onLeave={() => setHover(null)}
+      readout={
+        at !== null ? (
+          <>
+            <span style={{ color: CORE }}>{sim.core_temp_c[at]?.toFixed(2)}</span>
+            {" / "}
+            <span style={{ color: SURFACE }}>{sim.surface_temp_c[at]?.toFixed(2)}</span>
+            <span className="text-text-muted"> @ {sim.times_h[at]?.toFixed(1)} h</span>
+          </>
+        ) : (
+          <span className="text-text-muted">peak {sim.peak_core_temp_c.toFixed(2)} °C</span>
+        )
+      }
+    >
+      <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} />
+
+      {/* the two quantities the DEF flag is tested against, drawn where they peak */}
+      <Measured
+        y={y(sim.max_core_temp_anywhere_c)}
+        label={`max anywhere ${sim.max_core_temp_anywhere_c.toFixed(2)}`}
+      />
+      <Threshold y={y(def_c)} label={`DEF ${def_c} °C · USBR DSO-12-02`} />
+
+      <path d={path(sim.surface_temp_c)} fill="none" stroke={SURFACE} strokeWidth="2" strokeLinejoin="round" />
+      <path d={path(sim.core_temp_c)} fill="none" stroke={CORE} strokeWidth="2" strokeLinejoin="round" />
+
+      <Cursors x={x} now_h={now_h} hover={hover} />
+      {at !== null && (
+        <>
+          <Dot cx={x(sim.times_h[at])} cy={y(sim.core_temp_c[at])} fill={CORE} />
+          <Dot cx={x(sim.times_h[at])} cy={y(sim.surface_temp_c[at])} fill={SURFACE} />
+        </>
+      )}
+    </Track>
+  );
+}
+
+/** Strength development. Its own panel because % and °C are not comparable. */
+function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover }: TrackProps) {
+  const y = (p: number) => MT + (1 - p / 100) * (H - MT - MB);
+  const ticks = [0, 25, 50, 75, 100];
+  const path = sim.strength_fraction
+    .map((s, i) => `${i === 0 ? "M" : "L"}${x(sim.times_h[i]).toFixed(1)} ${y(s * 100).toFixed(1)}`)
+    .join(" ");
+
+  const at = hoverIdx ?? null;
+  const toHour = useHourFromPointer(max_h);
+
+  return (
+    <Track
+      title="Strength fraction"
+      unit="% of f'c"
+      onHover={(e) => setHover(toHour(e))}
+      onLeave={() => setHover(null)}
+      readout={
+        at !== null ? (
+          <>
+            <span style={{ color: STRENGTH }}>
+              {((sim.strength_fraction[at] ?? 0) * 100).toFixed(1)}%
+            </span>
+            <span className="text-text-muted"> @ {sim.times_h[at]?.toFixed(1)} h</span>
+          </>
+        ) : (
+          <span className="text-text-muted">
+            final {((sim.strength_fraction[sim.strength_fraction.length - 1] ?? 0) * 100).toFixed(1)}%
+          </span>
+        )
+      }
+    >
+      <Frame ticks={ticks} y={y} fmt={(v) => `${v}`} tick_hs={tick_hs} x={x} />
+      <path d={path} fill="none" stroke={STRENGTH} strokeWidth="2" strokeLinejoin="round" />
+      <Cursors x={x} now_h={now_h} hover={hover} />
+      {at !== null && (
+        <Dot cx={x(sim.times_h[at])} cy={y((sim.strength_fraction[at] ?? 0) * 100)} fill={STRENGTH} />
+      )}
+    </Track>
+  );
+}
+
+// The cracking limit is a GAP, not a level, so it cannot share the temperature axis -
+// 19.4 °C plotted next to a 60 °C core would read as a threshold the core is nowhere
+// near. It gets its own axis, in °C of differential.
+function DifferentialTrack({ sim, x, tick_hs, now_h, max_h, hover, setHover }: TrackProps) {
+  const limit_c = sim.breaches.cracking_limit_c;
+  const D_MAX =
+    Math.ceil((Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c) * 1.2) / 5) * 5;
+  const y = (d: number) => MT + ((D_MAX - d) / (D_MAX || 1)) * (H - MT - MB);
+
+  const ticks: number[] = [];
+  const stepD = D_MAX > 30 ? 20 : 10;
+  for (let d = 0; d <= D_MAX; d += stepD) ticks.push(d);
+
+  const toHour = useHourFromPointer(max_h);
+
+  return (
+    <Track
+      title="Core–surface differential"
+      unit="ΔT °C"
+      onHover={(e) => setHover(toHour(e))}
+      onLeave={() => setHover(null)}
+      readout={
+        <span className="text-text-muted">maxima only — no series in the response</span>
+      }
+    >
+      <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} />
+
+      <Measured
+        y={y(sim.max_anywhere_surface_diff_c)}
+        label={`max anywhere ${sim.max_anywhere_surface_diff_c.toFixed(2)}`}
+      />
+      <Measured
+        y={y(sim.max_core_surface_diff_c)}
+        color={CORE}
+        label={`max core ${sim.max_core_surface_diff_c.toFixed(2)}`}
+      />
+      <Threshold y={y(limit_c)} label={`cracking ${limit_c} °C · ACI 207`} />
+
+      <Cursors x={x} now_h={now_h} hover={hover} />
+    </Track>
+  );
+}
+
+/* ── Marks ──────────────────────────────────────────────────────────────────── */
+
+/** A measured maximum, drawn as a level where it sits. */
+function Measured({ y, label, color = MEASURED }: { y: number; label: string; color?: string }) {
   return (
     <g>
-      <line x1={ML} y1={y} x2={W - MR} y2={y} stroke={color} strokeWidth="1" strokeDasharray="2 3" opacity={0.75} />
-      <text x={labelX} y={y - 3} fontSize="9" fill={color} className="tabular-nums">{label}</text>
+      <line x1={ML} y1={y} x2={W - MR} y2={y} stroke={color} strokeWidth="1" strokeDasharray="2 3" opacity={0.8} />
+      <text x={ML + 4} y={y - 4} fontSize="9" fill={color} fontFamily="var(--font-mono)">
+        {label}
+      </text>
     </g>
   );
 }
 
-// a limit, drawn with the standard it comes from
+/** A limit, drawn with the standard it comes from. */
 function Threshold({ y, label }: { y: number; label: string }) {
   return (
     <g>
-      <line x1={ML} y1={y} x2={W - MR} y2={y} stroke="#f85149" strokeWidth="1" strokeDasharray="6 4" />
-      <text x={W - MR - 4} y={y - 4} textAnchor="end" fontSize="9" fill="#f85149" className="tabular-nums">{label}</text>
+      <line x1={ML} y1={y} x2={W - MR} y2={y} stroke={LIMIT} strokeWidth="1" strokeDasharray="6 4" />
+      <text x={W - MR - 2} y={y - 4} textAnchor="end" fontSize="9" fill={LIMIT} fontFamily="var(--font-mono)">
+        {label}
+      </text>
     </g>
   );
+}
+
+/** A sample marker. The surface-coloured ring keeps it legible over any curve. */
+function Dot({ cx: x, cy, fill }: { cx: number; cy: number; fill: string }) {
+  return <circle cx={x} cy={cy} r="3.5" fill={fill} stroke="#101213" strokeWidth="2" />;
 }
 
 function Key({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {
   return (
-    <span className="flex items-center gap-1.5 text-[10px] text-text-secondary">
-      <span className="w-3 h-0.5 rounded" style={{ background: color, opacity: dashed ? 0.6 : 1 }} />
+    <span className="flex items-center gap-1.5 font-mono text-[10px] text-text-muted">
+      <span
+        className="h-0.5 w-3.5 shrink-0 rounded-full"
+        style={{
+          background: dashed
+            ? `repeating-linear-gradient(to right, ${color} 0 3px, transparent 3px 5px)`
+            : color,
+        }}
+      />
       {label}
     </span>
   );
