@@ -75,6 +75,28 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+// What this is, in the vocabulary a search engine indexes rather than the one a
+// reader sees. Emitted once, in the document head, from the same constants the
+// metadata above uses - so the two cannot describe two different products.
+const STRUCTURED_DATA = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "SatAlite Studio",
+  applicationCategory: "EngineeringApplication",
+  operatingSystem: "Any modern browser",
+  url: SITE_URL,
+  description: DESCRIPTION,
+  license: "https://opensource.org/licenses/MIT",
+  isAccessibleForFree: true,
+  featureList: [
+    "2D finite-volume thermal solve of a concrete cross-section",
+    "Schindler–Folliard cement hydration",
+    "ASTM C1074 maturity and strength gain",
+    "DEF, thermal cracking, evaporation and placement threshold checks",
+    "Monte Carlo p05/p95 bands",
+  ],
+};
+
 export default function RootLayout({
   children,
 }: {
@@ -82,6 +104,17 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} dark`}>
+      <head>
+        {/* No font preconnect: next/font/google downloads Geist at BUILD time and
+            serves it from this origin, so the page makes no cross-origin request and a
+            preconnect to Google would open a connection nothing ever uses. */}
+        <script
+          type="application/ld+json"
+          // The object is a constant in this file. Nothing user-supplied reaches it,
+          // so there is no injection surface to escape.
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(STRUCTURED_DATA) }}
+        />
+      </head>
       <body className="font-sans antialiased">{children}</body>
     </html>
   );

@@ -13,7 +13,7 @@ import TopBar from "@/components/TopBar";
 import type { ViewMode } from "@/components/TopBar";
 import LeftPanel from "@/components/LeftPanel";
 import type { IfcUiState } from "@/components/LeftPanel";
-import Viewer from "@/components/Viewer";
+import dynamic from "next/dynamic";
 import Section2D from "@/components/Section2D";
 import ChecksPanel from "@/components/ChecksPanel";
 import ProbeCard from "@/components/ProbeCard";
@@ -57,8 +57,22 @@ import {
 import { probeGeometry } from "@/lib/sectionMetrics";
 import type { ProbePick } from "@/lib/probe";
 import { clampDims, type Outline, type ShapeId } from "@/lib/shapes";
-import { importIfcOutline } from "@/lib/ifcImport";
 import type { LengthUnit } from "@/lib/units";
+
+// three.js, @react-three/fiber and drei are about a megabyte of the bundle, and the
+// studio opens in 2D. Loading them on demand means the sheet is interactive without
+// ever paying for a WebGL renderer the reader may not open. `ssr: false` because there
+// is no canvas to render on the server, and the fallback is the same spinner the first
+// solve uses so switching views does not introduce a second loading vocabulary.
+const Viewer = dynamic(() => import("@/components/Viewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3">
+      <span className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent-blue" />
+      <p className="text-xs text-text-secondary">Loading the 3D viewer…</p>
+    </div>
+  ),
+});
 
 // Spawn x for a palette that should open against the RIGHT edge. clampGeo pulls any
 // overshoot back to `width - w - margin`, so asking for "further right than possible"
@@ -366,12 +380,15 @@ export default function StudioPage() {
     }));
   }, []);
 
+  // The IFC reader is loaded when a file is chosen, not before. web-ifc is the
+  // largest dependency in the project by a wide margin and most sessions never open
+  // an IFC at all, so it has no business in the bundle that draws the first frame.
   const handleImportIfc = useCallback((file: File) => {
     setIfcUi({ busy: true, error: null, name: null });
     setOpenPanels((prev) => ({ ...prev, element: true }));
     file
       .arrayBuffer()
-      .then(importIfcOutline)
+      .then(async (buf) => (await import("@/lib/ifcImport")).importIfcOutline(buf))
       .then((outcome) => {
         if (!outcome.ok) {
           setIfcUi({ busy: false, error: `${file.name}: ${outcome.error}`, name: null });
