@@ -1,59 +1,115 @@
-// studio page. Loads a real solve from the backend and hands it to every panel.
+// Studio page. Owns the inputs, turns them into a request, and hands the solved run
+// to every panel.
+//
+// The inputs DRIVE the solve. Changing a dimension, a mix number or the cure window
+// re-runs /api/simulate and everything on screen follows - so the one thing this file
+// has to get right is that nothing is ever drawn from a request that has not been
+// solved. `stale` says when the boxes and the drawing have parted company, and the
+// drawing keeps showing the last real answer until a new one lands.
 "use client";
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import TopBar from "@/components/TopBar";
 import type { ViewMode } from "@/components/TopBar";
 import LeftPanel from "@/components/LeftPanel";
+import type { IfcUiState } from "@/components/LeftPanel";
 import Viewer from "@/components/Viewer";
 import Section2D from "@/components/Section2D";
 import ChecksPanel from "@/components/ChecksPanel";
 import TimeScrubber from "@/components/TimeScrubber";
+import HistoryChart from "@/components/HistoryChart";
 import PourWindowTable from "@/components/PourWindowTable";
 import EnsemblePanel from "@/components/EnsemblePanel";
 import SeasonPanel from "@/components/SeasonPanel";
 import ValidationPanel from "@/components/ValidationPanel";
 import FloatingPanel from "@/components/FloatingPanel";
-import type { PanelGeometry } from "@/components/FloatingPanel";
+import type { ContainerSize, PanelGeometry } from "@/components/FloatingPanel";
 import type { PanelId } from "@/components/PanelId";
-import { ApiError, type PourWindowResult, type SeasonAnalysisResponse, type ValidationResponse } from "@/lib/api";
-import { loadDemoRun, loadPourWindows, loadSeason, loadValidation, scaleBounds, type LoadedRun } from "@/lib/scenario";
-import { DEFAULT_ELEMENT_CONFIG, type ElementConfig } from "@/lib/elementConfig";
+import {
+  ApiError,
+  simulate,
+  type AmbientSpec,
+  type DemoEnsembleResponse,
+  type PourWindowResult,
+  type SeasonAnalysisResponse,
+  type SimulationRequest,
+  type SimulationResult,
+  type ValidationResponse,
+} from "@/lib/api";
+import {
+  FIELD_STRIDE_H,
+  loadPourWindows,
+  loadSeason,
+  loadValidation,
+  scaleBounds,
+  demoScenario,
+} from "@/lib/scenario";
+import {
+  DEFAULT_ELEMENT_CONFIG,
+  defaultDims,
+  lengthM,
+  toSimulationRequest,
+  type ElementConfig,
+} from "@/lib/elementConfig";
+import { clampDims, type Outline, type ShapeId } from "@/lib/shapes";
 import { importIfcOutline } from "@/lib/ifcImport";
-import { IMPORTED_SHAPE, type IfcUiState } from "@/components/LeftPanel";
 import type { LengthUnit } from "@/lib/units";
+
+// Spawn x for a palette that should open against the RIGHT edge. clampGeo pulls any
+// overshoot back to `width - w - margin`, so asking for "further right than possible"
+// is how a palette says "dock me right" without knowing the viewport.
+const DOCK_RIGHT = 100_000;
 
 // where each palette opens before first drag/resize
 const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }> = {
-  element: { x: 16, y: 16, w: 262, h: 480, minW: 262, minH: 240 },
-  checks: { x: 950, y: 16, w: 282, h: 560, minW: 282, minH: 240 },
-  pour: { x: 16, y: 320, w: 860, h: 300, minW: 560, minH: 200 },
+  element: { x: 16, y: 16, w: 340, h: 600, minW: 300, minH: 260 },
+  checks: { x: DOCK_RIGHT, y: 16, w: 316, h: 600, minW: 268, minH: 240 },
+  pour: { x: 380, y: 340, w: 860, h: 300, minW: 420, minH: 200 },
   ensemble: { x: 60, y: 60, w: 940, h: 700, minW: 620, minH: 360 },
   season: { x: 90, y: 40, w: 900, h: 760, minW: 620, minH: 360 },
   validation: { x: 120, y: 30, w: 860, h: 800, minW: 600, minH: 360 },
 };
 
-interface ImportedElement {
-  outline: [number, number][];
-  length_m: number;
-  name: string;
+// how long after a slider is released before the solve fires. Long enough to coalesce
+// a flurry of commits, short enough that it still reads as a response to the drag.
+const SOLVE_DEBOUNCE_MS = 350;
+
+interface Run {
+  request: SimulationRequest;
+  result: SimulationResult;
+  /** the request this run answers, serialised. Compared against the live one for staleness. */
+  key: string;
 }
 
 export default function StudioPage() {
-  // the solved run. null until it lands; error text when it does not.
-  const [run, setRun] = useState<LoadedRun | null>(null);
-  const [pour, setPour] = useState<PourWindowResult | null>(null);
+  // The scenario artifact. Its ambient series is real cached data that was actually
+  // solved, so reusing it costs no FortyGuard quota and is reproducible between runs.
+  const [demo, setDemo] = useState<DemoEnsembleResponse | null>(null);
+  const [ambient, setAmbient] = useState<AmbientSpec | null>(null);
+
+  const [run, setRun] = useState<Run | null>(null);
+  const [solving, setSolving] = useState(false);
+  const [solveError, setSolveError] = useState<string | null>(null);
+
+  // The sweep carries the key of the run it answers, so a result can be shown only
+  // beside the run it belongs to - and the effect below never has to clear it
+  // synchronously to keep that true.
+  const [pour, setPour] = useState<{ key: string; data: PourWindowResult | null; error: string | null } | null>(null);
+  const pourFetchedKey = useRef<string | null>(null);
   const [season, setSeason] = useState<SeasonAnalysisResponse | null>(null);
   const [validation, setValidation] = useState<ValidationResponse | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [imported, setImported] = useState<ImportedElement | null>(null);
+  const [importedOutline, setImportedOutline] = useState<Outline | null>(null);
   const [ifcUi, setIfcUi] = useState<IfcUiState>({ busy: false, error: null, name: null });
-  const [element, setElement] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
+  const [config, setConfig] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
 
   const [frameIndex, setFrameIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("2d");
+  // Palettes float OVER the drawing, so every one that opens by default is drawing
+  // the user cannot see. Checks earns its place - it is the answer. The inputs open
+  // from the command bar, which also carries the Solve button, so nothing about them
+  // is hidden by starting closed.
   const [openPanels, setOpenPanels] = useState<Record<PanelId, boolean>>({
     element: false,
     checks: true,
@@ -63,6 +119,109 @@ export default function StudioPage() {
     validation: false,
   });
   const [units, setUnits] = useState<LengthUnit>("m");
+
+  // The surface palettes are bounded to, and its measured size. The page owns the
+  // measurement so every palette re-clamps off the same numbers at the same moment.
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [overlaySize, setOverlaySize] = useState<ContainerSize | null>(null);
+
+  /* ── the request ──────────────────────────────────────────────────────────── */
+
+  const request = useMemo(
+    () => (ambient ? toSimulationRequest(config, ambient) : null),
+    [config, ambient],
+  );
+  const requestKey = useMemo(() => (request ? JSON.stringify(request) : null), [request]);
+  const stale = requestKey !== null && run !== null && requestKey !== run.key;
+
+  // Drop a response whose request has already been superseded. Without this, releasing
+  // two sliders in quick succession can land the slower answer last.
+  const solveSeq = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Time is preserved across solves rather than reset: re-solving is a comparison, and
+  // being thrown back to t=0 (or to a different peak) hides what actually changed.
+  const holdTime_h = useRef<number | null>(null);
+
+  // Solve whatever the inputs currently describe.
+  //
+  // Re-created on every input change, which is exactly right: the debounce timer and
+  // the Solve button both capture the callback at the moment they fire, so they always
+  // send the request that was on screen then - not the one that existed when some
+  // earlier render defined the callback.
+  const runSolve = useCallback(async () => {
+    if (!request || !requestKey) return;
+    const seq = ++solveSeq.current;
+    setSolving(true);
+    setSolveError(null);
+    try {
+      const result = await simulate(request, { fields: true, fields_stride_h: FIELD_STRIDE_H });
+      if (seq !== solveSeq.current) return;
+      setRun({ request, result, key: requestKey });
+      setSolveError(null);
+    } catch (err: unknown) {
+      if (seq !== solveSeq.current) return;
+      setSolveError(err instanceof ApiError ? `${err.status}: ${err.message}` : String(err));
+    } finally {
+      if (seq === solveSeq.current) setSolving(false);
+    }
+  }, [request, requestKey]);
+
+  // The debounce has to fire the LATEST runSolve, not the one that existed when the
+  // edit was committed.
+  //
+  // Handing `runSolve` straight to setTimeout looked equivalent and was not: an edit
+  // calls onChange and onCommit in the same handler, so the timer was armed with the
+  // callback from the render BEFORE the state change - and 350 ms later it solved the
+  // config the user had just moved away from. A shape change re-solved the old shape
+  // and then reported itself stale, which is exactly what it was.
+  const runSolveRef = useRef(runSolve);
+  useEffect(() => {
+    runSolveRef.current = runSolve;
+  }, [runSolve]);
+
+  // A committed edit — a slider released, a field left, a dropdown chosen.
+  const commit = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => void runSolveRef.current(), SOLVE_DEBOUNCE_MS);
+  }, []);
+
+  const solveNow = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    void runSolveRef.current();
+  }, []);
+
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+
+  /* ── loads ────────────────────────────────────────────────────────────────── */
+
+  // the scenario, then the first solve off it.
+  useEffect(() => {
+    let live = true;
+    demoScenario()
+      .then((d) => {
+        if (!live) return;
+        setDemo(d);
+        setAmbient(d.scenario.ambient);
+      })
+      .catch((err: unknown) => {
+        if (!live) return;
+        setSolveError(err instanceof ApiError ? `${err.status}: ${err.message}` : String(err));
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // first solve, once there is weather to solve against. Guarded on `run` so this
+  // fires exactly once — every later solve comes from a commit or the Solve button.
+  const bootstrapped = useRef(false);
+  useEffect(() => {
+    if (!ambient || bootstrapped.current) return;
+    bootstrapped.current = true;
+    void runSolve();
+  }, [ambient, runSolve]);
 
   // the season artifact is independent of the run and may legitimately be absent.
   useEffect(() => {
@@ -81,97 +240,120 @@ export default function StudioPage() {
     let live = true;
     loadValidation()
       .then((v) => live && setValidation(v))
-      .catch((err: unknown) => live && setValidationError(err instanceof Error ? err.message : String(err)));
+      .catch((err: unknown) =>
+        live && setValidationError(err instanceof Error ? err.message : String(err)),
+      );
     return () => {
       live = false;
     };
   }, []);
 
-  // fetch the run once, in the browser. The pour sweep follows off the same scenario;
-  // it is allowed to fail on its own without taking the viewer down with it.
+  // The pour sweep is six solves. It runs only while its palette is open, and only
+  // once per request — opening it used to be free because it ran on load regardless.
   useEffect(() => {
+    if (!openPanels.pour || !run || pourFetchedKey.current === run.key) return;
+    const key = run.key;
+    pourFetchedKey.current = key;
     let live = true;
-    loadDemoRun()
-      .then((loaded) => {
-        if (!live) return;
-        setRun(loaded);
-        // open on the peak-core frame. t = 0 is the whole section at placement
-        // temperature, which is correct and completely uninformative to look at.
-        const f = loaded.result.fields;
-        if (f) {
-          const peak = loaded.result.core_temp_c.indexOf(Math.max(...loaded.result.core_temp_c));
-          const idx = f.frame_indices.indexOf(peak);
-          if (idx >= 0) setFrameIndex(idx);
-        }
-        return loadPourWindows(loaded.request)
-          .then((p) => live && setPour(p))
-          .catch(() => undefined);
-      })
+    loadPourWindows(run.request)
+      .then((p) => live && setPour({ key, data: p, error: null }))
       .catch((err: unknown) => {
         if (!live) return;
-        setLoadError(
-          err instanceof ApiError ? `${err.status}: ${err.message}` : String(err),
-        );
+        setPour({
+          key,
+          data: null,
+          error: err instanceof ApiError ? `${err.status}: ${err.message}` : String(err),
+        });
       });
     return () => {
       live = false;
     };
-  }, []);
+  }, [openPanels.pour, run]);
+
+  // Re-measure on the two things that change the overlay's box: the window resizing,
+  // and the layout around it changing.
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const next = { w: Math.round(r.width), h: Math.round(r.height) };
+      if (next.w === 0 || next.h === 0) return;
+      setOverlaySize((prev) => (prev && prev.w === next.w && prev.h === next.h ? prev : next));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [run, viewMode, solveError]);
+
+  /* ── derived ──────────────────────────────────────────────────────────────── */
 
   const bounds = useMemo(() => (run ? scaleBounds(run.result) : null), [run]);
   const frameTimes = useMemo(() => run?.result.fields?.times_h ?? [], [run]);
+  const ambientSpan_h = ambient ? ambient.hours_h[ambient.hours_h.length - 1] - ambient.hours_h[0] : 72;
 
-  const updateElement = useCallback(
+  // Land on the frame nearest the time that was on screen before, or on the peak-core
+  // frame the first time — t=0 is the whole section at placement temperature, which is
+  // correct and completely uninformative to look at.
+  useEffect(() => {
+    const f = run?.result.fields;
+    if (!f || f.times_h.length === 0) return;
+    const want = holdTime_h.current;
+    if (want === null) {
+      const peak = run.result.core_temp_c.indexOf(Math.max(...run.result.core_temp_c));
+      const idx = f.frame_indices.indexOf(peak);
+      setFrameIndex(idx >= 0 ? idx : 0);
+      return;
+    }
+    let best = 0;
+    for (let i = 1; i < f.times_h.length; i++) {
+      if (Math.abs(f.times_h[i] - want) < Math.abs(f.times_h[best] - want)) best = i;
+    }
+    setFrameIndex(best);
+  }, [run]);
+
+  /* ── input handlers ───────────────────────────────────────────────────────── */
+
+  const updateConfig = useCallback(
     <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => {
-      if (key === "shape" && value !== IMPORTED_SHAPE) {
-        setImported(null);
-        setIfcUi({ busy: false, error: null, name: null });
-      }
-      setElement((prev) => ({ ...prev, [key]: value }));
+      setConfig((prev) => {
+        if (key !== "shape") return { ...prev, [key]: value };
+        // A new shape brings a new set of dimension keys. Carrying the old dims over
+        // would leave the request holding keys this shape's outline() never reads and
+        // missing the ones it does.
+        const shape = value as ShapeId;
+        return { ...prev, shape, dims_mm: defaultDims(shape) };
+      });
     },
     [],
   );
 
-  const runImport = useCallback(async (data: ArrayBuffer, fileName: string) => {
-    setIfcUi({ busy: true, error: null, name: null });
-    setOpenPanels((prev) => ({ ...prev, element: true }));
-    const outcome = await importIfcOutline(data);
-    if (!outcome.ok) {
-      setIfcUi({ busy: false, error: `${fileName}: ${outcome.error}`, name: null });
-      return;
-    }
-    const el = outcome.element;
-    setImported({ outline: el.outline, length_m: el.length_m, name: el.name });
-    const w = Math.max(...el.outline.map((p) => p[0]));
-    const h = Math.max(...el.outline.map((p) => p[1]));
-    setElement((prev) => ({
+  const updateDim = useCallback((key: string, value_mm: number) => {
+    setConfig((prev) => ({
       ...prev,
-      shape: IMPORTED_SHAPE,
-      flange_width_mm: w * 1000,
-      total_depth_mm: h * 1000,
-      length_mm: el.length_m * 1000,
+      dims_mm: clampDims(prev.shape, { ...prev.dims_mm, [key]: value_mm }),
     }));
-    setIfcUi({ busy: false, error: null, name: el.name });
   }, []);
 
-  const handleImportIfc = useCallback(
-    (file: File) => {
-      file.arrayBuffer().then((buf) => runImport(buf, file.name));
-    },
-    [runImport],
-  );
-
-  useEffect(() => {
-    const url = new URL(window.location.href).searchParams.get("ifc");
-    if (!url) return;
-    fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`fetch failed (${r.status})`);
-        return r.arrayBuffer();
+  const handleImportIfc = useCallback((file: File) => {
+    setIfcUi({ busy: true, error: null, name: null });
+    setOpenPanels((prev) => ({ ...prev, element: true }));
+    file
+      .arrayBuffer()
+      .then(importIfcOutline)
+      .then((outcome) => {
+        if (!outcome.ok) {
+          setIfcUi({ busy: false, error: `${file.name}: ${outcome.error}`, name: null });
+          return;
+        }
+        setImportedOutline(outcome.element.outline);
+        setConfig((prev) => ({ ...prev, length_mm: outcome.element.length_m * 1000 }));
+        setIfcUi({ busy: false, error: null, name: outcome.element.name });
       })
-      .then((buf) => runImport(buf, url))
-      .catch((e) => setIfcUi({ busy: false, error: `${url}: ${String(e)}`, name: null }));
-  }, [runImport]);
+      .catch((e: unknown) =>
+        setIfcUi({ busy: false, error: `${file.name}: ${String(e)}`, name: null }),
+      );
+  }, []);
 
   // snap the slider to the nearest FRAME the response actually carries. The field is
   // strided, so there is no frame between two of these and none is invented.
@@ -182,6 +364,7 @@ export default function StudioPage() {
       for (let i = 1; i < frameTimes.length; i++) {
         if (Math.abs(frameTimes[i] - time_h) < Math.abs(frameTimes[best] - time_h)) best = i;
       }
+      holdTime_h.current = frameTimes[best];
       setFrameIndex(best);
     },
     [frameTimes],
@@ -195,12 +378,21 @@ export default function StudioPage() {
     setOpenPanels((prev) => ({ ...prev, [id]: false }));
   }, []);
 
-  // element length. The solver is 2D and returns no length, so this is a VIEW parameter
-  // for the extrusion, not a solved quantity.
-  const length_m = element.length_mm / 1000;
+  // The precomputed band describes ONE fixed scenario. Once the inputs move off it,
+  // the band is no longer a band for the run on screen and has to say so.
+  const demoKey = useMemo(
+    () => (demo ? JSON.stringify(demo.scenario) : null),
+    [demo],
+  );
+  const matchesDemo = demoKey !== null && run !== null && demoKey === JSON.stringify(run.request);
+
+  // a sweep is only shown beside the run it was computed for.
+  const pourReady = pour && run && pour.key === run.key ? pour : null;
+
+  const length_m = lengthM(config);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex h-screen flex-col overflow-hidden">
       <TopBar
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -208,24 +400,30 @@ export default function StudioPage() {
         onTogglePanel={togglePanel}
         units={units}
         onUnitsChange={setUnits}
+        solving={solving}
+        stale={stale}
+        onSolve={solveNow}
       />
-      <div className="flex flex-1 min-h-0">
-        <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          <div className="flex-1 relative flex min-h-0">
-            {loadError ? (
-              <div className="flex-1 flex items-center justify-center p-8">
-                <div className="max-w-lg text-center">
-                  <p className="text-sm text-status-red font-medium">Could not load a solve</p>
-                  <p className="mt-2 text-xs text-text-secondary leading-relaxed">{loadError}</p>
-                  <p className="mt-3 text-[10px] text-text-muted leading-relaxed">
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 flex-1">
+            {!run && solveError ? (
+              <div className="flex flex-1 items-center justify-center p-8">
+                <div className="max-w-lg rounded-xl border border-status-red/30 bg-status-red-dim p-5 text-center">
+                  <p className="text-sm font-medium text-status-red">Could not load a solve</p>
+                  <p className="mt-2 font-mono text-[11px] leading-relaxed text-text-secondary">
+                    {solveError}
+                  </p>
+                  <p className="mt-3 text-[11px] leading-relaxed text-text-muted">
                     Nothing is drawn from a placeholder. The viewer stays empty until the
                     backend returns a run.
                   </p>
                 </div>
               </div>
             ) : !run ? (
-              <div className="flex-1 flex items-center justify-center">
-                <p className="text-xs text-text-secondary">solving…</p>
+              <div className="flex flex-1 flex-col items-center justify-center gap-3">
+                <span className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent-blue" />
+                <p className="text-xs text-text-secondary">Solving…</p>
               </div>
             ) : viewMode === "3d" ? (
               <Viewer
@@ -245,28 +443,55 @@ export default function StudioPage() {
               />
             )}
 
-            <div className="absolute inset-0 pointer-events-none">
-              {openPanels.element && (
-                <FloatingPanel
-                  title="Element & Mix Inputs"
-                  defaultGeo={PANEL_GEO.element}
-                  minWidth={PANEL_GEO.element.minW}
-                  minHeight={PANEL_GEO.element.minH}
-                  onClose={() => closePanel("element")}
-                >
-                  <LeftPanel
-                    config={element}
-                    onChange={updateElement}
-                    units={units}
-                    ifc={ifcUi}
-                    onImportIfc={handleImportIfc}
-                    importedOutline={imported?.outline ?? null}
-                  />
-                </FloatingPanel>
-              )}
-              {openPanels.checks && run && (
+            {/* A solve that fails AFTER one has succeeded must not blank the viewer:
+                the run on screen is still a real answer to a real request. */}
+            {run && solveError && (
+              <div className="pointer-events-none absolute inset-x-0 top-20 z-30 flex justify-center px-4">
+                <p className="pointer-events-auto max-w-lg rounded-lg border border-status-red/40 bg-status-red-dim px-3 py-2 font-mono text-[10px] leading-relaxed text-status-red backdrop-blur-xl">
+                  The last solve was rejected: {solveError}. The drawing is still the
+                  previous answer.
+                </p>
+              </div>
+            )}
+
+            {/* Palettes stay MOUNTED for the whole session and are hidden by CSS when
+                closed, so opening and closing can animate. The overlay stops short of
+                the right edge on purpose: palettes are bounded to it, so that gutter is
+                a strip the thermal legend keeps to itself. */}
+            <div
+              ref={overlayRef}
+              className="pointer-events-none absolute inset-y-0 left-0 right-[104px]"
+            >
+              <FloatingPanel
+                title="Element & Mix Inputs"
+                open={openPanels.element}
+                containerSize={overlaySize}
+                defaultGeo={PANEL_GEO.element}
+                minWidth={PANEL_GEO.element.minW}
+                minHeight={PANEL_GEO.element.minH}
+                onClose={() => closePanel("element")}
+              >
+                <LeftPanel
+                  config={config}
+                  onChange={updateConfig}
+                  onDimChange={updateDim}
+                  onCommit={commit}
+                  units={units}
+                  ifc={ifcUi}
+                  onImportIfc={handleImportIfc}
+                  importedOutline={importedOutline}
+                  ambientSpan_h={ambientSpan_h}
+                  solving={solving}
+                  stale={stale}
+                  onSolve={solveNow}
+                />
+              </FloatingPanel>
+
+              {run && (
                 <FloatingPanel
                   title="Checks"
+                  open={openPanels.checks}
+                  containerSize={overlaySize}
                   defaultGeo={PANEL_GEO.checks}
                   minWidth={PANEL_GEO.checks.minW}
                   minHeight={PANEL_GEO.checks.minH}
@@ -275,83 +500,128 @@ export default function StudioPage() {
                   <ChecksPanel sim={run.result} request={run.request} />
                 </FloatingPanel>
               )}
-              {openPanels.ensemble && run && (
+
+              {run && demo && (
                 <FloatingPanel
                   title="Ensemble band — precomputed, one fixed scenario"
+                  open={openPanels.ensemble}
+                  containerSize={overlaySize}
                   defaultGeo={PANEL_GEO.ensemble}
                   minWidth={PANEL_GEO.ensemble.minW}
                   minHeight={PANEL_GEO.ensemble.minH}
                   onClose={() => closePanel("ensemble")}
                 >
-                  <EnsemblePanel demo={run.demo} nominal={run.result} />
+                  <EnsemblePanel demo={demo} nominal={run.result} matchesDemo={matchesDemo} />
                 </FloatingPanel>
               )}
-              {openPanels.season && (
-                <FloatingPanel
-                  title="Season replay — precomputed"
-                  defaultGeo={PANEL_GEO.season}
-                  minWidth={PANEL_GEO.season.minW}
-                  minHeight={PANEL_GEO.season.minH}
-                  onClose={() => closePanel("season")}
-                >
-                  {season ? (
-                    <SeasonPanel season={season} />
-                  ) : (
-                    <p className="p-3 text-xs text-text-secondary">loading season replay…</p>
-                  )}
-                </FloatingPanel>
-              )}
-              {openPanels.validation && (
-                <FloatingPanel
-                  title="Validation — USBR DSO-12-02 cases"
-                  defaultGeo={PANEL_GEO.validation}
-                  minWidth={PANEL_GEO.validation.minW}
-                  minHeight={PANEL_GEO.validation.minH}
-                  onClose={() => closePanel("validation")}
-                >
-                  {validation ? (
-                    <ValidationPanel validation={validation} />
-                  ) : validationError ? (
-                    <div className="p-3">
-                      <p className="text-xs text-status-red">
-                        The validation report is not available.
-                      </p>
-                      <p className="mt-1 text-[11px] text-text-secondary leading-relaxed">
-                        {validationError}
-                      </p>
-                    </div>
-                  ) : (
-                    <p className="p-3 text-xs text-text-secondary">loading validation report…</p>
-                  )}
-                </FloatingPanel>
-              )}
-              {openPanels.pour && (
-                <FloatingPanel
-                  title="Pour Window"
-                  defaultGeo={PANEL_GEO.pour}
-                  minWidth={PANEL_GEO.pour.minW}
-                  minHeight={PANEL_GEO.pour.minH}
-                  onClose={() => closePanel("pour")}
-                >
-                  {pour ? (
-                    <PourWindowTable
-                      candidates={pour.candidates}
-                      best_offset_h={pour.best_offset_h}
-                    />
-                  ) : (
-                    <p className="p-3 text-xs text-text-secondary">
-                      sweeping candidate start hours…
+
+              <FloatingPanel
+                title="Season replay — precomputed"
+                open={openPanels.season}
+                containerSize={overlaySize}
+                defaultGeo={PANEL_GEO.season}
+                minWidth={PANEL_GEO.season.minW}
+                minHeight={PANEL_GEO.season.minH}
+                onClose={() => closePanel("season")}
+              >
+                {season ? (
+                  <SeasonPanel season={season} />
+                ) : (
+                  <p className="p-3 text-xs text-text-secondary">loading season replay…</p>
+                )}
+              </FloatingPanel>
+
+              <FloatingPanel
+                title="Validation — USBR DSO-12-02 cases"
+                open={openPanels.validation}
+                containerSize={overlaySize}
+                defaultGeo={PANEL_GEO.validation}
+                minWidth={PANEL_GEO.validation.minW}
+                minHeight={PANEL_GEO.validation.minH}
+                onClose={() => closePanel("validation")}
+              >
+                {validation ? (
+                  <ValidationPanel validation={validation} />
+                ) : validationError ? (
+                  <div className="p-3">
+                    <p className="text-xs text-status-red">
+                      The validation report is not available.
                     </p>
-                  )}
-                </FloatingPanel>
-              )}
+                    <p className="mt-1 text-[11px] leading-relaxed text-text-secondary">
+                      {validationError}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="p-3 text-xs text-text-secondary">loading validation report…</p>
+                )}
+              </FloatingPanel>
+
+              <FloatingPanel
+                title="Pour Window"
+                open={openPanels.pour}
+                containerSize={overlaySize}
+                defaultGeo={PANEL_GEO.pour}
+                minWidth={PANEL_GEO.pour.minW}
+                minHeight={PANEL_GEO.pour.minH}
+                onClose={() => closePanel("pour")}
+              >
+                {pourReady?.data ? (
+                  <PourWindowTable
+                    candidates={pourReady.data.candidates}
+                    best_offset_h={pourReady.data.best_offset_h}
+                  />
+                ) : pourReady?.error ? (
+                  <div className="p-3">
+                    <p className="text-[11px] text-status-red">The pour sweep did not return.</p>
+                    <p className="mt-1 font-mono text-[10px] leading-relaxed text-text-secondary">
+                      {pourReady.error}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="p-3 text-[11px] text-text-secondary">
+                    Sweeping candidate start hours for these inputs — six solves.
+                  </p>
+                )}
+              </FloatingPanel>
             </div>
           </div>
-          <TimeScrubber
-            times_h={frameTimes}
-            frameIndex={frameIndex}
-            onTimeChange={handleTimeChange}
-          />
+
+          {/* The scopes dock belongs to the run, not to one viewer: mounting it in 2D
+              only meant the 3D view silently had no thermal history at all. */}
+          {run && <HistoryChart sim={run.result} frameIndex={frameIndex} />}
+
+          <TimeScrubber times_h={frameTimes} frameIndex={frameIndex} onTimeChange={handleTimeChange} />
+
+          {/* Status bar. Where the solve came from and what it is keyed to, always on
+              screen, the way a drafting application keeps its coordinate readout. */}
+          <footer className="flex h-7 shrink-0 items-center gap-4 border-t border-border-default bg-bg-surface px-4 font-mono text-[10px] tabular-nums text-text-muted">
+            {run ? (
+              <>
+                <span>{run.request.element.shape}</span>
+                <span className="h-3 w-px bg-hairline" />
+                <span>
+                  probe [{run.result.probe_xy_m[0].toFixed(3)},{" "}
+                  {run.result.probe_xy_m[1].toFixed(3)}] m
+                </span>
+                <span className="h-3 w-px bg-hairline" />
+                <span>
+                  peak_core {run.result.peak_core_temp_c.toFixed(2)} °C @{" "}
+                  {run.result.peak_core_time_h.toFixed(1)} h
+                </span>
+                <span className="h-3 w-px bg-hairline" />
+                <span>
+                  {frameTimes.length} frames · {units}
+                </span>
+                {solving && <span className="text-accent-blue">solving…</span>}
+                {!solving && stale && <span className="text-status-amber">inputs changed</span>}
+              </>
+            ) : (
+              <span>no run loaded</span>
+            )}
+            <span className="ml-auto uppercase tracking-[0.08em]">
+              {viewMode === "3d" ? "3D · perspective" : "2D · orthographic"}
+            </span>
+          </footer>
         </div>
       </div>
     </div>

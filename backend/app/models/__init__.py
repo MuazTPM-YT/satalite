@@ -85,6 +85,12 @@ class MixSpec(BaseModel):
     # guessing a type - guessing "V" would quietly relax every temperature prediction.
     cement_type: str | None = None
     cement_kg_m3: float | None = Field(default=None, gt=0.0)
+    # Mix DESIGN, not solver parameters. Supplying cement_kg_m3 with these two - and
+    # without h_u/alpha_u/tau_h - asks the service to derive the hydration parameters
+    # the same way physics.season_analysis.standard_mix does, from the same published
+    # regressions. Supplying h_u/alpha_u/tau_h instead pins them directly.
+    w_cm: float | None = Field(default=None, gt=0.0, le=1.2)
+    fly_ash_frac: float | None = Field(default=None, ge=0.0, le=0.6)
     h_u_j_per_kg: float | None = Field(default=None, gt=0.0)
     alpha_u: float | None = Field(default=None, gt=0.0, le=1.09)
     tau_h: float | None = Field(default=None, gt=0.0)

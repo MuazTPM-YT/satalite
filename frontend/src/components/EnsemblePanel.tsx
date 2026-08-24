@@ -8,11 +8,15 @@
 "use client";
 
 import type { DemoEnsembleResponse, SimulationResult } from "@/lib/api";
+import { SectionLabel } from "@/components/ui";
 
 interface EnsemblePanelProps {
   demo: DemoEnsembleResponse;
-  // the live deterministic solve of the SAME scenario, for the nominal comparison.
+  // the live deterministic solve, for the nominal comparison.
   nominal: SimulationResult;
+  // whether that solve is still the scenario this band was computed for. Once the
+  // inputs move off it, the band describes a different pour and says so.
+  matchesDemo: boolean;
 }
 
 const W = 900;
@@ -22,7 +26,7 @@ const MR = 16;
 const MT = 14;
 const MB = 26;
 
-export default function EnsemblePanel({ demo, nominal }: EnsemblePanelProps) {
+export default function EnsemblePanel({ demo, nominal, matchesDemo }: EnsemblePanelProps) {
   const e = demo.ensemble;
   const band = e.core_temp_c;
   const n = band.p50.length;
@@ -67,10 +71,19 @@ export default function EnsemblePanel({ demo, nominal }: EnsemblePanelProps) {
   return (
     <div className="bg-bg-surface overflow-y-auto h-full">
       <div className="p-3">
+        {/* A band drawn beside a pour it was not computed for is worse than no band at
+            all, so the moment the inputs move off the fixed scenario this says so
+            rather than letting the two be read together. */}
+        {!matchesDemo && (
+          <p className="mb-2 rounded-lg border border-status-amber/30 bg-status-amber-dim px-2.5 py-2 text-[10px] leading-relaxed text-text-secondary">
+            <span className="font-semibold text-status-amber">Not this run.</span> The band
+            below was precomputed for one fixed scenario, and the inputs no longer match it.
+            The nominal line is the run on screen; the envelope is not its envelope. Reset
+            the inputs to the scenario, or read the two apart.
+          </p>
+        )}
         <div className="flex items-baseline gap-2 mb-1 flex-wrap">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
-            core_temp_c ensemble
-          </span>
+          <SectionLabel>core_temp_c ensemble</SectionLabel>
           <span className="text-[10px] text-text-muted tabular-nums">
             n_samples {e.n_samples} · seed {e.seed} · dx {e.dx_m} m
           </span>
@@ -96,15 +109,15 @@ export default function EnsemblePanel({ demo, nominal }: EnsemblePanelProps) {
             </text>
           ))}
 
-          <path d={area(band.p95, band.p05)} fill="#58a6ff" opacity={0.16} />
-          <path d={area(band.p75, band.p25)} fill="#58a6ff" opacity={0.24} />
-          <path d={line(band.p50)} fill="none" stroke="#58a6ff" strokeWidth="2" />
-          <path d={line(band.p95)} fill="none" stroke="#58a6ff" strokeWidth="1" opacity={0.7} />
-          <path d={line(band.p05)} fill="none" stroke="#58a6ff" strokeWidth="1" opacity={0.7} />
+          <path d={area(band.p95, band.p05)} fill="#5d82e9" opacity={0.16} />
+          <path d={area(band.p75, band.p25)} fill="#5d82e9" opacity={0.24} />
+          <path d={line(band.p50)} fill="none" stroke="#5d82e9" strokeWidth="2" />
+          <path d={line(band.p95)} fill="none" stroke="#5d82e9" strokeWidth="1" opacity={0.7} />
+          <path d={line(band.p05)} fill="none" stroke="#5d82e9" strokeWidth="1" opacity={0.7} />
 
           {/* the threshold, drawn ACROSS the band rather than beside it */}
-          <line x1={ML} y1={y(def_c)} x2={W - MR} y2={y(def_c)} stroke="#f85149" strokeWidth="1.5" strokeDasharray="6 4" />
-          <text x={W - MR - 4} y={y(def_c) - 5} textAnchor="end" fontSize="9" fill="#f85149" className="tabular-nums">
+          <line x1={ML} y1={y(def_c)} x2={W - MR} y2={y(def_c)} stroke="#e5484d" strokeWidth="1.5" strokeDasharray="6 4" />
+          <text x={W - MR - 4} y={y(def_c) - 5} textAnchor="end" fontSize="9" fill="#e5484d" className="tabular-nums">
             DEF {def_c} °C · USBR DSO-12-02
           </text>
 
@@ -115,20 +128,20 @@ export default function EnsemblePanel({ demo, nominal }: EnsemblePanelProps) {
                 band.p95.map((v, i) => (overIdx.includes(i) ? v : def_c)),
                 band.p95.map(() => def_c),
               )}
-              fill="#f85149"
+              fill="#e5484d"
               opacity={0.22}
             />
           )}
 
           {/* the nominal run, for the comparison the panel exists to make */}
-          <line x1={ML} y1={y(nominal.peak_core_temp_c)} x2={W - MR} y2={y(nominal.peak_core_temp_c)} stroke="#f0883e" strokeWidth="1" strokeDasharray="2 3" />
-          <text x={ML + 4} y={y(nominal.peak_core_temp_c) - 4} fontSize="9" fill="#f0883e" className="tabular-nums">
+          <line x1={ML} y1={y(nominal.peak_core_temp_c)} x2={W - MR} y2={y(nominal.peak_core_temp_c)} stroke="#da720d" strokeWidth="1" strokeDasharray="2 3" />
+          <text x={ML + 4} y={y(nominal.peak_core_temp_c) - 4} fontSize="9" fill="#da720d" className="tabular-nums">
             nominal peak_core_temp_c {nominal.peak_core_temp_c.toFixed(2)} °C
           </text>
         </svg>
 
         {/* THE point of this panel */}
-        <div className="mt-2 p-2.5 rounded-lg bg-bg-elevated border-l-[3px] border-l-status-amber">
+        <div className="mt-2 rounded-lg border border-border-default bg-elevate-1 p-2.5">
           <div className="text-xs font-semibold text-text-primary">
             The nominal flag and the band edge disagree, and both are right
           </div>
@@ -186,10 +199,10 @@ export default function EnsemblePanel({ demo, nominal }: EnsemblePanelProps) {
         </div>
 
         {/* the artifact's own words about how far its edges can be trusted */}
-        <div className="mt-2 p-2.5 rounded-lg bg-bg-elevated border border-border-default">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
+        <div className="mt-2 p-2.5 rounded-lg border border-border-default bg-elevate-1">
+          <SectionLabel className="mb-1.5">
             Band-edge noise — the artifact&apos;s NOTE, verbatim
-          </div>
+          </SectionLabel>
           <p className="text-[10px] text-text-secondary leading-relaxed whitespace-pre-wrap font-mono">
             {demo.note}
           </p>
@@ -201,15 +214,15 @@ export default function EnsemblePanel({ demo, nominal }: EnsemblePanelProps) {
         </div>
 
         {/* what was sampled, and what the spread is conditional on */}
-        <div className="mt-2 p-2.5 rounded-lg bg-bg-elevated border border-border-default text-[10px]">
-          <div className="font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
+        <div className="mt-2 p-2.5 rounded-lg border border-border-default bg-elevate-1 text-[10px]">
+          <div className="font-semibold uppercase tracking-[0.08em] text-text-secondary mb-1.5">
             Provenance
           </div>
           <Row label="sampler" value={demo.sampler} />
           <Row label="dt_s" value={demo.dt_s.toFixed(1)} />
           <Row label="strip_time_h_p95" value={e.strip_time_h_p95 === null ? "not reached" : e.strip_time_h_p95.toFixed(2)} />
           <Row label="sampled_parameters" value={demo.sampled_parameters.join(", ")} />
-          <div className="mt-1.5 pt-1.5 border-t border-border-default">
+          <div className="mt-1.5 pt-1.5 border-t border-hairline">
             <Row
               label="forecast_error"
               value={e.forecast_error.provisional ? "PROVISIONAL — not measured skill" : "measured"}

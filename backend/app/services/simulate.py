@@ -32,6 +32,7 @@ from physics.constants import (
     STRIP_FRACTION,
     T_REF_DEFAULT_C,
 )
+from physics.equations.hydration import tau_hours, ultimate_degree, ultimate_heat_j_per_kg
 from physics.forecast_error import provisional_error
 from physics.limits import (
     EVAP_LIMIT_KG_M2_H,
@@ -41,6 +42,11 @@ from physics.limits import (
     breaches_placement,
 )
 from physics.season_analysis import (
+    BLAINE_M2_KG,
+    P_C3A,
+    P_C3S,
+    P_FLY_ASH_CAO,
+    P_SO3,
     deterministic_strip_time_h,
     evaporation_series_kg_m2_s,
     standard_mix,
@@ -91,6 +97,35 @@ def to_mix(spec: MixSpec) -> Mix:
         raise ValueError(
             f"unknown mix_id {spec.mix_id!r}. Either use 'standard' or supply "
             "cement_kg_m3, h_u_j_per_kg, alpha_u and tau_h explicitly."
+        )
+    # a stated DESIGN - content, w/cm, fly ash - rather than stated solver parameters.
+    # Derived through the same three regressions standard_mix() uses, with the same
+    # clinker assumptions, because a designer knows their mix sheet and does not know
+    # their tau. The clinker chemistry is still assumed: nothing here measures it.
+    if spec.h_u_j_per_kg is None and spec.alpha_u is None and spec.tau_h is None:
+        if spec.w_cm is None:
+            raise ValueError(
+                "a mix given by design needs w_cm alongside cement_kg_m3, or give "
+                "h_u_j_per_kg, alpha_u and tau_h explicitly instead."
+            )
+        p_fa = 0.0 if spec.fly_ash_frac is None else float(spec.fly_ash_frac)
+        h_cem = h_cem_for(spec.cement_type)
+        return Mix(
+            cement_kg_m3=float(spec.cement_kg_m3),
+            h_u_j_per_kg=ultimate_heat_j_per_kg(
+                h_cem_j_per_g=h_cem, p_cem=1.0 - p_fa, p_fa=p_fa, p_fa_cao=P_FLY_ASH_CAO
+            ),
+            alpha_u=ultimate_degree(float(spec.w_cm), p_fa=p_fa),
+            tau_h=tau_hours(
+                p_c3a=P_C3A,
+                p_c3s=P_C3S,
+                blaine_m2_kg=BLAINE_M2_KG,
+                p_so3=P_SO3,
+                p_fa=p_fa,
+                p_fa_cao=P_FLY_ASH_CAO,
+            ),
+            beta=float(spec.beta) if spec.beta is not None else base.beta,
+            h_cem_j_per_g=h_cem,
         )
     missing = [
         name

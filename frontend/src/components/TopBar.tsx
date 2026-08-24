@@ -1,11 +1,41 @@
-// top bar for studio. logo, view toggle, panel launchers, location
+// Command bar. Mark and wordmark left, the view switcher dead-centre, and the
+// panel launchers plus units grouped into one pill on the right.
+//
+// The switcher is absolutely positioned so it is centred on the BAR, not on
+// whatever space the wordmark and the right-hand pill happen to leave - otherwise
+// it drifts every time the backend URL in the health chip changes length.
 "use client";
 
+import {
+  BadgeCheck,
+  Box,
+  CalendarClock,
+  CalendarRange,
+  Grid2x2,
+  ListChecks,
+  Loader2,
+  Play,
+  Ruler,
+  Settings2,
+  Waves,
+} from "lucide-react";
 import type { PanelId } from "@/components/PanelId";
 import HealthProbe from "@/components/HealthProbe";
+import { Segmented, ToolbarDivider, ToolbarToggle, cx, type Icon } from "@/components/ui";
+import { Select } from "@/components/fields";
 import { UNIT_OPTIONS, type LengthUnit } from "@/lib/units";
 
 export type ViewMode = "2d" | "3d";
+
+// what each abbreviation means, spelled out in the list. A two-letter option in a
+// styled dropdown has room for its own name; a native <select> never did.
+const UNIT_NOTE: Record<LengthUnit, string> = {
+  m: "metres",
+  cm: "centimetres",
+  mm: "millimetres",
+  in: "inches",
+  ft: "feet",
+};
 
 interface TopBarProps {
   viewMode: ViewMode;
@@ -14,30 +44,26 @@ interface TopBarProps {
   onTogglePanel: (id: PanelId) => void;
   units: LengthUnit;
   onUnitsChange: (u: LengthUnit) => void;
+  /** a solve is in flight */
+  solving: boolean;
+  /** the inputs have moved off the run on screen */
+  stale: boolean;
+  onSolve: () => void;
 }
 
-// active tab pill style
-function tabClass(active: boolean): string {
-  return active
-    ? "px-4 py-1 text-xs font-medium rounded-sm bg-bg-elevated text-text-primary"
-    : "px-4 py-1 text-xs font-medium rounded-sm text-text-secondary hover:text-text-primary transition-colors";
-}
+const VIEW_OPTIONS: { id: ViewMode; label: string; icon: Icon }[] = [
+  { id: "2d", label: "2D View", icon: Grid2x2 },
+  { id: "3d", label: "3D View", icon: Box },
+];
 
-// panel launcher icon style — active when its palette is open
-function panelIconClass(active: boolean): string {
-  return active
-    ? "w-7 h-7 flex items-center justify-center rounded-sm bg-bg-elevated text-text-primary text-sm"
-    : "w-7 h-7 flex items-center justify-center rounded-sm text-text-secondary text-sm hover:text-text-primary hover:bg-bg-elevated transition-colors";
-}
-
-// launcher glyph + tooltip per panel
-const PANELS: { id: PanelId; icon: string; label: string }[] = [
-  { id: "element", icon: "◧", label: "Element & Mix Inputs" },
-  { id: "checks", icon: "✓", label: "Checks & thresholds" },
-  { id: "pour", icon: "⊞", label: "Pour Window" },
-  { id: "ensemble", icon: "◈", label: "Ensemble band" },
-  { id: "season", icon: "▤", label: "Season replay" },
-  { id: "validation", icon: "◎", label: "Validation" },
+// launcher icon + accessible name per palette
+const PANELS: { id: PanelId; icon: Icon; label: string }[] = [
+  { id: "element", icon: Settings2, label: "Element & mix inputs" },
+  { id: "checks", icon: ListChecks, label: "Checks & thresholds" },
+  { id: "pour", icon: CalendarClock, label: "Pour window" },
+  { id: "ensemble", icon: Waves, label: "Ensemble band" },
+  { id: "season", icon: CalendarRange, label: "Season replay" },
+  { id: "validation", icon: BadgeCheck, label: "Validation report" },
 ];
 
 export default function TopBar({
@@ -47,76 +73,102 @@ export default function TopBar({
   onTogglePanel,
   units,
   onUnitsChange,
+  solving,
+  stale,
+  onSolve,
 }: TopBarProps) {
   return (
-    <header className="flex items-center justify-between h-11 px-4 bg-bg-surface border-b border-border-default shrink-0">
-      {/* left: logo */}
-      <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold tracking-tight text-text-primary">
-          ⚙ SatAlite
+    <header className="relative z-50 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border-default bg-bg-surface px-4">
+      {/* left: mark + wordmark */}
+      <div className="z-10 flex min-w-0 items-center gap-2.5">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-blue-dim">
+          <Box className="h-4 w-4 text-accent-blue" strokeWidth={2} />
         </span>
-        <span className="text-sm font-light text-text-secondary">Studio</span>
+        <span className="truncate text-[15px] font-semibold tracking-tight text-text-primary">
+          SatAlite
+          <span className="font-normal text-text-muted"> Studio</span>
+        </span>
       </div>
 
-      {/* center: view toggle + panel launchers */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-0.5 bg-bg-primary rounded-sm p-0.5">
-          <button
-            id="toggle-2d"
-            aria-pressed={viewMode === "2d"}
-            className={tabClass(viewMode === "2d")}
-            onClick={() => onViewModeChange("2d")}
-          >
-            2D View
-          </button>
-          <button
-            id="toggle-3d"
-            aria-pressed={viewMode === "3d"}
-            className={tabClass(viewMode === "3d")}
-            onClick={() => onViewModeChange("3d")}
-          >
-            3D View
-          </button>
-        </div>
+      {/* centre: view switcher */}
+      <div className="pointer-events-auto absolute left-1/2 top-1/2 z-0 hidden -translate-x-1/2 -translate-y-1/2 lg:block">
+        <Segmented
+          value={viewMode}
+          options={VIEW_OPTIONS}
+          onChange={onViewModeChange}
+          label="Viewer mode"
+        />
+      </div>
 
-        <div className="w-px h-4 bg-border-default" />
+      {/* right: launchers, units, backend reachability */}
+      <div className="z-10 flex min-w-0 items-center gap-2">
+        <div className="hidden items-center gap-0.5 rounded-xl bg-elevate-1 p-1 ring-1 ring-inset ring-hairline md:flex">
+          {/* the switcher moves in here below lg, where the centred copy is hidden */}
+          <div className="lg:hidden">
+            <Segmented
+              value={viewMode}
+              options={VIEW_OPTIONS}
+              onChange={onViewModeChange}
+              label="Viewer mode"
+              size="sm"
+            />
+          </div>
+          <div className="lg:hidden">
+            <ToolbarDivider />
+          </div>
 
-        <div className="flex items-center gap-1">
           {PANELS.map((p) => (
-            <button
+            <ToolbarToggle
               key={p.id}
-              title={p.label}
-              aria-label={p.label}
-              aria-pressed={openPanels[p.id]}
-              className={panelIconClass(openPanels[p.id])}
+              icon={p.icon}
+              label={p.label}
+              active={openPanels[p.id]}
               onClick={() => onTogglePanel(p.id)}
-            >
-              {p.icon}
-            </button>
+            />
           ))}
+
+          <ToolbarDivider />
+
+          {/* length units. Dimensions only - °C never converts. */}
+          <div className="flex items-center gap-1.5 pl-1 pr-0.5">
+            <Ruler className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} />
+            <Select<LengthUnit>
+              value={units}
+              options={UNIT_OPTIONS.map((u) => ({ id: u, label: u, note: UNIT_NOTE[u] }))}
+              onChange={onUnitsChange}
+              label="Length units — dimensions only, °C never converts"
+              className="w-[62px]"
+            />
+          </div>
         </div>
 
-        <div className="w-px h-4 bg-border-default" />
-
-        {/* length unit selector — dimensions only, °C never converts */}
-        <select
-          id="unit-select"
-          title="Length units"
-          aria-label="Length units"
-          value={units}
-          onChange={(e) => onUnitsChange(e.target.value as LengthUnit)}
-          className="text-xs text-text-secondary bg-bg-primary border border-border-default rounded-sm px-1.5 py-1"
+        {/* Solve. The one action in the app that costs seconds, so it is the one
+            control that says what state it is in from anywhere on screen. */}
+        <button
+          type="button"
+          onClick={onSolve}
+          disabled={solving}
+          title={stale ? "The inputs have changed since this run" : "Re-run the solve"}
+          className={cx(
+            "flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[12px] font-semibold",
+            stale && !solving
+              ? "bg-accent-blue text-bg-primary"
+              : "bg-elevate-1 text-text-secondary ring-1 ring-inset ring-hairline hover:bg-elevate-2 hover:text-text-primary",
+          )}
         >
-          {UNIT_OPTIONS.map((u) => (
-            <option key={u} value={u}>{u}</option>
-          ))}
-        </select>
-      </div>
+          {solving ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2.5} />
+          ) : (
+            <Play className="h-3.5 w-3.5" strokeWidth={2.5} />
+          )}
+          <span className="hidden lg:inline">{solving ? "Solving" : stale ? "Solve" : "Re-solve"}</span>
+        </button>
 
-      {/* right: backend reachability. A site label used to live here, but no response
-          carries a location for the run on screen and a hardcoded one is just a caption
-          that happens to look like data. */}
-      <HealthProbe />
+        {/* A site label used to live here, but no response carries a location for the
+            run on screen and a hardcoded one is just a caption that happens to look
+            like data. Backend reachability is the honest thing to show instead. */}
+        <HealthProbe />
+      </div>
     </header>
   );
 }

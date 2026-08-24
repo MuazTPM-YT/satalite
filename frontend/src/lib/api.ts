@@ -89,6 +89,7 @@ export const SHAPES = [
     "circular_column",
     "beam",
     "t_section",
+    "i_section",
     "l_section",
 ] as const;
 export type Shape = (typeof SHAPES)[number];
@@ -98,7 +99,7 @@ export interface ElementSpec {
     // keys depend on the shape - physics/geometry.outline() names them:
     //   slab: width, thickness           wall: thickness, height
     //   rect_column | beam: width, height        circular_column: diameter
-    //   t_section: flange_width, flange_thickness, web_width, height
+    //   t_section | i_section: flange_width, flange_thickness, web_width, height
     //   l_section: width, height, leg_thickness
     dims_mm: Record<string, number>;
     dx_m?: number;
@@ -115,6 +116,12 @@ export interface MixSpec {
     mix_id?: string;
     cement_type?: string | null;
     cement_kg_m3?: number | null;
+    // Mix DESIGN. Sent WITH cement_kg_m3 and WITHOUT h_u/alpha_u/tau_h, these ask the
+    // backend to derive the hydration parameters through the same Schindler-Folliard
+    // regressions physics.season_analysis.standard_mix uses. fly_ash_frac is a
+    // FRACTION 0-1, not the percentage the input box shows.
+    w_cm?: number | null;
+    fly_ash_frac?: number | null;
     h_u_j_per_kg?: number | null;
     alpha_u?: number | null;
     tau_h?: number | null;

@@ -8,6 +8,7 @@
 
 import type { SeasonAnalysisResponse, SeasonHourStats } from "@/lib/api";
 import { wilson, countFromPct } from "@/lib/stats";
+import { SectionLabel } from "@/components/ui";
 
 interface SeasonPanelProps {
   season: SeasonAnalysisResponse;
@@ -26,7 +27,7 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
   // to make it, and draw nothing else.
   if (!season.available) {
     return (
-      <div className="bg-bg-surface h-full overflow-y-auto p-4">
+      <div className="h-full w-full overflow-y-auto bg-bg-surface p-4">
         <div className="max-w-xl">
           <p className="text-sm font-medium text-text-primary">
             No season replay in this build
@@ -56,7 +57,7 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
   const constant = FLAGS.filter((f) => !discriminating.includes(f));
 
   return (
-    <div className="bg-bg-surface h-full overflow-y-auto">
+    <div className="h-full w-full overflow-y-auto bg-bg-surface">
       <div className="p-3">
         {/* what the sample actually is, before any number is read off it */}
         <Sampling season={season} />
@@ -73,15 +74,13 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
             </p>
           ) : (
             discriminating.map((f) => (
-              <FlagRow key={f.key} flag={f} hours={hours} per={per} n_days={n_days} highlight />
+              <FlagRow key={f.key} flag={f} hours={hours} per={per} n_days={n_days} />
             ))
           )}
 
           {/* the continuous quantities behind the placement split */}
-          <div className="mt-2 p-2.5 rounded-lg bg-bg-elevated border border-border-default">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
-              delta_14_minus_04
-            </div>
+          <div className="mt-2 p-2.5 rounded-lg border border-border-default bg-elevate-1">
+            <SectionLabel className="mb-1.5">delta_14_minus_04</SectionLabel>
             <div className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-[11px] tabular-nums">
               {Object.entries(delta).map(([k, v]) => (
                 <Fragmented key={k} label={k} value={v} />
@@ -113,9 +112,10 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
         {/* per-hour continuous quantities */}
         <div className="mt-3">
           <SectionTitle title="Per placement hour" subtitle="means over the sampled days" />
-          <table className="w-full text-[11px] tabular-nums">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] font-mono text-[11px] tabular-nums">
             <thead>
-              <tr className="text-[10px] uppercase tracking-wider text-text-muted">
+              <tr className="text-[9px] uppercase tracking-[0.06em] text-text-muted">
                 <th className="text-left py-1 pr-3 font-medium">field</th>
                 {hours.map((h) => (
                   <th key={h} className="text-right py-1 pr-3 font-medium">
@@ -134,7 +134,7 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
                   "n_days_never_stripped",
                 ] as const
               ).map((field) => (
-                <tr key={field} className="border-t border-border-default">
+                <tr key={field} className="border-t border-hairline">
                   <td className="py-1 pr-3 text-text-muted">{field}</td>
                   {hours.map((h) => {
                     const v = per[String(h)]?.[field];
@@ -148,6 +148,7 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
 
         <Context season={season} />
@@ -162,10 +163,8 @@ function Sampling({ season }: { season: SeasonAnalysisResponse }) {
   const s = season.sampling;
   const range = season.date_range;
   return (
-    <div className="p-2.5 rounded-lg bg-bg-elevated border-l-[3px] border-l-accent-blue">
-      <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
-        What was sampled
-      </div>
+    <div className="rounded-lg border border-border-default bg-elevate-1 p-2.5">
+      <SectionLabel className="mb-1.5">What was sampled</SectionLabel>
       {s ? (
         <>
           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px] tabular-nums">
@@ -215,20 +214,14 @@ function FlagRow({
   hours,
   per,
   n_days,
-  highlight,
 }: {
   flag: { key: keyof SeasonHourStats; label: string; limit: string };
   hours: number[];
   per: Record<string, SeasonHourStats>;
   n_days: number;
-  highlight?: boolean;
 }) {
   return (
-    <div
-      className={`mt-1.5 p-2.5 rounded-lg bg-bg-elevated border-l-[3px] ${
-        highlight ? "border-l-status-amber" : "border-l-border-strong"
-      }`}
-    >
+    <div className="mt-1.5 rounded-lg border border-border-default bg-elevate-1 p-2.5">
       <div className="flex items-baseline justify-between gap-2">
         <span className="text-xs font-semibold text-text-primary">{flag.label}</span>
         <span className="text-[10px] text-text-muted">{flag.key}</span>
@@ -285,8 +278,8 @@ function FlagRow({
 function Context({ season }: { season: SeasonAnalysisResponse }) {
   const a = season.assumptions;
   return (
-    <div className="mt-3 p-2.5 rounded-lg bg-bg-elevated border border-border-default text-[10px]">
-      <div className="font-semibold uppercase tracking-wider text-text-secondary mb-1.5">
+    <div className="mt-3 p-2.5 rounded-lg border border-border-default bg-elevate-1 text-[10px]">
+      <div className="font-semibold uppercase tracking-[0.08em] text-text-secondary mb-1.5">
         Element, limits and assumptions
       </div>
       <div className="grid grid-cols-2 gap-x-4">
@@ -294,7 +287,7 @@ function Context({ season }: { season: SeasonAnalysisResponse }) {
         <KV obj={season.limits as Record<string, unknown> | null} title="limits" />
       </div>
       {a && (
-        <div className="mt-2 pt-2 border-t border-border-default">
+        <div className="mt-2 pt-2 border-t border-hairline">
           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 tabular-nums">
             {(
               ["rh_frac", "wind_ms", "cloud_pct", "ghi_daylight_w_m2", "placement_above_ambient_c"] as const
@@ -344,9 +337,7 @@ function Fragmented({ label, value }: { label: string; value: number }) {
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="flex items-baseline gap-2 mb-1">
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
-        {title}
-      </span>
+      <SectionLabel>{title}</SectionLabel>
       <span className="text-[10px] text-text-muted">{subtitle}</span>
     </div>
   );

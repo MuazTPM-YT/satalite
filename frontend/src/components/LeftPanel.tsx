@@ -1,14 +1,26 @@
-// left panel. element geometry, mix design, pour details — reads/writes shared element config
-// geometry inputs display in the selected length unit, canonical state stays mm
+// Element, mix and pour inputs.
+//
+// Every control on this panel reaches the solver. There is no preview-only section
+// any more: the shape list is physics.geometry.SHAPES, the dimension rows are the
+// keys that shape's outline() reads, and the mix rows are a design the backend turns
+// into hydration parameters through its own equations. If a control cannot be
+// translated in lib/elementConfig.ts, it does not belong here.
 "use client";
 
 import { useRef } from "react";
-import type { ElementConfig } from "@/lib/elementConfig";
-import { mToUnit, unitToM, fmtLen, roundDisp, type LengthUnit } from "@/lib/units";
-import { createOutlineForShape } from "@/lib/outline";
-
-// shape value used when geometry came from an IFC file
-export const IMPORTED_SHAPE = "Imported (IFC)";
+import {
+  CEMENT_OPTIONS,
+  FORMWORK_OPTIONS,
+  GRADE_OPTIONS,
+  GRID_OPTIONS,
+  defaultDims,
+  type ElementConfig,
+} from "@/lib/elementConfig";
+import { SHAPE_BY_ID, SHAPE_DEFS, clampDims, outlineFor, polygonArea_m2, type Outline, type ShapeId } from "@/lib/shapes";
+import { mToUnit, unitToM, fmtLen, type LengthUnit } from "@/lib/units";
+import { Box, Diamond, FileUp, Layers, Loader2, Sliders } from "lucide-react";
+import { Flag, SectionLabel, cx } from "@/components/ui";
+import { ScrubField, SelectField } from "@/components/fields";
 
 export interface IfcUiState {
   busy: boolean;
@@ -16,180 +28,228 @@ export interface IfcUiState {
   name: string | null;
 }
 
-interface LeftPanelProps {
+export interface LeftPanelProps {
   config: ElementConfig;
   onChange: <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => void;
+  /** one dimension of the current shape, in millimetres */
+  onDimChange: (key: string, value_mm: number) => void;
+  /** a drag or an edit finished — the moment worth re-solving on */
+  onCommit: () => void;
   units: LengthUnit;
   ifc: IfcUiState;
-  // file chosen by user, parent runs the import
   onImportIfc: (file: File) => void;
-  // extracted outline metres, drives preview when shape imported
-  importedOutline?: [number, number][] | null;
+  /** the outline the IFC import produced, metres. Drawn instead of the preset preview. */
+  importedOutline?: Outline | null;
+  /** how many hours of ambient the run has to work with */
+  ambientSpan_h: number;
+  /** a solve is in flight */
+  solving: boolean;
+  /** the config has changed since the run on screen */
+  stale: boolean;
+  onSolve: () => void;
 }
 
-// dynamic cross-section SVG preview — real outline, imported or preset-generated
+// The cross-section drawing, from the same outline generator the request uses.
+//
+// It is a PREVIEW of the request, not of the answer: it shows the polygon that is
+// about to be sent. Once the solve lands, the viewer draws the outline the backend
+// returned - and because both come from the same construction, they agree.
 function CrossSectionPreview({
-  config,
-  units,
   outline,
+  units,
+  source,
 }: {
-  config: ElementConfig;
+  outline: Outline | null;
   units: LengthUnit;
-  outline?: [number, number][];
+  source: string;
 }) {
-  // imported outline wins; otherwise generate from current shape + dims
-  const pts: [number, number][] =
-    outline && outline.length >= 3
-      ? outline
-      : createOutlineForShape(
-          config.shape,
-          config.flange_width_mm / 1000,
-          config.flange_depth_mm / 1000,
-          config.web_width_mm / 1000,
-          config.total_depth_mm / 1000
-        ) ?? [];
-  if (pts.length < 3) return null;
+  if (!outline || outline.length < 3) return null;
 
-  const isIFC = !!(outline && outline.length >= 3);
-  const w = Math.max(...pts.map((p) => p[0]));
-  const h = Math.max(...pts.map((p) => p[1]));
-  const scale = Math.min(160 / w, 140 / h);
-  const px = pts.map(([x, y]) => `${(20 + x * scale).toFixed(1)},${(10 + (h - y) * scale).toFixed(1)}`).join(" ");
+  const w = Math.max(...outline.map((p) => p[0]));
+  const h = Math.max(...outline.map((p) => p[1]));
+  const scale = Math.min(150 / w, 118 / h);
+  const ox = (200 - w * scale) / 2;
+  const oy = 12;
+  const pts = outline
+    .map(([x, y]) => `${(ox + x * scale).toFixed(1)},${(oy + (h - y) * scale).toFixed(1)}`)
+    .join(" ");
 
   return (
-    <div className="mt-2 p-2 bg-bg-primary rounded-sm border border-border-default">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">
-          Cross-Section
-        </span>
-        <span className="text-[10px] text-text-muted">{isIFC ? "IFC" : "fit"}</span>
-      </div>
-      <svg viewBox="0 0 200 160" className="w-full" xmlns="http://www.w3.org/2000/svg">
-        <polygon points={px} fill="none" stroke="#8b949e" strokeWidth="1.5" />
-        <text x="100" y="158" textAnchor="middle" fill="#6e7681" fontSize="7">
-          {fmtLen(w, units)} × {fmtLen(h, units)}
+    <div className="mt-2.5 rounded-lg border border-border-default bg-bg-primary p-2">
+      <SectionLabel className="mb-1" note={source}>
+        Cross-section
+      </SectionLabel>
+      <svg viewBox="0 0 200 152" className="w-full" xmlns="http://www.w3.org/2000/svg">
+        <polygon
+          points={pts}
+          fill="var(--accent-blue-dim)"
+          stroke="var(--draft-line-strong)"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <text
+          x="100"
+          y="146"
+          textAnchor="middle"
+          fill="var(--text-muted)"
+          fontSize="7.5"
+          fontFamily="var(--font-mono)"
+        >
+          {fmtLen(w, units)} × {fmtLen(h, units)} {units} · {polygonArea_m2(outline).toFixed(3)} m²
         </text>
       </svg>
     </div>
   );
 }
 
-// form row with label + controlled input, readOnly when driven by IFC outline
-function FormRow({
-  label,
-  value,
-  unit,
-  type = "number",
-  id,
+// section header. The first one loses its rule so the panel does not open on a line.
+function SectionHeader({ title, icon }: { title: string; icon: typeof Box }) {
+  return (
+    <div className="mt-4 border-t border-border-default pt-3 first:mt-0 first:border-t-0 first:pt-0">
+      <SectionLabel icon={icon}>{title}</SectionLabel>
+    </div>
+  );
+}
+
+export default function LeftPanel({
+  config,
   onChange,
-  readOnly = false,
-}: {
-  label: string;
-  value: string | number;
-  unit?: string;
-  type?: string;
-  id: string;
-  onChange?: (value: string) => void;
-  readOnly?: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 py-1">
-      <label htmlFor={id} className="text-xs text-text-secondary whitespace-nowrap">
-        {label}
-      </label>
-      <div className="flex items-center gap-1">
-        <input
-          id={id}
-          type={type}
-          value={value}
-          onChange={(e) => onChange?.(e.target.value)}
-          readOnly={readOnly}
-          className="w-16 text-right text-xs"
-        />
-        {unit && (
-          <span className="text-[10px] text-text-muted w-8">{unit}</span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// dropdown row with controlled select
-function SelectRow({
-  label,
-  value,
-  options,
-  id,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: string[];
-  id: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-2 py-1">
-      <label htmlFor={id} className="text-xs text-text-secondary whitespace-nowrap">
-        {label}
-      </label>
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value)} className="text-xs max-w-[130px]">
-        {options.map((opt) => (
-          <option key={opt} value={opt}>{opt}</option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-// collapsible section header
-function SectionHeader({ title, icon }: { title: string; icon: string }) {
-  return (
-    <div className="flex items-center gap-1.5 py-2 mt-1 border-t border-border-default">
-      <span className="text-[10px] text-text-muted">{icon}</span>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary">
-        {title}
-      </span>
-    </div>
-  );
-}
-
-export default function LeftPanel({ config, onChange, units, ifc, onImportIfc, importedOutline }: LeftPanelProps) {
+  onDimChange,
+  onCommit,
+  units,
+  ifc,
+  onImportIfc,
+  importedOutline,
+  ambientSpan_h,
+  solving,
+  stale,
+  onSolve,
+}: LeftPanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
-  const isImported = config.shape === IMPORTED_SHAPE;
+  const shapeDef = SHAPE_BY_ID[config.shape];
+  const dims = clampDims(config.shape, config.dims_mm);
+  const preview = importedOutline ?? outlineFor(config.shape, dims);
+  const defaults = defaultDims(config.shape);
 
-  // mm canonical -> display-unit number for inputs
-  const disp = (mm: number) => roundDisp(mToUnit(mm / 1000, units));
-  // display-unit string -> mm canonical
-  const setDim =
-    (key: keyof ElementConfig) =>
-    (v: string) =>
-      onChange(key, unitToM(Number(v), units) * 1000);
+  // Dimensions are edited in the DISPLAY unit and stored in millimetres. The
+  // conversion lives here rather than in the field so canonical state never depends
+  // on which unit happened to be selected when a value was typed.
+  const toDisp = (mm: number) => mToUnit(mm / 1000, units);
+  const fromDisp = (v: number) => unitToM(v, units) * 1000;
+  // a step that is one millimetre in whatever unit is on screen, floored so `m` gets
+  // a usable 0.001 rather than a step finer than the solver's own grid.
+  const dimStep = Math.max(toDisp(1), 0.001);
+
+  // The ambient series is finite. A run that starts 20 h in and lasts 72 h would read
+  // the last hour of weather flat for its final 20 - so the offset is bounded by what
+  // the series can actually cover, and says so.
+  const maxOffset_h = Math.max(0, Math.round(ambientSpan_h - config.cure_window_h));
 
   return (
-    <aside className="w-[260px] shrink-0 bg-bg-surface overflow-y-auto">
-      <div className="p-3">
-        {/* ELEMENT section */}
-        <SectionHeader title="Element" icon="◧" />
+    <aside className="flex h-full w-full flex-col bg-bg-surface">
+      {/* Solve control. Pinned rather than scrolled with the form: it is the answer to
+          "I changed something, now what", and that question is asked from anywhere in
+          the panel. */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border-default bg-elevate-1 px-3 py-2">
+        <button
+          type="button"
+          onClick={onSolve}
+          disabled={solving}
+          className={cx(
+            "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold",
+            stale && !solving
+              ? "bg-accent-blue text-bg-primary"
+              : "bg-elevate-2 text-text-secondary hover:bg-elevate-3 hover:text-text-primary",
+          )}
+        >
+          {solving ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2.5} />
+              Solving…
+            </>
+          ) : (
+            <>
+              <Sliders className="h-3.5 w-3.5" strokeWidth={2.5} />
+              {stale ? "Solve with these inputs" : "Re-solve"}
+            </>
+          )}
+        </button>
+        {stale && !solving && <Flag tone="amber">changed</Flag>}
+      </div>
 
-        {/* said plainly rather than implied: nothing below changes the solve yet. The
-            section on screen comes from the response, not from these boxes. */}
-        <p className="mb-2 text-[10px] leading-relaxed text-text-muted bg-bg-primary border border-border-default rounded-sm px-2 py-1.5">
-          Preview only — these inputs do not drive the solve yet. The section in the viewer
-          is the solved geometry the backend returned.
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+        {/* ── ELEMENT ─────────────────────────────────────────────────────── */}
+        <SectionHeader title="Element" icon={Box} />
+
+        <SelectField<ShapeId>
+          label="Shape"
+          hint="physics.geometry.SHAPES — the sections the solver can rasterise"
+          value={config.shape}
+          options={SHAPE_DEFS.map((s) => ({ id: s.id, label: s.label }))}
+          onChange={(v) => {
+            onChange("shape", v);
+            onCommit();
+          }}
+        />
+        <p className="mb-1.5 pl-[80px] text-[10px] leading-snug text-text-muted">
+          {shapeDef.note}
         </p>
 
-        <SelectRow
-          id="shape"
-          label="Shape"
-          value={config.shape}
-          options={isImported ? ["T-Beam", "Rectangle", IMPORTED_SHAPE] : ["T-Beam", "Rectangle"]}
-          onChange={(v) => onChange("shape", v)}
+        {shapeDef.dims.map((d) => (
+          <ScrubField
+            key={d.key}
+            label={d.label}
+            hint={`dims_mm.${d.key}`}
+            unit={units}
+            value={Number(toDisp(dims[d.key]).toFixed(4))}
+            min={toDisp(d.min_mm)}
+            max={toDisp(d.max_mm)}
+            step={dimStep}
+            resetTo={toDisp(defaults[d.key])}
+            onChange={(v) => onDimChange(d.key, fromDisp(v))}
+            onCommit={onCommit}
+          />
+        ))}
+
+        <ScrubField
+          label="Length"
+          hint="View only — the solver is 2D because the element is prismatic, so length extrudes the answer rather than changing it"
+          unit={units}
+          value={Number(toDisp(config.length_mm).toFixed(4))}
+          min={toDisp(500)}
+          max={toDisp(30000)}
+          step={dimStep}
+          resetTo={toDisp(6000)}
+          onChange={(v) => onChange("length_mm", fromDisp(v))}
+        />
+        <p className="mb-1 pl-[80px] text-[10px] leading-snug text-text-muted">
+          Extrusion only — no physics runs along the length.
+        </p>
+
+        <SelectField
+          label="Formwork"
+          hint="physics.equations.boundary.FORMWORK_R"
+          value={config.formwork}
+          options={FORMWORK_OPTIONS.map((f) => ({ id: f.id, label: f.label, note: f.note }))}
+          onChange={(v) => {
+            onChange("formwork", v);
+            onCommit();
+          }}
+        />
+        <SelectField
+          label="Grid"
+          hint="dx_m — the solver's cell pitch. The single biggest lever on solve time."
+          value={String(config.dx_m)}
+          options={GRID_OPTIONS.map((g) => ({ id: g.id, label: g.label, note: g.note }))}
+          onChange={(v) => {
+            onChange("dx_m", Number(v));
+            onCommit();
+          }}
         />
 
-        {/* IFC import picker + status */}
-        <div className="flex items-center justify-between gap-2 py-1">
-          <label htmlFor="ifc-file" className="text-xs text-text-secondary whitespace-nowrap">
+        {/* IFC import */}
+        <div className="flex items-center gap-1.5 py-1">
+          <label htmlFor="ifc-file" className="w-[74px] shrink-0 truncate text-[11px] text-text-secondary">
             Import IFC
           </label>
           <input
@@ -206,103 +266,159 @@ export default function LeftPanel({ config, onChange, units, ifc, onImportIfc, i
           />
           <button
             type="button"
-            className="px-2 py-1 text-[10px] font-medium rounded-sm border border-border-default text-text-secondary hover:text-text-primary hover:border-border-strong transition-colors"
+            className="ml-auto flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-elevate-2 px-2.5 text-[11px] font-medium text-text-secondary hover:bg-elevate-3 hover:text-text-primary"
             onClick={() => fileRef.current?.click()}
             disabled={ifc.busy}
           >
-            {ifc.busy ? "Parsing…" : "Choose file…"}
+            <FileUp className="h-3.5 w-3.5" strokeWidth={2} />
+            {ifc.busy ? "Parsing…" : "Choose file"}
           </button>
         </div>
         {ifc.error && (
-          <p className="mt-1 mb-2 text-[10px] leading-relaxed text-status-red bg-status-red-dim border border-status-red rounded-sm px-2 py-1.5">
+          <p className="mb-2 mt-1 rounded-lg border border-status-red/30 bg-status-red-dim px-2.5 py-2 font-mono text-[10px] leading-relaxed text-status-red">
             {ifc.error}
           </p>
         )}
-        {isImported && ifc.name && (
-          <p className="mt-1 mb-2 text-[10px] text-text-muted">
-            Geometry from IFC: <span className="text-text-secondary">{ifc.name}</span>. Flange/web inputs are preset-only — pick a preset shape to edit them.
+        {importedOutline && ifc.name && (
+          <p className="mb-1 mt-1 text-[10px] leading-snug text-text-muted">
+            Outline from <span className="text-text-secondary">{ifc.name}</span>. The solver
+            takes a named shape and its dimensions, not an arbitrary polygon, so the import
+            is drawn as a reference — pick the preset it matches to solve it.
           </p>
         )}
 
-        {isImported ? (
-          <>
-            <FormRow readOnly id="flange-width" label="Section width" value={disp(config.flange_width_mm)} unit={units} />
-            <FormRow readOnly id="total-depth" label="Section depth" value={disp(config.total_depth_mm)} unit={units} />
-            <FormRow readOnly id="length" label="Length" value={disp(config.length_mm)} unit={units} />
-          </>
-        ) : (
-          <>
-            <FormRow id="flange-width" label="Flange width" value={disp(config.flange_width_mm)} unit={units} onChange={setDim("flange_width_mm")} />
-            <FormRow id="flange-depth" label="Flange depth" value={disp(config.flange_depth_mm)} unit={units} onChange={setDim("flange_depth_mm")} />
-            <FormRow id="web-width" label="Web width" value={disp(config.web_width_mm)} unit={units} onChange={setDim("web_width_mm")} />
-            <FormRow id="total-depth" label="Total depth" value={disp(config.total_depth_mm)} unit={units} onChange={setDim("total_depth_mm")} />
-            <FormRow id="length" label="Length" value={disp(config.length_mm)} unit={units} onChange={setDim("length_mm")} />
-          </>
-        )}
-
-        <SelectRow
-          id="formwork"
-          label="Formwork"
-          value={config.formwork}
-          options={["Plywood 18 mm", "Steel", "Insulated"]}
-          onChange={(v) => onChange("formwork", v)}
-        />
-        <SelectRow
-          id="top-face"
-          label="Top face"
-          value={config.top_face}
-          options={["Exposed", "Covered", "Insulated"]}
-          onChange={(v) => onChange("top_face", v)}
-        />
-        <SelectRow
-          id="soffit"
-          label="Soffit"
-          value={config.soffit}
-          options={["Formed", "Ground"]}
-          onChange={(v) => onChange("soffit", v)}
+        <CrossSectionPreview
+          outline={preview}
+          units={units}
+          source={importedOutline ? "from IFC" : "about to be solved"}
         />
 
-        <CrossSectionPreview config={config} units={units} outline={importedOutline ?? undefined} />
+        {/* ── MIX ─────────────────────────────────────────────────────────── */}
+        <SectionHeader title="Mix" icon={Diamond} />
 
-        {/* MIX section */}
-        <SectionHeader title="Mix" icon="◇" />
-
-        <SelectRow
-          id="grade"
+        <SelectField
           label="Grade"
+          hint="physics.strength_model.GRADE_PARAMS — only calibrated grades are offered"
           value={config.grade}
-          options={["3000 psi (21 MPa)", "4000 psi (28 MPa)", "5000 psi (35 MPa)", "6000 psi (42 MPa)"]}
-          onChange={(v) => onChange("grade", v)}
+          options={GRADE_OPTIONS.map((g) => ({ id: g.id, label: g.label, note: g.note }))}
+          onChange={(v) => {
+            onChange("grade", v);
+            onCommit();
+          }}
         />
-        <SelectRow
-          id="cement"
+        <SelectField
           label="Cement"
-          value={config.cement}
-          options={["Type I", "Type I/II", "Type II", "Type III", "Type V"]}
-          onChange={(v) => onChange("cement", v)}
+          hint="ASTM C150 type — picks the cement heat, physics.constants.H_CEM_BY_TYPE"
+          value={config.cement_type}
+          options={CEMENT_OPTIONS.map((c) => ({ id: c.id, label: c.label, note: c.note }))}
+          onChange={(v) => {
+            onChange("cement_type", v);
+            onCommit();
+          }}
         />
-        <FormRow id="content" label="Content" value={config.content_kgm3} unit="kg/m³" onChange={(v) => onChange("content_kgm3", Number(v))} />
-        <FormRow id="wcm" label="w/cm" value={config.wcm} onChange={(v) => onChange("wcm", Number(v))} />
-        <FormRow id="fly-ash" label="Fly ash" value={config.fly_ash_pct} unit="%" onChange={(v) => onChange("fly_ash_pct", Number(v))} />
-        <FormRow id="placement-temp" label="Placement temp" value={config.placement_temp_c} unit="°C" onChange={(v) => onChange("placement_temp_c", Number(v))} />
+        <ScrubField
+          label="Content"
+          hint="cement_kg_m3 — cementitious content"
+          unit="kg/m³"
+          value={config.cement_kg_m3}
+          min={200}
+          max={700}
+          step={5}
+          resetTo={400}
+          onChange={(v) => onChange("cement_kg_m3", v)}
+          onCommit={onCommit}
+        />
+        <ScrubField
+          label="w/cm"
+          hint="Water/cementitious ratio — drives the ultimate degree of hydration"
+          value={config.wcm}
+          min={0.25}
+          max={0.75}
+          step={0.01}
+          resetTo={0.45}
+          onChange={(v) => onChange("wcm", v)}
+          onCommit={onCommit}
+        />
+        <ScrubField
+          label="Fly ash"
+          hint="Replacement by mass. Class F assumed at 6% CaO."
+          unit="%"
+          value={config.fly_ash_pct}
+          min={0}
+          max={50}
+          step={1}
+          resetTo={20}
+          onChange={(v) => onChange("fly_ash_pct", v)}
+          onCommit={onCommit}
+        />
+        <ScrubField
+          label="Placement"
+          hint="placement_temp_c — concrete temperature at discharge"
+          unit="°C"
+          value={config.placement_temp_c}
+          min={0}
+          max={50}
+          step={0.5}
+          resetTo={29}
+          onChange={(v) => onChange("placement_temp_c", v)}
+          onCommit={onCommit}
+        />
 
-        {/* POUR section */}
-        <SectionHeader title="Pour" icon="◈" />
+        {/* ── POUR ────────────────────────────────────────────────────────── */}
+        <SectionHeader title="Pour" icon={Layers} />
 
-        <FormRow id="pour-date" label="Date" value={config.pour_date} type="text" onChange={(v) => onChange("pour_date", v)} />
-        <FormRow id="start-time" label="Start time" value={config.start_time} type="text" onChange={(v) => onChange("start_time", v)} />
-        <div className="flex items-center justify-between gap-2 py-1">
-          <label className="text-xs text-text-secondary">Wind</label>
-          <div className="flex items-center gap-1">
-            <span className="px-2 py-0.5 text-[10px] rounded bg-accent-blue-dim text-accent-blue font-medium">
-              Auto
-            </span>
-            <span className="text-xs text-text-primary">·</span>
-            <span className="text-xs text-text-primary">2.4</span>
-            <span className="text-[10px] text-text-muted">m/s</span>
-          </div>
-        </div>
-        <FormRow id="cure-window" label="Cure window" value={config.cure_window_h} unit="h" onChange={(v) => onChange("cure_window_h", Number(v))} />
+        <ScrubField
+          label="Cure window"
+          hint="duration_hours — how long the solve runs"
+          unit="h"
+          value={config.cure_window_h}
+          min={12}
+          max={Math.min(336, Math.round(ambientSpan_h))}
+          step={1}
+          resetTo={72}
+          onChange={(v) => onChange("cure_window_h", v)}
+          onCommit={onCommit}
+        />
+        <ScrubField
+          label="Start offset"
+          hint="Slides the run along the ambient series, the way /api/pour-windows compares start hours"
+          unit="h"
+          value={config.start_offset_h}
+          min={0}
+          max={maxOffset_h}
+          step={1}
+          resetTo={0}
+          disabled={maxOffset_h === 0}
+          onChange={(v) => onChange("start_offset_h", v)}
+          onCommit={onCommit}
+        />
+        <ScrubField
+          label="t_ref"
+          hint="Maturity reference temperature. It must match the strength calibration."
+          unit="°C"
+          value={config.t_ref_c}
+          min={5}
+          max={40}
+          step={0.5}
+          resetTo={20}
+          onChange={(v) => onChange("t_ref_c", v)}
+          onCommit={onCommit}
+        />
+
+        <p className="mt-2 rounded-lg border border-border-default bg-elevate-1 px-2.5 py-2 text-[10px] leading-relaxed text-text-muted">
+          {maxOffset_h === 0 ? (
+            <>
+              The ambient series runs {ambientSpan_h.toFixed(0)} h and the cure window uses all
+              of it, so there is no room to start later. Shorten the window to slide the start.
+            </>
+          ) : (
+            <>
+              Weather is the cached series that travelled with the demo scenario — real data
+              that was actually solved, not a forecast fetched now. Offsetting the start moves
+              the pour along that same {ambientSpan_h.toFixed(0)} h of it.
+            </>
+          )}
+        </p>
       </div>
     </aside>
   );
