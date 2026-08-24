@@ -16,6 +16,7 @@ from app.services.simulate import (
     to_ambient,
     to_candidate,
     to_element,
+    to_field_frames,
     to_mix,
 )
 from physics.season_analysis import PLACEMENT_ABOVE_AMBIENT_C
@@ -32,6 +33,12 @@ async def simulate(
     ensemble: bool = Query(default=False, description="add p05/p50/p95 bands"),
     samples: int = Query(default=300, ge=1, le=2000),
     seed: int = Query(default=0),
+    # OFF by default and it must stay that way. The full frame stack is tens of megabytes
+    # on a realistic slab; the caller has to ask, and gets to say how thinly.
+    fields: bool = Query(default=False, description="add the per-cell temperature field"),
+    fields_stride_h: float = Query(
+        default=1.0, gt=0.0, le=24.0, description="hours between kept field frames"
+    ),
 ) -> SimulationResult:
     try:
         element, mix = to_element(request.element), to_mix(request.mix)
@@ -39,9 +46,11 @@ async def simulate(
         raise HTTPException(status_code=422, detail=str(err)) from err
 
     ambient = to_ambient(request.ambient)
-    _, payload = run_deterministic(
+    result, payload = run_deterministic(
         element, mix, ambient, request.duration_hours, request.mix.grade, request.t_ref_c
     )
+    if fields:
+        payload.fields = to_field_frames(result, element.dx_m, fields_stride_h)
     if ensemble:
         payload.ensemble = run_bands(
             element, mix, ambient, request.duration_hours, request.mix.grade,

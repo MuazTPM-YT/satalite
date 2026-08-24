@@ -33,24 +33,25 @@ export function tempToColor(
   return [last[1], last[2], last[3]];
 }
 
-// build RGBA DataTexture from temperature slice for cross-section heatmap
-// air cells get nearest-concrete-cell color to prevent LinearFilter bleed
+// build RGBA DataTexture from one field frame for the cross-section heatmap.
+// null cells hold no concrete; they take the nearest concrete colour so LinearFilter
+// cannot bleed a hole's colour into the solid, and they are drawn fully transparent.
 export function buildHeatmapTexture(
-  tempSlice: number[][],
-  mask: number[][],
+  frame: (number | null)[][],
   min_c: number,
   max_c: number
 ): THREE.DataTexture {
-  const ny = tempSlice.length;
-  const nx = tempSlice[0].length;
+  const ny = frame.length;
+  const nx = ny > 0 ? frame[0].length : 0;
   const data = new Uint8Array(nx * ny * 4);
 
-  // first pass: color concrete cells
+  // first pass: colour the concrete
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
+      const v = frame[j][i];
+      if (v === null) continue;
       const idx = (j * nx + i) * 4;
-      if (mask[j][i] === 0) continue;
-      const [r, g, b] = tempToColor(tempSlice[j][i], min_c, max_c);
+      const [r, g, b] = tempToColor(v, min_c, max_c);
       data[idx] = Math.round(r * 255);
       data[idx + 1] = Math.round(g * 255);
       data[idx + 2] = Math.round(b * 255);
@@ -58,10 +59,10 @@ export function buildHeatmapTexture(
     }
   }
 
-  // second pass: fill air cells with nearest concrete neighbor color
+  // second pass: holes borrow the nearest concrete colour, at zero alpha
   for (let j = 0; j < ny; j++) {
     for (let i = 0; i < nx; i++) {
-      if (mask[j][i] === 1) continue;
+      if (frame[j][i] !== null) continue;
       let best_d2 = Infinity;
       let br = 0, bg = 0, bb = 0;
       const search = Math.min(8, Math.max(nx, ny));
@@ -70,7 +71,7 @@ export function buildHeatmapTexture(
           const nj = j + dj;
           const ni = i + di;
           if (nj < 0 || nj >= ny || ni < 0 || ni >= nx) continue;
-          if (mask[nj][ni] === 0) continue;
+          if (frame[nj][ni] === null) continue;
           const d2 = di * di + dj * dj;
           if (d2 < best_d2) {
             best_d2 = d2;
@@ -85,7 +86,7 @@ export function buildHeatmapTexture(
       data[idx] = br;
       data[idx + 1] = bg;
       data[idx + 2] = bb;
-      data[idx + 3] = best_d2 < Infinity ? 255 : 0;
+      data[idx + 3] = 0;
     }
   }
 

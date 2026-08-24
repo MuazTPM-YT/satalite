@@ -193,6 +193,31 @@ class SimulationRequest(BaseModel):
     t_ref_c: float = T_REF_FIELD
 
 
+class FieldFrames(BaseModel):
+    """Per-cell temperature on the solver's own grid, for the heatmap.
+
+    The solver already computes this every step; it was simply never serialised. It is
+    opt-in because it is large: 433 frames of a 300x30 slab is 3.9 million numbers, which
+    is tens of megabytes of json. `fields_stride_h` thins the FRAME axis only - x and y
+    are never resampled, because a resampled cell is a number the solver did not compute.
+
+    Row 0 is the base and y increases upward, matching physics.geometry. Cell (j, i) has
+    its centre at ((i + 0.5) * dx_m, (j + 0.5) * dx_m).
+    """
+
+    nx: int
+    ny: int
+    dx_m: float
+    # the subset of SimulationResult.times_h these frames were recorded at.
+    times_h: list[float]
+    # indices into SimulationResult.times_h, so a caller can line a frame up against the
+    # core/surface series without matching floats.
+    frame_indices: list[int]
+    # [frame][y][x] celsius. null OUTSIDE THE MASK, never a number: a filled hole reads
+    # as concrete at ambient, and there is no concrete there to be at any temperature.
+    temp_c: list[list[list[float | None]]]
+
+
 class SimulationResult(BaseModel):
     times_h: list[float]
     core_temp_c: list[float]
@@ -217,6 +242,8 @@ class SimulationResult(BaseModel):
     breaches: BreachFlags
     outline_m: list[list[float]]
     ensemble: EnsembleResult | None = None
+    # only present when the caller asked for it with ?fields=true.
+    fields: FieldFrames | None = None
 
 
 class PourWindowCandidate(BaseModel):

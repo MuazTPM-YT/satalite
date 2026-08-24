@@ -310,3 +310,57 @@ def test_t_ref_c_is_reachable_and_echoed_in_run_metadata(client: TestClient) -> 
 def test_t_ref_c_outside_the_physical_range_is_rejected(client: TestClient) -> None:
     body = {"element": ELEMENT, "ambient": ambient_payload(), "t_ref_c": 0.0}
     assert client.post("/api/simulate", json=body).status_code == 422
+
+
+def test_simulate_omits_the_field_unless_asked(client: TestClient) -> None:
+    body = {"element": ELEMENT, "ambient": ambient_payload(), "duration_hours": 6.0}
+    resp = client.post("/api/simulate", json=body)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["fields"] is None
+
+
+def test_simulate_fields_thin_frames_but_never_cells(client: TestClient) -> None:
+    body = {"element": ELEMENT, "ambient": ambient_payload(), "duration_hours": 6.0}
+    full = client.post("/api/simulate", json=body).json()
+    resp = client.post("/api/simulate?fields=true&fields_stride_h=1.0", json=body)
+    assert resp.status_code == 200, resp.text
+
+    fields = resp.json()["fields"]
+    # the frame axis is thinned, so there are fewer frames than recorded steps
+    assert len(fields["times_h"]) < len(full["times_h"])
+    assert len(fields["temp_c"]) == len(fields["times_h"]) == len(fields["frame_indices"])
+    # x and y are NOT resampled: every kept frame is the full solved grid
+    for frame in fields["temp_c"]:
+        assert len(frame) == fields["ny"]
+        assert all(len(row) == fields["nx"] for row in frame)
+    # frame_indices really do index the full series
+    for k, i in enumerate(fields["frame_indices"]):
+        assert fields["times_h"][k] == pytest.approx(full["times_h"][i])
+    # the peak-core frame survives any stride, or peak_core_temp_c stops being
+    # reproducible from the field it was sampled out of
+    peak_i = int(np.argmax(full["core_temp_c"]))
+    assert peak_i in fields["frame_indices"]
+
+
+def test_simulate_fields_leave_holes_null_not_filled(client: TestClient) -> None:
+    # a T carries a hole in its bounding box. Those cells hold no concrete, so they must
+    # come back null - a number there reads as concrete sitting at that temperature.
+    element = {
+        "shape": "t_section",
+        "dims_mm": {
+            "flange_width": 600.0,
+            "flange_thickness": 150.0,
+            "web_width": 200.0,
+            "height": 500.0,
+        },
+        "dx_m": 0.05,
+        "placement_temp_c": 25.0,
+    }
+    body = {"element": element, "ambient": ambient_payload(), "duration_hours": 2.0}
+    resp = client.post("/api/simulate?fields=true", json=body)
+    assert resp.status_code == 200, resp.text
+
+    frame = resp.json()["fields"]["temp_c"][0]
+    flat = [v for row in frame for v in row]
+    assert None in flat, "the notch outside the T must be null"
+    assert any(v is not None for v in flat), "the concrete must carry temperatures"

@@ -1,4 +1,4 @@
-// studio page. lifts sim + timeIndex + viewMode + element state, hosts toggleable palettes
+// studio page. Loads a real solve from the backend and hands it to every panel.
 "use client";
 
 import { useMemo, useState, useCallback, useEffect } from "react";
@@ -10,20 +10,15 @@ import Section2D from "@/components/Section2D";
 import ChecksPanel from "@/components/ChecksPanel";
 import TimeScrubber from "@/components/TimeScrubber";
 import PourWindowTable from "@/components/PourWindowTable";
+import EnsemblePanel from "@/components/EnsemblePanel";
+import SeasonPanel from "@/components/SeasonPanel";
+import ValidationPanel from "@/components/ValidationPanel";
 import FloatingPanel from "@/components/FloatingPanel";
 import type { PanelGeometry } from "@/components/FloatingPanel";
 import type { PanelId } from "@/components/PanelId";
-import {
-  generateMockThermalSimulation,
-  getPourWindowCandidates,
-  createGridFromOutline,
-  createOutlineForShape,
-  type GridData,
-} from "@/lib/mockThermalField";
-import {
-  DEFAULT_ELEMENT_CONFIG,
-  type ElementConfig,
-} from "@/lib/elementConfig";
+import { ApiError, type PourWindowResult, type SeasonAnalysisResponse, type ValidationResponse } from "@/lib/api";
+import { loadDemoRun, loadPourWindows, loadSeason, loadValidation, scaleBounds, type LoadedRun } from "@/lib/scenario";
+import { DEFAULT_ELEMENT_CONFIG, type ElementConfig } from "@/lib/elementConfig";
 import { importIfcOutline } from "@/lib/ifcImport";
 import { IMPORTED_SHAPE, type IfcUiState } from "@/components/LeftPanel";
 import type { LengthUnit } from "@/lib/units";
@@ -31,11 +26,13 @@ import type { LengthUnit } from "@/lib/units";
 // where each palette opens before first drag/resize
 const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }> = {
   element: { x: 16, y: 16, w: 262, h: 480, minW: 262, minH: 240 },
-  checks: { x: 950, y: 16, w: 282, h: 520, minW: 282, minH: 240 },
-  pour: { x: 16, y: 320, w: 640, h: 280, minW: 480, minH: 200 },
+  checks: { x: 950, y: 16, w: 282, h: 560, minW: 282, minH: 240 },
+  pour: { x: 16, y: 320, w: 860, h: 300, minW: 560, minH: 200 },
+  ensemble: { x: 60, y: 60, w: 940, h: 700, minW: 620, minH: 360 },
+  season: { x: 90, y: 40, w: 900, h: 760, minW: 620, minH: 360 },
+  validation: { x: 120, y: 30, w: 860, h: 800, minW: 600, minH: 360 },
 };
 
-// imported element geometry, null = preset shapes only
 interface ImportedElement {
   outline: [number, number][];
   length_m: number;
@@ -43,40 +40,87 @@ interface ImportedElement {
 }
 
 export default function StudioPage() {
-  // imported IFC geometry + import ui state
+  // the solved run. null until it lands; error text when it does not.
+  const [run, setRun] = useState<LoadedRun | null>(null);
+  const [pour, setPour] = useState<PourWindowResult | null>(null);
+  const [season, setSeason] = useState<SeasonAnalysisResponse | null>(null);
+  const [validation, setValidation] = useState<ValidationResponse | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [imported, setImported] = useState<ImportedElement | null>(null);
   const [ifcUi, setIfcUi] = useState<IfcUiState>({ busy: false, error: null, name: null });
-  // element/mix/pour inputs — single source of truth for LeftPanel + viewers
   const [element, setElement] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
 
-  // sim data lives here so all panels share it; imported outline runs same pipeline
-  // grid from imported outline, or generated from preset shape + current dims
-  const grid: GridData | undefined = useMemo(() => {
-    if (imported) return createGridFromOutline(imported.outline);
-    const outline = createOutlineForShape(
-      element.shape,
-      element.flange_width_mm / 1000,
-      element.flange_depth_mm / 1000,
-      element.web_width_mm / 1000,
-      element.total_depth_mm / 1000
-    );
-    return outline ? createGridFromOutline(outline) : undefined;
-  }, [imported, element.shape, element.flange_width_mm, element.flange_depth_mm, element.web_width_mm, element.total_depth_mm]);
-  const sim = useMemo(() => generateMockThermalSimulation(grid), [grid]);
-  const candidates = useMemo(() => getPourWindowCandidates(), []);
-  const [timeIndex, setTimeIndex] = useState(0);
-  // 2d/3d view toggle from TopBar — both views share scrubber + table
-  const [viewMode, setViewMode] = useState<ViewMode>("3d");
-  // palettes all closed on load — viewer gets clean canvas
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>("2d");
   const [openPanels, setOpenPanels] = useState<Record<PanelId, boolean>>({
     element: false,
-    checks: false,
+    checks: true,
     pour: false,
+    ensemble: false,
+    season: false,
+    validation: false,
   });
-  // dimension display unit — canonical state stays SI, this is display only
   const [units, setUnits] = useState<LengthUnit>("m");
 
-  // partial update for one config field; preset pick clears any IFC import
+  // the season artifact is independent of the run and may legitimately be absent.
+  useEffect(() => {
+    let live = true;
+    loadSeason()
+      .then((s) => live && setSeason(s))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // the validation report is independent of the run. It 503s when it has not been
+  // generated, which is a real state worth showing rather than an empty panel.
+  useEffect(() => {
+    let live = true;
+    loadValidation()
+      .then((v) => live && setValidation(v))
+      .catch((err: unknown) => live && setValidationError(err instanceof Error ? err.message : String(err)));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // fetch the run once, in the browser. The pour sweep follows off the same scenario;
+  // it is allowed to fail on its own without taking the viewer down with it.
+  useEffect(() => {
+    let live = true;
+    loadDemoRun()
+      .then((loaded) => {
+        if (!live) return;
+        setRun(loaded);
+        // open on the peak-core frame. t = 0 is the whole section at placement
+        // temperature, which is correct and completely uninformative to look at.
+        const f = loaded.result.fields;
+        if (f) {
+          const peak = loaded.result.core_temp_c.indexOf(Math.max(...loaded.result.core_temp_c));
+          const idx = f.frame_indices.indexOf(peak);
+          if (idx >= 0) setFrameIndex(idx);
+        }
+        return loadPourWindows(loaded.request)
+          .then((p) => live && setPour(p))
+          .catch(() => undefined);
+      })
+      .catch((err: unknown) => {
+        if (!live) return;
+        setLoadError(
+          err instanceof ApiError ? `${err.status}: ${err.message}` : String(err),
+        );
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const bounds = useMemo(() => (run ? scaleBounds(run.result) : null), [run]);
+  const frameTimes = useMemo(() => run?.result.fields?.times_h ?? [], [run]);
+
   const updateElement = useCallback(
     <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => {
       if (key === "shape" && value !== IMPORTED_SHAPE) {
@@ -85,13 +129,11 @@ export default function StudioPage() {
       }
       setElement((prev) => ({ ...prev, [key]: value }));
     },
-    []
+    [],
   );
 
-  // run ifc import from raw bytes — shared by file picker and ?ifc= loader
   const runImport = useCallback(async (data: ArrayBuffer, fileName: string) => {
     setIfcUi({ busy: true, error: null, name: null });
-    // surface feedback: element palette must be open to see status/errors
     setOpenPanels((prev) => ({ ...prev, element: true }));
     const outcome = await importIfcOutline(data);
     if (!outcome.ok) {
@@ -100,7 +142,6 @@ export default function StudioPage() {
     }
     const el = outcome.element;
     setImported({ outline: el.outline, length_m: el.length_m, name: el.name });
-    // reflect section bbox + length in shared config so units/labels stay honest
     const w = Math.max(...el.outline.map((p) => p[0]));
     const h = Math.max(...el.outline.map((p) => p[1]));
     setElement((prev) => ({
@@ -113,15 +154,13 @@ export default function StudioPage() {
     setIfcUi({ busy: false, error: null, name: el.name });
   }, []);
 
-  // file picker entry point
   const handleImportIfc = useCallback(
     (file: File) => {
       file.arrayBuffer().then((buf) => runImport(buf, file.name));
     },
-    [runImport]
+    [runImport],
   );
 
-  // dev/demo loader: ?ifc=/samples/tbeam.ifc fetches and imports on mount
   useEffect(() => {
     const url = new URL(window.location.href).searchParams.get("ifc");
     if (!url) return;
@@ -132,27 +171,33 @@ export default function StudioPage() {
       })
       .then((buf) => runImport(buf, url))
       .catch((e) => setIfcUi({ busy: false, error: `${url}: ${String(e)}`, name: null }));
-    // run once per mount; runImport stable
   }, [runImport]);
 
-  // snap slider value to nearest time step index
+  // snap the slider to the nearest FRAME the response actually carries. The field is
+  // strided, so there is no frame between two of these and none is invented.
   const handleTimeChange = useCallback(
     (time_h: number) => {
-      const idx = Math.round(time_h / 0.5);
-      setTimeIndex(Math.max(0, Math.min(idx, sim.times_h.length - 1)));
+      if (frameTimes.length === 0) return;
+      let best = 0;
+      for (let i = 1; i < frameTimes.length; i++) {
+        if (Math.abs(frameTimes[i] - time_h) < Math.abs(frameTimes[best] - time_h)) best = i;
+      }
+      setFrameIndex(best);
     },
-    [sim.times_h.length]
+    [frameTimes],
   );
 
-  // toggle one palette open/closed from TopBar launcher
   const togglePanel = useCallback((id: PanelId) => {
     setOpenPanels((prev) => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // close one palette from its X button
   const closePanel = useCallback((id: PanelId) => {
     setOpenPanels((prev) => ({ ...prev, [id]: false }));
   }, []);
+
+  // element length. The solver is 2D and returns no length, so this is a VIEW parameter
+  // for the extrusion, not a solved quantity.
+  const length_m = element.length_mm / 1000;
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
@@ -166,15 +211,40 @@ export default function StudioPage() {
       />
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          {/* viewer area — palettes float on top of this, never reflow it */}
           <div className="flex-1 relative flex min-h-0">
-            {viewMode === "3d" ? (
-              <Viewer sim={sim} timeIndex={timeIndex} length_m={element.length_mm / 1000} units={units} />
+            {loadError ? (
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="max-w-lg text-center">
+                  <p className="text-sm text-status-red font-medium">Could not load a solve</p>
+                  <p className="mt-2 text-xs text-text-secondary leading-relaxed">{loadError}</p>
+                  <p className="mt-3 text-[10px] text-text-muted leading-relaxed">
+                    Nothing is drawn from a placeholder. The viewer stays empty until the
+                    backend returns a run.
+                  </p>
+                </div>
+              </div>
+            ) : !run ? (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-xs text-text-secondary">solving…</p>
+              </div>
+            ) : viewMode === "3d" ? (
+              <Viewer
+                sim={run.result}
+                frameIndex={frameIndex}
+                scale_min_c={bounds?.min_c}
+                scale_max_c={bounds?.max_c}
+                length_m={length_m}
+                units={units}
+              />
             ) : (
-              <Section2D sim={sim} timeIndex={timeIndex} length_m={element.length_mm / 1000} units={units} />
+              <Section2D
+                sim={run.result}
+                frameIndex={frameIndex}
+                length_m={length_m}
+                units={units}
+              />
             )}
 
-            {/* floating palettes overlay — pass clicks through to viewer elsewhere */}
             <div className="absolute inset-0 pointer-events-none">
               {openPanels.element && (
                 <FloatingPanel
@@ -194,15 +264,65 @@ export default function StudioPage() {
                   />
                 </FloatingPanel>
               )}
-              {openPanels.checks && (
+              {openPanels.checks && run && (
                 <FloatingPanel
-                  title="Checks & Strip-Ready"
+                  title="Checks"
                   defaultGeo={PANEL_GEO.checks}
                   minWidth={PANEL_GEO.checks.minW}
                   minHeight={PANEL_GEO.checks.minH}
                   onClose={() => closePanel("checks")}
                 >
-                  <ChecksPanel flags={sim.flags} />
+                  <ChecksPanel sim={run.result} request={run.request} />
+                </FloatingPanel>
+              )}
+              {openPanels.ensemble && run && (
+                <FloatingPanel
+                  title="Ensemble band — precomputed, one fixed scenario"
+                  defaultGeo={PANEL_GEO.ensemble}
+                  minWidth={PANEL_GEO.ensemble.minW}
+                  minHeight={PANEL_GEO.ensemble.minH}
+                  onClose={() => closePanel("ensemble")}
+                >
+                  <EnsemblePanel demo={run.demo} nominal={run.result} />
+                </FloatingPanel>
+              )}
+              {openPanels.season && (
+                <FloatingPanel
+                  title="Season replay — precomputed"
+                  defaultGeo={PANEL_GEO.season}
+                  minWidth={PANEL_GEO.season.minW}
+                  minHeight={PANEL_GEO.season.minH}
+                  onClose={() => closePanel("season")}
+                >
+                  {season ? (
+                    <SeasonPanel season={season} />
+                  ) : (
+                    <p className="p-3 text-xs text-text-secondary">loading season replay…</p>
+                  )}
+                </FloatingPanel>
+              )}
+              {openPanels.validation && (
+                <FloatingPanel
+                  title="Validation — USBR DSO-12-02 cases"
+                  defaultGeo={PANEL_GEO.validation}
+                  minWidth={PANEL_GEO.validation.minW}
+                  minHeight={PANEL_GEO.validation.minH}
+                  onClose={() => closePanel("validation")}
+                >
+                  {validation ? (
+                    <ValidationPanel validation={validation} />
+                  ) : validationError ? (
+                    <div className="p-3">
+                      <p className="text-xs text-status-red">
+                        The validation report is not available.
+                      </p>
+                      <p className="mt-1 text-[11px] text-text-secondary leading-relaxed">
+                        {validationError}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="p-3 text-xs text-text-secondary">loading validation report…</p>
+                  )}
                 </FloatingPanel>
               )}
               {openPanels.pour && (
@@ -213,14 +333,23 @@ export default function StudioPage() {
                   minHeight={PANEL_GEO.pour.minH}
                   onClose={() => closePanel("pour")}
                 >
-                  <PourWindowTable candidates={candidates} />
+                  {pour ? (
+                    <PourWindowTable
+                      candidates={pour.candidates}
+                      best_offset_h={pour.best_offset_h}
+                    />
+                  ) : (
+                    <p className="p-3 text-xs text-text-secondary">
+                      sweeping candidate start hours…
+                    </p>
+                  )}
                 </FloatingPanel>
               )}
             </div>
           </div>
           <TimeScrubber
-            times_h={sim.times_h}
-            timeIndex={timeIndex}
+            times_h={frameTimes}
+            frameIndex={frameIndex}
             onTimeChange={handleTimeChange}
           />
         </div>

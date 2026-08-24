@@ -2,6 +2,7 @@
 "use client";
 
 import type { PanelId } from "@/components/PanelId";
+import HealthProbe from "@/components/HealthProbe";
 import { UNIT_OPTIONS, type LengthUnit } from "@/lib/units";
 
 export type ViewMode = "2d" | "3d";
@@ -32,8 +33,11 @@ function panelIconClass(active: boolean): string {
 // launcher glyph + tooltip per panel
 const PANELS: { id: PanelId; icon: string; label: string }[] = [
   { id: "element", icon: "◧", label: "Element & Mix Inputs" },
-  { id: "checks", icon: "✓", label: "Checks & Strip-Ready" },
+  { id: "checks", icon: "✓", label: "Checks & thresholds" },
   { id: "pour", icon: "⊞", label: "Pour Window" },
+  { id: "ensemble", icon: "◈", label: "Ensemble band" },
+  { id: "season", icon: "▤", label: "Season replay" },
+  { id: "validation", icon: "◎", label: "Validation" },
 ];
 
 export default function TopBar({
@@ -109,12 +113,10 @@ export default function TopBar({
         </select>
       </div>
 
-      {/* right: location */}
-      <div className="flex items-center gap-3">
-        <span className="text-xs text-text-secondary">
-          📍 Phoenix, AZ · Aug 22
-        </span>
-      </div>
+      {/* right: backend reachability. A site label used to live here, but no response
+          carries a location for the run on screen and a hardcoded one is just a caption
+          that happens to look like data. */}
+      <HealthProbe />
     </header>
   );
 }
