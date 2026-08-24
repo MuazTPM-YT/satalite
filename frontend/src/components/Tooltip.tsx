@@ -57,16 +57,23 @@ function Bubble({
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [left, setLeft] = useState(anchor.x);
+  // Where the pointer sits WITHIN the bubble. Once the bubble has been clamped away
+  // from the trigger, an arrow pinned to its own middle points at nothing.
+  const [arrow, setArrow] = useState<number | null>(null);
 
   // Measured after paint rather than guessed: the content decides the width, and a
   // tooltip that hangs off the right edge of the screen is worse than no tooltip.
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const half = el.offsetWidth / 2;
+    const w = el.offsetWidth;
+    const half = w / 2;
     const lo = EDGE_PX + half;
     const hi = window.innerWidth - EDGE_PX - half;
-    setLeft(hi < lo ? window.innerWidth / 2 : Math.max(lo, Math.min(anchor.x, hi)));
+    const x = hi < lo ? window.innerWidth / 2 : Math.max(lo, Math.min(anchor.x, hi));
+    setLeft(x);
+    // 10px in from each end, so the arrow never overhangs a rounded corner
+    setArrow(Math.max(10, Math.min(anchor.x - x + half, w - 10)));
   }, [anchor.x, children]);
 
   return (
@@ -91,12 +98,13 @@ function Bubble({
           edges that overlap the bubble hidden behind it. */}
       <span
         aria-hidden="true"
-        className="absolute left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 border-border-default bg-bg-elevated"
-        style={
-          anchor.place === "top"
+        className="absolute h-2 w-2 -translate-x-1/2 rotate-45 border-border-default bg-bg-elevated"
+        style={{
+          left: arrow ?? "50%",
+          ...(anchor.place === "top"
             ? { bottom: -5, borderRightWidth: 1, borderBottomWidth: 1 }
-            : { top: -5, borderLeftWidth: 1, borderTopWidth: 1 }
-        }
+            : { top: -5, borderLeftWidth: 1, borderTopWidth: 1 }),
+        }}
       />
       <span className="relative block">{children}</span>
     </div>

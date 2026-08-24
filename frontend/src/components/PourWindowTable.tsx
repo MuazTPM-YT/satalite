@@ -5,7 +5,7 @@
 "use client";
 
 import type { PourWindowCandidate } from "@/lib/api";
-import { Flag, SectionTitle, cx } from "@/components/ui";
+import { Flag, cx } from "@/components/ui";
 
 interface PourWindowTableProps {
   candidates: PourWindowCandidate[];
@@ -26,10 +26,12 @@ export default function PourWindowTable({ candidates, best_offset_h }: PourWindo
   return (
     <div className="h-full w-full overflow-y-auto bg-bg-surface">
       <div className="p-3">
-        <SectionTitle
-          title="Pour window"
-          subtitle={`${candidates.length} candidate start${candidates.length === 1 ? "" : "s"} across the room the ambient series has · fewest breaches wins, ties on the cooler core`}
-        />
+        {/* No title here: the palette's own bar already says Pour Window, and the
+            same words twice in eight vertical pixels reads as a rendering fault. */}
+        <p className="mb-2 text-[10px] leading-relaxed text-text-muted">
+          {candidates.length} candidate start{candidates.length === 1 ? "" : "s"} across the
+          room the ambient series has · fewest breaches wins, ties on the cooler core
+        </p>
 
         <div className="-mx-1 overflow-x-auto px-1">
         <table className="w-full min-w-[760px] text-[11px]">
@@ -89,10 +91,21 @@ export default function PourWindowTable({ candidates, best_offset_h }: PourWindo
         </table>
         </div>
 
-        <p className="mt-2 text-[10px] text-text-muted leading-relaxed">
+        <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
           ▲ marks a quantity the response reports as over its limit. Limits and the
           quantity that crossed them are in the Checks palette.
         </p>
+
+        {/* A one-row sweep is not a broken sweep, and the reader deserves to know
+            which of the two knobs opens it up. Starting later than the series can
+            cover would solve against weather the data does not have. */}
+        {candidates.length === 1 && (
+          <p className="mt-1.5 rounded-lg border border-border-default bg-elevate-1 px-2.5 py-2 text-[10px] leading-relaxed text-text-muted">
+            Only one start hour fits: the cure window is as long as the ambient series,
+            so every later start would run past the end of the weather. Shorten the cure
+            window in the Element palette to open the sweep up.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -698,7 +698,7 @@ export default function StudioPage() {
                   </div>
                 ) : (
                   <p className="p-3 text-[11px] text-text-secondary">
-                    Sweeping candidate start hours for these inputs — six solves.
+                    Sweeping candidate start hours for these inputs. One full solve each.
                   </p>
                 )}
               </FloatingPanel>
