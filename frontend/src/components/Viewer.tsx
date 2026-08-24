@@ -88,10 +88,11 @@ interface ViewerProps {
 function ProbeMarker({ at, radius_m }: { at: [number, number, number]; radius_m: number }) {
   // A marker is a POINT, not an object in the scene. At 2% of the element's bounding
   // radius it was a 130 mm ball on a 6 m slab - big enough to cover the cells around
-  // the one it was reporting, which is the one thing it must not do. 0.5% is a dot
-  // that still survives being seen through a translucent body, and the floor keeps it
-  // visible on a small column.
-  const r = Math.max(radius_m * 0.005, 0.004);
+  // the one it was reporting, which is the one thing it must not do. 1% is about four
+  // pixels across at the framing the camera opens on: small enough to sit inside a
+  // cell, big enough to survive being seen through a translucent body. The floor keeps
+  // it visible on a column, where the bounding radius is small.
+  const r = Math.max(radius_m * 0.01, 0.006);
   return (
     <mesh position={at} renderOrder={20}>
       <sphereGeometry args={[r, 20, 14]} />
