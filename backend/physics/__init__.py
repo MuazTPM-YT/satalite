@@ -10,7 +10,13 @@ FloatArray = np.ndarray[Any, np.dtype[np.float64]]
 # cell indices. probe stencils carry them around in pairs.
 IntArray = np.ndarray[Any, np.dtype[np.int64]]
 
+# the solid mask, and anything else that is one bool per cell.
+BoolArray = np.ndarray[Any, np.dtype[np.bool_]]
+
+# the per-cell face tags. one uint8 of EXPOSED/FORMED/GROUND/ADIABATIC bits.
+TagArray = np.ndarray[Any, np.dtype[np.uint8]]
+
 # scalar or array. most equations take either.
 Floats = FloatArray | float
 
-__all__ = ["FloatArray", "Floats", "IntArray"]
+__all__ = ["BoolArray", "FloatArray", "Floats", "IntArray", "TagArray"]

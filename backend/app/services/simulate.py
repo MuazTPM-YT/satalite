@@ -93,7 +93,10 @@ def to_mix(spec: MixSpec) -> Mix:
             h_u_j_per_kg=base.h_u_j_per_kg * (h_cem / base.h_cem_j_per_g),
             h_cem_j_per_g=h_cem,
         )
-    if spec.mix_id != "standard" and spec.cement_kg_m3 is None:
+    # The standard-mix branch above has already returned, so reaching here without a
+    # content means a mix_id nothing knows how to build. Testing the content alone
+    # rather than the pair also says plainly that it is required from here down.
+    if spec.cement_kg_m3 is None:
         raise ValueError(
             f"unknown mix_id {spec.mix_id!r}. Either use 'standard' or supply "
             "cement_kg_m3, h_u_j_per_kg, alpha_u and tau_h explicitly."
@@ -135,7 +138,7 @@ def to_mix(spec: MixSpec) -> Mix:
     if missing:
         raise ValueError(f"custom mix is missing {missing}")
     return Mix(
-        cement_kg_m3=float(spec.cement_kg_m3),      # type: ignore[arg-type]
+        cement_kg_m3=float(spec.cement_kg_m3),
         h_u_j_per_kg=float(spec.h_u_j_per_kg),      # type: ignore[arg-type]
         alpha_u=float(spec.alpha_u),                # type: ignore[arg-type]
         tau_h=float(spec.tau_h),                    # type: ignore[arg-type]

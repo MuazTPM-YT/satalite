@@ -63,8 +63,13 @@ npm install
 npm run dev
 ```
 
-<http://localhost:3000>. It reads `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
-With the backend up, the landing page shows `Backend: ok (v0.1.0)`.
+<http://localhost:3000>. It reads `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`)
+and `NEXT_PUBLIC_SITE_URL` (default `http://localhost:3000`, used only by the metadata:
+the canonical URL, Open Graph, `robots.txt` and `sitemap.xml` are all absolute). Both are
+inlined at BUILD time, so they must be set before `next build`.
+
+With the backend up, the status dot in the command bar is green and its tooltip carries
+the version and the origin it reached.
 
 ## Checks
 
@@ -77,7 +82,7 @@ uv run mypy physics app     # strict on physics/, lenient elsewhere
 uv run pytest -v
 ```
 
-Expect `159 passed`. `validation/` is deliberately outside `testpaths` — it runs real
+Expect `203 passed`. `validation/` is deliberately outside `testpaths` — it runs real
 measured cases and is invoked on purpose:
 
 ```bash
@@ -91,6 +96,28 @@ cd frontend
 npm run lint
 npx tsc --noEmit
 npm run build
+```
+
+The studio also carries self-checks in `frontend/src/lib/`. They are plain scripts, not a
+test framework — run the one you want:
+
+```bash
+cd frontend
+npx tsx src/lib/test_scenario.ts          # candidate start hours, config round trip
+npx tsx src/lib/test_section_metrics.ts   # probe distances, cut volumes, elevations
+npx tsx src/lib/test_probe.ts             # the probe stencil, against the backend's
+npx tsx src/lib/test_extrude.ts           # the extrusion carries no gradient along z
+npx tsx src/lib/test_stats.ts             # Wilson interval at 0/n and n/n
+```
+
+The `*_live.ts` ones need the backend up, and are how the frontend proves its claims
+against real responses rather than against fixtures:
+
+```bash
+npx tsx src/lib/test_studio_live.ts       # the studio opens on the artifact's scenario
+npx tsx src/lib/test_probe_live.ts        # viewer and solver agree on the same point
+npx tsx src/lib/test_shapes_live.ts       # all eight shapes, vertex for vertex
+npx tsx src/lib/test_ensemble_live.ts     # nominal under the limit, tail across it
 ```
 
 ## Precomputed answers

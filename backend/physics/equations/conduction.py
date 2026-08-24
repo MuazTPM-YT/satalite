@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from physics import FloatArray
+from physics import BoolArray, FloatArray
 
 # same direction order as geometry.face_tags
 UP, DOWN, LEFT, RIGHT = 0, 1, 2, 3
@@ -92,7 +92,7 @@ def face_temp_c(
 
 
 # how many of each solid cell's four neighbours are also solid.
-def neighbour_counts(mask: np.ndarray) -> FloatArray:
+def neighbour_counts(mask: BoolArray) -> FloatArray:
     pad = np.pad(mask, 1, constant_values=False)
     total = (
         pad[2:, 1:-1].astype(np.int8)
@@ -108,7 +108,7 @@ def neighbour_counts(mask: np.ndarray) -> FloatArray:
 # T_new = T*(1 - Fo*(n_solid + (dx/k)*h_sum)) + ...  so that coefficient must stay >= 0.
 # for interior cells n_solid = 4, giving the familiar Fo <= 1/4.
 def max_stable_dt_s(
-    mask: np.ndarray,
+    mask: BoolArray,
     h_sum_w_m2_k: FloatArray,
     dx_m: float,
     alpha_m2_s: float,
@@ -122,7 +122,7 @@ def max_stable_dt_s(
 # blow up loudly instead of returning smooth nonsense. trap 2.
 def assert_stable(
     dt_s: float,
-    mask: np.ndarray,
+    mask: BoolArray,
     h_sum_w_m2_k: FloatArray,
     dx_m: float,
     alpha_m2_s: float,
@@ -141,7 +141,7 @@ def assert_stable(
 # march one timestep. celsius in, celsius out.
 def step(
     temp_c: FloatArray,
-    mask: np.ndarray,
+    mask: BoolArray,
     n_solid: FloatArray,
     h_sum_w_m2_k: FloatArray,
     q_sum_w_m2: FloatArray,
