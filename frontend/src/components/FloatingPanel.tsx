@@ -2,11 +2,15 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Rnd } from "react-rnd";
 
 // bump-on-focus z ordering across open palettes
 let zTop = 100;
+
+// nothing to subscribe to: useSyncExternalStore is here only for its server snapshot,
+// which is how a component asks "am I hydrated yet" without a setState in an effect.
+const subscribeNever = () => () => {};
 
 export interface PanelGeometry {
   x: number;
@@ -34,9 +38,17 @@ export default function FloatingPanel({
   children,
 }: FloatingPanelProps) {
   const [z, setZ] = useState(() => ++zTop);
+  // react-rnd writes its inline styles slightly differently on the server than in the
+  // browser ("translate(90px, 40px)" vs "translate(90px,40px)", top: "0px" vs 0), which
+  // React reports as a hydration mismatch and then refuses to patch up - leaving the
+  // panel positioned by the SERVER's markup. A palette is client-side furniture with
+  // nothing worth server-rendering, so it simply does not render until mounted.
+  const mounted = useSyncExternalStore(subscribeNever, () => true, () => false);
 
   // raise this palette above siblings on interaction
   const raise = () => setZ(++zTop);
+
+  if (!mounted) return null;
 
   return (
     <Rnd

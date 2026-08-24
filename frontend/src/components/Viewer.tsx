@@ -5,19 +5,25 @@ import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
-import TBeamMesh from "@/components/TBeamMesh";
-import type { ProbeResult } from "@/components/TBeamMesh";
+import SectionMesh from "@/components/SectionMesh";
+import type { ProbeResult } from "@/components/SectionMesh";
 import ThermalLegend from "@/components/ThermalLegend";
-import type { ThermalSimulationResult } from "@/lib/mockThermalField";
+import type { SimulationResult } from "@/lib/api";
 import { fmtLen, type LengthUnit } from "@/lib/units";
 
-// camera preset angles. front = default opening framing
+// camera preset directions, unit length. The distance comes from the element, because
+// a fixed one either buries the camera inside a 6 m beam or strands it from a column.
 type PresetView = "top" | "front" | "iso";
-const PRESET_POS: Record<PresetView, THREE.Vector3> = {
-  top: new THREE.Vector3(0, 5, 0),
-  front: new THREE.Vector3(0, 0, 5),
-  iso: new THREE.Vector3(2.9, 2.2, 3.5),
+const PRESET_DIR: Record<PresetView, THREE.Vector3> = {
+  top: new THREE.Vector3(0, 1, 0),
+  front: new THREE.Vector3(0, 0, 1),
+  iso: new THREE.Vector3(0.62, 0.47, 0.75).normalize(),
 };
+
+// how far back the whole element fits in a 40 degree fov, with a little air.
+function frameDistance(radius_m: number): number {
+  return Math.max(radius_m / Math.tan((40 * Math.PI) / 360), 0.5) * 1.25;
+}
 
 // minimal orbit controls surface we drive directly
 interface ControlsLike {
@@ -33,8 +39,12 @@ export function camClass(active: boolean): string {
 }
 
 interface ViewerProps {
-  sim: ThermalSimulationResult;
-  timeIndex: number;
+  sim: SimulationResult;
+  // index into sim.fields.times_h, NOT into sim.times_h
+  frameIndex: number;
+  // fixed colour-scale bounds, shared with the 2D view so the two agree
+  scale_min_c?: number;
+  scale_max_c?: number;
   // element length from shared LeftPanel config state
   length_m: number;
   // dimension display unit for clip-depth label
@@ -44,9 +54,11 @@ interface ViewerProps {
 // inside-canvas controller: snaps camera, clears highlight on manual orbit
 function CameraRig({
   preset,
+  radius_m,
   onDrift,
 }: {
   preset: PresetView | null;
+  radius_m: number;
   onDrift: () => void;
 }) {
   const camera = useThree((s) => s.camera);
@@ -58,7 +70,7 @@ function CameraRig({
   const applyPreset = useCallback(
     (view: PresetView) => {
       snappingRef.current = true;
-      const pos = PRESET_POS[view];
+      const pos = PRESET_DIR[view].clone().multiplyScalar(frameDistance(radius_m));
       camera.position.copy(pos);
       if (controls) {
         controls.target.set(0, 0, 0);
@@ -67,7 +79,7 @@ function CameraRig({
       presetPosRef.current = pos.clone();
       snappingRef.current = false;
     },
-    [camera, controls]
+    [camera, controls, radius_m]
   );
 
   // run snap after render when preset id changes (re-click after drift retriggers)
@@ -88,18 +100,18 @@ function CameraRig({
       makeDefault
       enableDamping
       dampingFactor={0.12}
-      minDistance={0.5}
-      maxDistance={20}
+      minDistance={radius_m * 0.2}
+      maxDistance={radius_m * 12}
       onChange={handleOrbitChange}
     />
   );
 }
 
-export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps) {
+export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, length_m, units }: ViewerProps) {
   // clip plane position along Z axis (0 = fully open, 1 = fully closed)
   const [clipFrac, setClipFrac] = useState(1.0);
   // active camera preset, null once user orbits away
-  const [camView, setCamView] = useState<PresetView | null>("front");
+  const [camView, setCamView] = useState<PresetView | null>("iso");
 
   // probe state
   const [probe, setProbe] = useState<ProbeResult | null>(null);
@@ -107,6 +119,13 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
   // transient hover tooltip state — temp only, no maturity/strength
   const [hover, setHover] = useState<{ temp_c: number; x: number; y: number } | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
+
+  // bounding radius of the whole extruded element, for camera framing
+  const radius_m = useMemo(() => {
+    const w = Math.max(...sim.outline_m.map((p) => p[0]));
+    const h = Math.max(...sim.outline_m.map((p) => p[1]));
+    return 0.5 * Math.hypot(w, h, length_m);
+  }, [sim.outline_m, length_m]);
 
   // compute clip plane and slice Z coordinate from fraction
   const { clippingPlane, clipZ } = useMemo(() => {
@@ -178,38 +197,21 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
 
         <div className="w-px h-4 bg-border-default mx-1" />
 
-        <button className="p-1.5 text-xs text-text-secondary hover:text-text-primary rounded transition-colors" title="Grid">
-          ⊞
-        </button>
-        <button className="p-1.5 text-xs text-text-secondary hover:text-text-primary rounded transition-colors" title="Eye">
-          ◉
-        </button>
-        <button className="p-1.5 text-xs text-text-secondary hover:text-text-primary rounded transition-colors" title="Section">
-          ◫
-        </button>
-
-        <div className="ml-2 px-3 py-1 text-xs rounded-md bg-bg-primary border border-border-default text-text-primary">
+        <div className="px-3 py-1 text-xs rounded-md bg-bg-primary border border-border-default text-text-primary">
           Temperature
         </div>
 
         <div className="flex-1" />
-
-        <button className="p-1.5 text-xs text-text-secondary hover:text-text-primary rounded transition-colors" title="Shrink">
-          ◁ ▷
-        </button>
-        <button className="p-1.5 text-xs text-text-secondary hover:text-text-primary rounded transition-colors" title="Expand">
-          ⤢
-        </button>
       </div>
 
       {/* 3D canvas + overlays */}
       <div className="flex-1 relative bg-bg-primary" ref={canvasWrapRef}>
         <Canvas
           camera={{
-            position: [0, 0, 5],
+            position: [0, 0, frameDistance(radius_m)],
             fov: 40,
             near: 0.01,
-            far: 100,
+            far: Math.max(100, radius_m * 40),
           }}
           gl={{ antialias: true, localClippingEnabled: true }}
           style={{ background: "#0d1117" }}
@@ -217,9 +219,11 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
           <ambientLight intensity={0.6} />
           <directionalLight position={[5, 8, 5]} intensity={0.8} />
           <directionalLight position={[-3, -2, -4]} intensity={0.3} />
-          <TBeamMesh
+          <SectionMesh
             sim={sim}
-            timeIndex={timeIndex}
+            frameIndex={frameIndex}
+            scale_min_c={scale_min_c ?? 0}
+            scale_max_c={scale_max_c ?? 1}
             length_m={length_m}
             clippingPlane={clippingPlane}
             clipZ={clipZ}
@@ -227,12 +231,12 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
             onHover={handleHover}
             onHoverEnd={handleHoverEnd}
           />
-          <CameraRig preset={camView} onDrift={() => setCamView(null)} />
+          <CameraRig preset={camView} radius_m={radius_m} onDrift={() => setCamView(null)} />
         </Canvas>
 
         {/* clip plane slider — right edge, vertical. stops above hint block so
             depth label never collides with interaction hints */}
-        <div className="absolute top-12 right-16 bottom-24 flex flex-col items-center gap-1">
+        <div className="absolute top-[248px] right-5 bottom-24 flex flex-col items-center gap-1">
           <span className="text-[9px] text-text-muted">SECTION CUT</span>
           <input
             type="range"
@@ -284,27 +288,16 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
                 Probe
               </div>
               <div className="flex flex-col gap-1.5 text-xs">
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span className="text-text-muted">Temperature</span>
-                  <span className="text-text-primary font-medium">
-                    {probe.temp_c.toFixed(1)} °C
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Maturity</span>
-                  <span className="text-text-primary font-medium">
-                    {probe.maturity_ch.toFixed(1)} °C·h
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-text-muted">Strength</span>
-                  <span className="text-text-primary font-medium">
-                    {(probe.strength_frac * 100).toFixed(1)}%
+                  <span className="text-text-primary font-medium tabular-nums">
+                    {probe.temp_c.toFixed(2)} °C
                   </span>
                 </div>
               </div>
-              <div className="mt-2 text-[9px] text-text-muted">
-                Cell [{probe.grid_i}, {probe.grid_j}]
+              <div className="mt-2 text-[9px] text-text-muted tabular-nums">
+                at [{probe.xy_m[0].toFixed(3)}, {probe.xy_m[1].toFixed(3)}] m
+                {probe.fallback && " · nearest solid cell"}
               </div>
             </div>
           </div>
@@ -312,7 +305,8 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
 
         {/* bottom-left annotation */}
         <div className="absolute bottom-12 left-4 text-[11px] text-text-muted pointer-events-none">
-          2D cross-section solution, extruded. End effects not modelled.
+          The 2D solution, extruded. Every slice is identical — the solver is 2D because
+          the element is prismatic, so the length carries no physics. End effects not modelled.
         </div>
 
         {/* bottom-right interaction hints */}
@@ -336,7 +330,11 @@ export default function Viewer({ sim, timeIndex, length_m, units }: ViewerProps)
 
         {/* right-side color legend — shared component, same as 2D view */}
         <div className="absolute top-4 right-4 pointer-events-none">
-          <ThermalLegend defLimit_c={sim.flags.def_risk.limit} />
+          <ThermalLegend
+            min_c={scale_min_c}
+            max_c={scale_max_c}
+            defLimit_c={sim.breaches.def_threshold_c}
+          />
         </div>
       </div>
     </div>

@@ -1,19 +1,35 @@
-// checks panel. reads values from sim.flags, not hardcoded
+// checks panel. Every number here is a field of the response, shown next to the
+// threshold it was tested against and the quantity that tripped it.
+//
+// This panel ANNOTATES, it does not adjudicate. It never says a pour will crack or is
+// safe to strip - it states the measured value, the limit, and where the limit comes
+// from, and leaves the call to the engineer reading it.
 "use client";
 
-import type { FlagsData } from "@/lib/mockThermalField";
+import type { SimulationRequest, SimulationResult, TrippedBy } from "@/lib/api";
 
 interface ChecksPanelProps {
-  flags: FlagsData;
+  sim: SimulationResult;
+  // the request that was solved. placement_temp_c is an input, not a result, so the
+  // placement flag has no explanation without it.
+  request: SimulationRequest;
 }
 
-export default function ChecksPanel({ flags }: ChecksPanelProps) {
-  const { def_risk, cracking, placement, evaporation, strip_ready } = flags;
+// which quantity crossed, in words. "none" is not a verdict, it is an observation.
+const TRIPPED_LABEL: Record<TrippedBy, string> = {
+  probe: "probe only",
+  max_anywhere: "hottest point only",
+  both: "probe and hottest point",
+  none: "neither",
+};
+
+export default function ChecksPanel({ sim, request }: ChecksPanelProps) {
+  const b = sim.breaches;
+  const placement_temp_c = request.element.placement_temp_c;
 
   return (
     <aside className="w-[280px] shrink-0 bg-bg-surface overflow-y-auto">
       <div className="p-3">
-        {/* header */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-1.5">
             <span className="text-text-muted text-xs">⊞</span>
@@ -21,162 +37,128 @@ export default function ChecksPanel({ flags }: ChecksPanelProps) {
               Checks
             </span>
           </div>
-          <span className="text-[10px] text-text-muted">ACI 306 / 305</span>
+          <span className="text-[10px] text-text-muted">measured vs limit</span>
         </div>
 
-        {/* check cards — driven by sim.flags */}
         <div className="flex flex-col gap-2">
-          <CheckCard
-            status={def_risk.status}
-            title={def_risk.label}
-            subtitle={def_risk.subtitle}
-            value={def_risk.value}
-            limit={def_risk.limit}
-            unit={def_risk.unit}
-            progress={def_risk.value / def_risk.limit}
+          <Check
+            title="DEF"
+            over={b.def_risk}
+            limit={`${b.def_threshold_c} °C`}
+            source="USBR DSO-12-02 · 155 °F DESIGN max, deliberately below the 158 °F ettringite threshold"
+            trippedBy={b.def_tripped_by}
+            rows={[
+              ["probe", `${sim.peak_core_temp_c.toFixed(2)} °C`, "peak_core_temp_c"],
+              ["hottest point", `${sim.max_core_temp_anywhere_c.toFixed(2)} °C`, "max_core_temp_anywhere_c"],
+            ]}
           />
-          <CheckCard
-            status={cracking.status}
-            title={cracking.label}
-            subtitle={cracking.subtitle}
-            value={cracking.value}
-            limit={cracking.limit}
-            unit={cracking.unit}
-            progress={cracking.value / cracking.limit}
+
+          <Check
+            title="Cracking differential"
+            over={b.cracking}
+            limit={`${b.cracking_limit_c} °C`}
+            source="ACI 207 (35 °F)"
+            trippedBy={b.cracking_tripped_by}
+            rows={[
+              ["probe", `${sim.max_core_surface_diff_c.toFixed(2)} °C`, "max_core_surface_diff_c"],
+              ["hottest point", `${sim.max_anywhere_surface_diff_c.toFixed(2)} °C`, "max_anywhere_surface_diff_c"],
+            ]}
           />
-          <CheckCard
-            status={placement.status}
-            title={placement.label}
-            subtitle={placement.subtitle}
-            value={placement.value}
-            limit={placement.limit}
-            unit={placement.unit}
-            progress={placement.value / placement.limit}
+
+          <Check
+            title="Evaporation"
+            over={b.evaporation}
+            limit={`${b.evaporation_limit_kg_m2_h.toFixed(1)} kg/m²/h`}
+            source="ACI 305R (0.2 lb/ft²/h)"
+            rows={[["peak", `${sim.peak_evaporation_kg_m2_h.toFixed(3)} kg/m²/h`, "peak_evaporation_kg_m2_h"]]}
           />
-          <CheckCard
-            status={evaporation.status}
-            title={evaporation.label}
-            subtitle={evaporation.subtitle}
-            value={evaporation.value}
-            limit={evaporation.limit}
-            unit={evaporation.unit}
-            progress={evaporation.value / evaporation.limit}
-            warning={evaporation.warning}
+
+          <Check
+            title="Placement"
+            over={b.placement}
+            limit={`${b.placement_limit_c} °C`}
+            source="ACI 305, often project-specific · PROVISIONAL"
+            rows={
+              placement_temp_c === undefined
+                ? []
+                : [["at discharge", `${placement_temp_c.toFixed(2)} °C`, "element.placement_temp_c"]]
+            }
           />
         </div>
 
-        {/* strip-ready summary — driven by sim.flags.strip_ready */}
+        {/* strip time. null means the strength fraction was never reached in this run,
+            which is a fact about the run, not a missing number. */}
         <div className="mt-4 p-3 rounded-lg bg-bg-elevated border border-border-default">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-2">
-            Strip-Ready
+            strip_time_h
           </div>
-          <div className="text-2xl font-semibold text-text-primary">
-            {strip_ready.ready_time}
-          </div>
-          <div className="text-xs text-text-secondary mt-1">
-            {strip_ready.confidence_pct}% confidence &nbsp;&nbsp; ±{strip_ready.delta_h} h
-          </div>
-          <div className="mt-3 flex items-center justify-between text-[11px]">
-            <span className="text-text-muted">{strip_ready.current_strength_pct}% f&apos;c now</span>
-            <span className="text-text-muted">{strip_ready.required_strength_pct}% req.</span>
-          </div>
-          <div className="mt-1 h-1.5 rounded-full bg-bg-primary overflow-hidden">
-            <div
-              className="h-full rounded-full bg-accent-blue transition-all"
-              style={{ width: `${(strip_ready.current_strength_pct / strip_ready.required_strength_pct) * 100}%` }}
-            />
-          </div>
+          {sim.strip_time_h === null ? (
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Not reached inside the {sim.times_h[sim.times_h.length - 1]?.toFixed(0)} h solved.
+              The response returned null; nothing is being estimated in its place.
+            </p>
+          ) : (
+            <>
+              <div className="text-2xl font-semibold text-text-primary tabular-nums">
+                {sim.strip_time_h.toFixed(1)} h
+              </div>
+              <p className="mt-1 text-[10px] text-text-muted leading-relaxed">
+                Strength calibration is PROVISIONAL. Maturity integrated at t_ref{" "}
+                {sim.t_ref_c.toFixed(1)} °C, which must match that calibration.
+              </p>
+            </>
+          )}
         </div>
       </div>
     </aside>
   );
 }
 
-// single check card
-function CheckCard({
-  status,
+// one threshold, its measured quantities, and which of them crossed
+function Check({
   title,
-  subtitle,
-  value,
+  over,
   limit,
-  unit,
-  progress,
-  warning,
+  source,
+  trippedBy,
+  rows,
 }: {
-  status: "pass" | "warn" | "fail";
   title: string;
-  subtitle: string;
-  value: number;
-  limit: number;
-  unit: string;
-  progress: number;
-  warning?: string;
+  over: boolean;
+  limit: string;
+  source: string;
+  trippedBy?: TrippedBy;
+  rows: [string, string, string][];
 }) {
-  const colors = {
-    pass: {
-      icon: "✓",
-      border: "border-l-status-green",
-      iconColor: "text-status-green",
-      barBg: "bg-status-green-dim",
-      barFill: "bg-status-green",
-    },
-    warn: {
-      icon: "⚠",
-      border: "border-l-status-amber",
-      iconColor: "text-status-amber",
-      barBg: "bg-status-amber-dim",
-      barFill: "bg-status-amber",
-    },
-    fail: {
-      icon: "✗",
-      border: "border-l-status-red",
-      iconColor: "text-status-red",
-      barBg: "bg-status-red-dim",
-      barFill: "bg-status-red",
-    },
-  };
-
-  const c = colors[status];
-  const clamped = Math.min(progress, 1);
-
   return (
     <div
-      className={`p-2.5 rounded-lg bg-bg-elevated border-l-[3px] ${c.border}`}
+      className={`p-2.5 rounded-lg bg-bg-elevated border-l-[3px] ${
+        over ? "border-l-status-amber" : "border-l-border-strong"
+      }`}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-1.5">
-          <span className={`text-sm ${c.iconColor}`}>{c.icon}</span>
-          <div>
-            <div className="text-xs font-semibold text-text-primary uppercase">
-              {title}
-            </div>
-            <div className="text-[10px] text-text-muted">{subtitle}</div>
-          </div>
-        </div>
-        <div className="text-right">
-          <span className="text-sm font-semibold text-text-primary">
-            {value}
-          </span>
-          <span className="text-xs text-text-muted">
-            {" "}/ {limit} {unit}
-          </span>
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-semibold text-text-primary">{title}</div>
+        <div className="text-[10px] text-text-muted whitespace-nowrap tabular-nums">
+          limit {limit}
         </div>
       </div>
 
-      {/* progress bar */}
-      <div className={`mt-2 h-1.5 rounded-full ${c.barBg} overflow-hidden`}>
-        <div
-          className={`h-full rounded-full ${c.barFill} transition-all`}
-          style={{ width: `${clamped * 100}%` }}
-        />
-      </div>
+      {rows.map(([label, value, field]) => (
+        <div key={field} className="mt-1.5 flex items-baseline justify-between gap-2">
+          <span className="text-[10px] text-text-muted">{label}</span>
+          <span className="text-xs text-text-primary font-medium tabular-nums">{value}</span>
+        </div>
+      ))}
 
-      {/* warning text */}
-      {warning && (
-        <p className="mt-2 text-[10px] text-status-amber leading-tight">
-          {warning}
-        </p>
-      )}
+      <div className="mt-2 text-[10px] leading-tight">
+        <span className={over ? "text-status-amber" : "text-text-secondary"}>
+          {over ? "over the limit" : "under the limit"}
+        </span>
+        {trippedBy !== undefined && (
+          <span className="text-text-muted"> · crossed by {TRIPPED_LABEL[trippedBy]}</span>
+        )}
+      </div>
+      <div className="mt-1 text-[9px] text-text-muted leading-tight">{source}</div>
     </div>
   );
 }

@@ -5,7 +5,7 @@
 import { useRef } from "react";
 import type { ElementConfig } from "@/lib/elementConfig";
 import { mToUnit, unitToM, fmtLen, roundDisp, type LengthUnit } from "@/lib/units";
-import { createOutlineForShape } from "@/lib/mockThermalField";
+import { createOutlineForShape } from "@/lib/outline";
 
 // shape value used when geometry came from an IFC file
 export const IMPORTED_SHAPE = "Imported (IFC)";
@@ -172,11 +172,18 @@ export default function LeftPanel({ config, onChange, units, ifc, onImportIfc, i
         {/* ELEMENT section */}
         <SectionHeader title="Element" icon="◧" />
 
+        {/* said plainly rather than implied: nothing below changes the solve yet. The
+            section on screen comes from the response, not from these boxes. */}
+        <p className="mb-2 text-[10px] leading-relaxed text-text-muted bg-bg-primary border border-border-default rounded-sm px-2 py-1.5">
+          Preview only — these inputs do not drive the solve yet. The section in the viewer
+          is the solved geometry the backend returned.
+        </p>
+
         <SelectRow
           id="shape"
           label="Shape"
           value={config.shape}
-          options={isImported ? ["T-Beam", "Rectangle", "I-Beam", IMPORTED_SHAPE] : ["T-Beam", "Rectangle", "I-Beam"]}
+          options={isImported ? ["T-Beam", "Rectangle", IMPORTED_SHAPE] : ["T-Beam", "Rectangle"]}
           onChange={(v) => onChange("shape", v)}
         />
 
