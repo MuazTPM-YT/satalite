@@ -16,6 +16,7 @@ import type { IfcUiState } from "@/components/LeftPanel";
 import Viewer from "@/components/Viewer";
 import Section2D from "@/components/Section2D";
 import ChecksPanel from "@/components/ChecksPanel";
+import ProbeCard from "@/components/ProbeCard";
 import TimeScrubber from "@/components/TimeScrubber";
 import HistoryChart from "@/components/HistoryChart";
 import PourWindowTable from "@/components/PourWindowTable";
@@ -51,6 +52,8 @@ import {
   toSimulationRequest,
   type ElementConfig,
 } from "@/lib/elementConfig";
+import { probeGeometry } from "@/lib/sectionMetrics";
+import type { ProbePick } from "@/lib/probe";
 import { clampDims, type Outline, type ShapeId } from "@/lib/shapes";
 import { importIfcOutline } from "@/lib/ifcImport";
 import type { LengthUnit } from "@/lib/units";
@@ -63,6 +66,7 @@ const DOCK_RIGHT = 100_000;
 // where each palette opens before first drag/resize
 const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }> = {
   element: { x: 16, y: 16, w: 340, h: 600, minW: 300, minH: 260 },
+  probe: { x: DOCK_RIGHT, y: 16, w: 300, h: 440, minW: 260, minH: 180 },
   checks: { x: DOCK_RIGHT, y: 16, w: 316, h: 600, minW: 268, minH: 240 },
   pour: { x: 380, y: 340, w: 860, h: 300, minW: 420, minH: 200 },
   ensemble: { x: 60, y: 60, w: 940, h: 700, minW: 620, minH: 360 },
@@ -112,6 +116,7 @@ export default function StudioPage() {
   // is hidden by starting closed.
   const [openPanels, setOpenPanels] = useState<Record<PanelId, boolean>>({
     element: false,
+    probe: false,
     checks: true,
     pour: false,
     ensemble: false,
@@ -119,6 +124,17 @@ export default function StudioPage() {
     validation: false,
   });
   const [units, setUnits] = useState<LengthUnit>("m");
+
+  // The probe lives HERE, not in a viewer.
+  //
+  // It used to be a popup anchored at the click inside each viewer - two copies of the
+  // same state, each covering the drawing it was describing, and neither reachable
+  // once it was dismissed. As one palette launched from the command bar it is parked
+  // where the reader wants it, survives switching between 2D and 3D, and there is one
+  // answer on screen rather than two that can disagree.
+  const [pick, setPick] = useState<ProbePick | null>(null);
+  const [showDistances, setShowDistances] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
 
   // The surface palettes are bounded to, and its measured size. The page owns the
   // measurement so every palette re-clamps off the same numbers at the same moment.
@@ -391,6 +407,30 @@ export default function StudioPage() {
 
   const length_m = lengthM(config);
 
+  // Distances are measured against the SOLVED outline, once, for both viewers - so
+  // the 2D sheet, the 3D scene and the readout cannot cite three different geometries.
+  const pickGeometry = useMemo(
+    () => (run && pick && pick.isSection ? probeGeometry(run.result.outline_m, pick.section_m) : null),
+    [run, pick],
+  );
+
+  // A reading belongs to the run it was taken from. A new solve moves the field out
+  // from under it, so the number in the palette would be a temperature from the
+  // previous answer. Adjusting during render rather than in an effect is React's
+  // documented pattern for reacting to changed state, and it avoids painting the
+  // stale reading once before clearing it.
+  const [pickedFrom, setPickedFrom] = useState<string | null>(null);
+  if (run && run.key !== pickedFrom) {
+    setPickedFrom(run.key);
+    if (pick) setPick(null);
+  }
+
+  // reading the probe is the moment the palette is worth opening
+  const handlePick = useCallback((next: ProbePick | null) => {
+    setPick(next);
+    if (next) setOpenPanels((prev) => (prev.probe ? prev : { ...prev, probe: true }));
+  }, []);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden">
       <TopBar
@@ -433,6 +473,12 @@ export default function StudioPage() {
                 scale_max_c={bounds?.max_c}
                 length_m={length_m}
                 units={units}
+                pick={pick}
+                onPick={handlePick}
+                geometry={pickGeometry}
+                showLabels={showLabels}
+                onToggleLabels={() => setShowLabels((v) => !v)}
+                showDistances={showDistances}
               />
             ) : (
               <Section2D
@@ -440,6 +486,12 @@ export default function StudioPage() {
                 frameIndex={frameIndex}
                 length_m={length_m}
                 units={units}
+                pick={pick}
+                onPick={handlePick}
+                geometry={pickGeometry}
+                showLabels={showLabels}
+                onToggleLabels={() => setShowLabels((v) => !v)}
+                showDistances={showDistances}
               />
             )}
 
@@ -486,6 +538,37 @@ export default function StudioPage() {
                   onSolve={solveNow}
                 />
               </FloatingPanel>
+
+              {run && (
+                <FloatingPanel
+                  title="Probe"
+                  open={openPanels.probe}
+                  containerSize={overlaySize}
+                  defaultGeo={PANEL_GEO.probe}
+                  minWidth={PANEL_GEO.probe.minW}
+                  minHeight={PANEL_GEO.probe.minH}
+                  onClose={() => closePanel("probe")}
+                >
+                  <ProbeCard
+                    pick={pick}
+                    geometry={pickGeometry}
+                    units={units}
+                    showDistances={showDistances}
+                    onToggleDistances={() => setShowDistances((v) => !v)}
+                    showLabels={showLabels}
+                    onToggleLabels={() => setShowLabels((v) => !v)}
+                    footer={
+                      <>
+                        backend probe_xy_m [{run.result.probe_xy_m[0].toFixed(3)},{" "}
+                        {run.result.probe_xy_m[1].toFixed(3)}] m
+                        <br />
+                        peak_core_temp_c {run.result.peak_core_temp_c.toFixed(2)} °C at{" "}
+                        {run.result.peak_core_time_h.toFixed(1)} h
+                      </>
+                    }
+                  />
+                </FloatingPanel>
+              )}
 
               {run && (
                 <FloatingPanel

@@ -8,19 +8,26 @@ import * as THREE from "three";
 import SectionMesh from "@/components/SectionMesh";
 import type { ProbeResult } from "@/components/SectionMesh";
 import ThermalLegend from "@/components/ThermalLegend";
-import ProbeCard from "@/components/ProbeCard";
-import { cutMetrics, maskArea_m2, probeGeometry, type ProbeGeometry } from "@/lib/sectionMetrics";
+import {
+  cutMetrics,
+  maskArea_m2,
+  sectionFeatures,
+  type ProbeGeometry,
+} from "@/lib/sectionMetrics";
+import { frameRange, type ProbePick } from "@/lib/probe";
 import {
   Box,
   ChevronDown,
-  X,
   Crosshair,
   Move3d,
   RotateCcw,
   Scan,
   SquareDashedBottom,
+  Tags,
+  View,
 } from "lucide-react";
 import { Toolbar, ToolbarButton, ToolbarDivider, Readout, SectionLabel, cx } from "@/components/ui";
+import { useTooltip } from "@/components/Tooltip";
 import { ScrubField } from "@/components/fields";
 import type { SimulationResult } from "@/lib/api";
 import { fmtLen, type LengthUnit } from "@/lib/units";
@@ -46,6 +53,10 @@ interface ControlsLike {
   update: () => void;
 }
 
+// Above this many vertices the annotation names only the features the readout is
+// citing, exactly as the 2D sheet does.
+const MAX_NAMED_VERTICES = 12;
+
 interface ViewerProps {
   sim: SimulationResult;
   // index into sim.fields.times_h, NOT into sim.times_h
@@ -56,6 +67,16 @@ interface ViewerProps {
   // element length from shared config state
   length_m: number;
   units: LengthUnit;
+  /** the reading on screen, owned by the studio so the Probe palette shares it */
+  pick: ProbePick | null;
+  onPick: (pick: ProbePick | null) => void;
+  /** distances from that reading, computed once by the studio for both viewers */
+  geometry: ProbeGeometry | null;
+  /** the edge-letter and corner-number layer */
+  showLabels: boolean;
+  onToggleLabels: () => void;
+  /** the measured distance lines, toggled from the Probe palette */
+  showDistances: boolean;
 }
 
 /**
@@ -66,9 +87,15 @@ interface ViewerProps {
  * through the element, which is exactly what it is.
  */
 function ProbeMarker({ at, radius_m }: { at: [number, number, number]; radius_m: number }) {
+  // A marker is a POINT, not an object in the scene. At 2% of the element's bounding
+  // radius it was a 130 mm ball on a 6 m slab - big enough to cover the cells around
+  // the one it was reporting, which is the one thing it must not do. 0.5% is a dot
+  // that still survives being seen through a translucent body, and the floor keeps it
+  // visible on a small column.
+  const r = Math.max(radius_m * 0.005, 0.004);
   return (
     <mesh position={at} renderOrder={20}>
-      <sphereGeometry args={[Math.max(radius_m * 0.02, 0.008), 24, 16]} />
+      <sphereGeometry args={[r, 20, 14]} />
       {/* transparent, so it sorts into the pass the translucent body draws in and
           lands ON TOP of it rather than under. */}
       <meshBasicMaterial color="#7599fa" depthTest={false} depthWrite={false} transparent toneMapped={false} />
@@ -76,61 +103,148 @@ function ProbeMarker({ at, radius_m }: { at: [number, number, number]; radius_m:
   );
 }
 
+/** The plate a name is drawn on. Same look in the scene as on the 2D sheet. */
+function SceneTag({
+  position,
+  children,
+  emphasis,
+  round,
+}: {
+  position: [number, number, number];
+  children: string;
+  emphasis: boolean;
+  round?: boolean;
+}) {
+  return (
+    <Html position={position} center zIndexRange={[15, 10]} style={{ pointerEvents: "none" }}>
+      <span
+        className={cx(
+          "flex items-center justify-center border border-accent-blue/40 bg-bg-primary/85",
+          "font-mono text-[10px] tabular-nums text-accent-blue backdrop-blur-sm",
+          round ? "h-[17px] min-w-[17px] rounded-full px-1" : "rounded-[3px] px-1.5 py-0.5",
+          emphasis ? "border-accent-blue/80 font-semibold" : "font-medium",
+        )}
+      >
+        {children}
+      </span>
+    </Html>
+  );
+}
+
 /**
- * Which edges the distances are measured to.
+ * The label layer, in the scene.
  *
- * The readout names them A, B, C; this draws those same letters on the element, on
- * the edges themselves. Each one is a real edge of the extrusion - the section vertex
- * swept along the length - so "42 mm to edge B" points at a line the reader can see
- * rather than at an index only the code knows.
+ * The readout names an edge A, B, C and a corner 1, 2, 3; this draws those same names
+ * on the element itself. Every one is a real edge of the extrusion — a section vertex
+ * swept along the length — so "42 mm to edge B" points at a line the reader can see
+ * rather than at an index only the code knows. The 2D sheet draws the identical set,
+ * from the same `sectionFeatures`, so a letter means one edge in both viewers.
  */
-function EdgeCallouts({
+function SectionAnnotations({
+  outline,
   geometry,
   offset_m,
-  probeAt,
+  radius_m,
   zNear,
   zFar,
+  probeAt,
+  showDistances,
 }: {
-  geometry: ProbeGeometry;
+  outline: [number, number][];
+  geometry: ProbeGeometry | null;
   offset_m: [number, number];
-  probeAt: [number, number, number];
+  radius_m: number;
   zNear: number;
   zFar: number;
+  /** the probe, when there is one — the distance lines start here */
+  probeAt: [number, number, number] | null;
+  showDistances: boolean;
 }) {
-  const shown = geometry.edges.slice(0, 2);
+  const { edges, corners, cited } = useMemo(() => {
+    const all = sectionFeatures(outline);
+    const citedEdges = new Set(geometry?.edges.slice(0, 2).map((e) => e.index) ?? []);
+    const citedCorners = new Set(geometry?.corners.slice(0, 2).map((c) => c.index) ?? []);
+    if (outline.length <= MAX_NAMED_VERTICES) {
+      return { edges: all.edges, corners: all.corners, cited: { edges: citedEdges, corners: citedCorners } };
+    }
+    // a 128-sided circle would be a wall of type; only the cited ones are named
+    if (!geometry) return { edges: [], corners: [], cited: { edges: citedEdges, corners: citedCorners } };
+    const nearEdges = new Set(geometry.edges.slice(0, 3).map((e) => e.index));
+    const nearCorners = new Set(geometry.corners.slice(0, 3).map((c) => c.index));
+    return {
+      edges: all.edges.filter((e) => nearEdges.has(e.index)),
+      corners: all.corners.filter((c) => nearCorners.has(c.index)),
+      cited: { edges: citedEdges, corners: citedCorners },
+    };
+  }, [outline, geometry]);
 
+  const zMid = (zNear + zFar) / 2;
+  const off = radius_m * 0.07;
+  const to3 = (x: number, y: number, z: number): [number, number, number] => [
+    x - offset_m[0],
+    y - offset_m[1],
+    z,
+  ];
+
+  // Every line the layer draws, in one buffer: the swept edges, the swept corner
+  // arrises, and the measured distances. One draw call rather than one per feature.
   const lines = useMemo(() => {
     const pts: THREE.Vector3[] = [];
-    for (const e of geometry.edges.slice(0, 2)) {
-      const x = e.at[0] - offset_m[0];
-      const y = e.at[1] - offset_m[1];
-      // the edge itself, swept the whole visible length
+    for (const e of edges) {
+      const [x, y] = to3(e.mid[0], e.mid[1], 0);
       pts.push(new THREE.Vector3(x, y, zNear), new THREE.Vector3(x, y, zFar));
-      // and the measured distance, probe to that edge, in the probe's own plane
-      pts.push(new THREE.Vector3(...probeAt), new THREE.Vector3(x, y, probeAt[2]));
+    }
+    for (const c of corners) {
+      const [x, y] = to3(c.at[0], c.at[1], 0);
+      pts.push(new THREE.Vector3(x, y, zNear), new THREE.Vector3(x, y, zFar));
+    }
+    if (showDistances && probeAt && geometry) {
+      for (const e of geometry.edges.slice(0, 2)) {
+        pts.push(
+          new THREE.Vector3(...probeAt),
+          new THREE.Vector3(...to3(e.at[0], e.at[1], probeAt[2])),
+        );
+      }
     }
     return new THREE.BufferGeometry().setFromPoints(pts);
-  }, [geometry, offset_m, probeAt, zNear, zFar]);
+  // to3 is a closure over offset_m; listing offset_m is what actually changes it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [edges, corners, geometry, offset_m, zNear, zFar, probeAt, showDistances]);
 
   useEffect(() => () => lines.dispose(), [lines]);
 
   return (
     <group>
       <lineSegments geometry={lines} renderOrder={19}>
-        <lineBasicMaterial color="#7599fa" depthTest={false} depthWrite={false} toneMapped={false} transparent opacity={0.95} />
+        <lineBasicMaterial
+          color="#7599fa"
+          depthTest={false}
+          depthWrite={false}
+          toneMapped={false}
+          transparent
+          opacity={0.85}
+        />
       </lineSegments>
-      {shown.map((e) => (
-        <Html
-          key={e.index}
-          position={[e.at[0] - offset_m[0], e.at[1] - offset_m[1], (zNear + zFar) / 2]}
-          center
-          zIndexRange={[15, 10]}
-          style={{ pointerEvents: "none" }}
+
+      {edges.map((e) => (
+        <SceneTag
+          key={`e${e.index}`}
+          position={to3(e.mid[0] + e.normal[0] * off, e.mid[1] + e.normal[1] * off, zMid)}
+          emphasis={cited.edges.has(e.index)}
         >
-          <span className="rounded-md bg-bg-surface/90 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-accent-blue ring-1 ring-inset ring-accent-blue/40">
-            {e.tag}
-          </span>
-        </Html>
+          {e.tag}
+        </SceneTag>
+      ))}
+
+      {corners.map((c) => (
+        <SceneTag
+          key={`c${c.index}`}
+          position={to3(c.at[0] + c.normal[0] * off, c.at[1] + c.normal[1] * off, zMid)}
+          emphasis={cited.corners.has(c.index)}
+          round
+        >
+          {c.tag}
+        </SceneTag>
       ))}
     </group>
   );
@@ -197,16 +311,30 @@ function CameraRig({
   );
 }
 
-export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, length_m, units }: ViewerProps) {
+export default function Viewer({
+  sim,
+  frameIndex,
+  scale_min_c,
+  scale_max_c,
+  length_m,
+  units,
+  pick,
+  onPick,
+  geometry,
+  showLabels,
+  onToggleLabels,
+  showDistances,
+}: ViewerProps) {
   // how much of the length is still shown. 100 = uncut.
   const [cutPct, setCutPct] = useState(100);
   const [opacity, setOpacity] = useState(62);
   const [camView, setCamView] = useState<PresetView | null>("iso");
-  const [showDistances, setShowDistances] = useState(false);
   const [showTakeoff, setShowTakeoff] = useState(false);
 
-  const [probe, setProbe] = useState<ProbeResult | null>(null);
-  const [probePos, setProbePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Where the marker goes. It travels with the pick rather than being derived from
+  // the section coordinates, because only the viewer that took the reading knows how
+  // far along the length the ray actually hit.
+  const probeWorld = pick?.source === "3d" ? pick.world : null;
   // transient hover tooltip — temperature only, no maturity or strength
   const [hover, setHover] = useState<{ temp_c: number; x: number; y: number } | null>(null);
   const canvasWrapRef = useRef<HTMLDivElement>(null);
@@ -264,27 +392,40 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
     return cutMetrics(sim.outline_m, length_m, clipFrac, area);
   }, [sim.outline_m, sim.fields, frameIndex, length_m, clipFrac]);
 
-  const geometry = useMemo(
-    () => (probe ? probeGeometry(sim.outline_m, probe.xy_m) : null),
-    [probe, sim.outline_m],
-  );
+  // the spread this frame is actually using, so the legend brackets it the way the
+  // 2D sheet's does. Both viewers now say the same thing about the same frame.
+  const frameSpread = useMemo(() => {
+    const frame = sim.fields?.temp_c[Math.min(frameIndex, sim.fields.temp_c.length - 1)];
+    return frame ? frameRange(frame) : null;
+  }, [sim.fields, frameIndex]);
 
-  // probe click from the mesh — position the popup near the hit, clamped to the canvas
+  // Where the geometry sits relative to the section origin. The annotation layer needs
+  // it to put a label back on a section coordinate, and it is a property of the mesh,
+  // not of the probe — so it must not go missing the moment the probe is cleared.
+  const meshOffset = useMemo((): [number, number] => {
+    const xs = sim.outline_m.map((p) => p[0]);
+    const ys = sim.outline_m.map((p) => p[1]);
+    return [
+      (Math.max(...xs) + Math.min(...xs)) / 2,
+      (Math.max(...ys) + Math.min(...ys)) / 2,
+    ];
+  }, [sim.outline_m]);
+
+  // probe click from the mesh — published to the studio, which owns the readout
   const handleProbe = useCallback(
-    (result: ProbeResult | null, event?: { offsetX: number; offsetY: number }) => {
+    (result: ProbeResult | null) => {
       if (!result) return;
-      setProbe(result);
-      if (event && canvasWrapRef.current) {
-        const rect = canvasWrapRef.current.getBoundingClientRect();
-        const popupW = 240;
-        const popupH = 200;
-        setProbePos({
-          x: Math.max(8, Math.min(event.offsetX + 15, rect.width - popupW - 8)),
-          y: Math.max(8, Math.min(event.offsetY - popupH / 2, rect.height - popupH - 8)),
-        });
-      }
+      onPick({
+        sample: result,
+        section_m: result.xy_m,
+        source: "3d",
+        view: null,
+        isSection: true,
+        uv: null,
+        world: result.world,
+      });
     },
-    [],
+    [onPick],
   );
 
   const handleHover = useCallback(
@@ -296,25 +437,69 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
   const handleHoverEnd = useCallback(() => setHover(null), []);
 
   const cutOpen = clipFrac < 0.999;
+  const takeoffTip = useTooltip(
+    <>
+      <span className="block font-medium">Cut take-off</span>
+      <span className="mt-0.5 block text-text-secondary">
+        Face area, perimeter, volume and mass of what the section cut removed — measured
+        on the solved mask, not on an idealised polygon.
+      </span>
+    </>,
+    "top",
+  );
 
   return (
     <div className="relative min-h-0 flex-1 bg-bg-primary" ref={canvasWrapRef}>
-      <Toolbar className="absolute left-1/2 top-4 z-20 -translate-x-1/2">
-        <ToolbarButton icon={SquareDashedBottom} active={camView === "top"} onClick={() => setCamView("top")} title="Look straight down">
+      {/* Camera presets, then the annotation toggle. Same shape as the 2D sheet's
+          strip: the views on the left, the layers that draw over them on the right. */}
+      <Toolbar className="absolute left-1/2 top-4 z-20 -translate-x-1/2 flex-wrap justify-center">
+        <ToolbarButton
+          icon={SquareDashedBottom}
+          active={camView === "top"}
+          onClick={() => setCamView("top")}
+          title="Look straight down on the top face"
+        >
           Top
         </ToolbarButton>
-        <ToolbarButton icon={Scan} active={camView === "front"} onClick={() => setCamView("front")} title="Look along the length">
+        <ToolbarButton
+          icon={Scan}
+          active={camView === "front"}
+          onClick={() => setCamView("front")}
+          title="Look along the length, straight at the solved cross-section"
+        >
           Front
         </ToolbarButton>
-        <ToolbarButton icon={Scan} active={camView === "left"} onClick={() => setCamView("left")} title="Look along the width">
+        <ToolbarButton
+          icon={View}
+          active={camView === "left"}
+          onClick={() => setCamView("left")}
+          title="Look along the width, at the left face"
+        >
           Left
         </ToolbarButton>
-        <ToolbarButton icon={Box} active={camView === "iso"} onClick={() => setCamView("iso")} title="Isometric">
+        <ToolbarButton
+          icon={Box}
+          active={camView === "iso"}
+          onClick={() => setCamView("iso")}
+          title="Isometric — the whole element at once"
+        >
           Iso
         </ToolbarButton>
-        <ToolbarDivider />
-        <ToolbarButton icon={RotateCcw} onClick={() => setCamView("iso")} title="Reset the camera to isometric">
+        <ToolbarButton
+          icon={RotateCcw}
+          onClick={() => setCamView("iso")}
+          title="Put the camera back on the isometric preset"
+        >
           Reset
+        </ToolbarButton>
+        <ToolbarDivider />
+        <ToolbarButton
+          icon={Tags}
+          active={showLabels}
+          onClick={onToggleLabels}
+          title="Name every edge with a letter and every corner with a number, so the distances in the Probe palette can be traced to lines you can see"
+        >
+          Labels
         </ToolbarButton>
       </Toolbar>
 
@@ -347,14 +532,17 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
         {/* The probe, shown where it actually is. Clicking a surface used to move a
             number in a popup and nothing in the scene, which left the reader to trust
             that the two were about the same point. */}
-        {probe && <ProbeMarker at={probe.world} radius_m={radius_m} />}
-        {probe && showDistances && geometry && (
-          <EdgeCallouts
+        {probeWorld && <ProbeMarker at={probeWorld} radius_m={radius_m} />}
+        {(showLabels || (showDistances && probeWorld)) && (
+          <SectionAnnotations
+            outline={sim.outline_m}
             geometry={geometry}
-            offset_m={probe.offset_m}
-            probeAt={probe.world}
+            offset_m={meshOffset}
+            radius_m={radius_m}
             zNear={-length_m / 2}
             zFar={clipZ ?? length_m / 2}
+            probeAt={probeWorld}
+            showDistances={showDistances}
           />
         )}
         <CameraRig preset={camView} radius_m={radius_m} onDrift={() => setCamView(null)} />
@@ -416,10 +604,10 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
             />
           </div>
           <button
+            {...takeoffTip.trigger}
             type="button"
             onClick={() => setShowTakeoff((v) => !v)}
             aria-expanded={showTakeoff}
-            title="How much concrete the cut removed"
             className={cx(
               "flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-medium tabular-nums",
               showTakeoff ? "bg-accent-blue-dim text-accent-blue" : "text-text-secondary hover:bg-elevate-2 hover:text-text-primary",
@@ -428,6 +616,7 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
             {cut.removed_volume_m3.toFixed(2)} m³ out
             <ChevronDown className={cx("h-3 w-3 transition-transform duration-150", showTakeoff && "rotate-180")} strokeWidth={2.5} />
           </button>
+          {takeoffTip.node}
           <ToolbarDivider />
           <div className="px-1">
             <ScrubField
@@ -455,41 +644,11 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
         </div>
       )}
 
-      {/* probe popup — anchored at the clicked point */}
-      {probe && (
-        <div
-          className="pointer-events-auto absolute z-20 w-[240px]"
-          style={{ left: `${probePos.x}px`, top: `${probePos.y}px` }}
-        >
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setProbe(null)}
-              aria-label="Dismiss probe"
-              className="absolute -right-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-bg-surface text-text-muted ring-1 ring-inset ring-hairline hover:bg-elevate-2 hover:text-text-primary"
-            >
-              <X className="h-3.5 w-3.5" strokeWidth={2.5} />
-            </button>
-            <ProbeCard
-              sample={probe}
-              geometry={geometry}
-              units={units}
-              showDistances={showDistances}
-              onToggleDistances={() => setShowDistances((s) => !s)}
-              emptyHint=""
-            />
-          </div>
-        </div>
-      )}
-
-      {/* What the extrusion is and is not, with the interaction hints under it. */}
+      {/* The interaction hints. The paragraph that used to sit above them said what the
+          extrusion is and is not; it is a standing fact about the model rather than
+          something the reader needs on screen at all times, and it read as a caption
+          on the drawing. The status bar already carries the same claim in four words. */}
       <div className="pointer-events-none absolute bottom-4 left-4 z-10 flex max-w-[19rem] flex-col gap-2">
-        <p className="text-[11px] leading-relaxed text-text-muted">
-          The 2D solution, extruded. Every slice is identical — the solver is 2D because
-          the element is prismatic, so the length carries no physics. End effects are not
-          modelled.
-        </p>
-
         <div className="flex flex-wrap items-center gap-1.5">
           {[
             { icon: RotateCcw, label: "Orbit", how: "Left drag" },
@@ -512,7 +671,13 @@ export default function Viewer({ sim, frameIndex, scale_min_c, scale_max_c, leng
       </div>
 
       <div className="pointer-events-none absolute right-4 top-1/2 z-10 -translate-y-1/2">
-        <ThermalLegend min_c={scale_min_c} max_c={scale_max_c} defLimit_c={sim.breaches.def_threshold_c} />
+        <ThermalLegend
+          min_c={scale_min_c}
+          max_c={scale_max_c}
+          defLimit_c={sim.breaches.def_threshold_c}
+          frameMin_c={frameSpread?.min_c}
+          frameMax_c={frameSpread?.max_c}
+        />
       </div>
     </div>
   );

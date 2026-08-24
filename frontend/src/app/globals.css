@@ -410,6 +410,16 @@ button,
   }
 }
 
+/* ── Tooltips ─────────────────────────────────────────────────────────────────
+   Opacity only. The bubble carries its own `transform` inline (it is centred on the
+   trigger and flips above it near the bottom of the screen), and a keyframe that
+   also wrote transform would have to know which of those two it was overriding. */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+  }
+}
+
 /* A number field being scrubbed should not also be selecting its own text. */
 input[role="spinbutton"] {
   user-select: none;

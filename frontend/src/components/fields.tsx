@@ -22,6 +22,7 @@ import {
 import { createPortal } from "react-dom";
 import { Check, ChevronDown, RotateCcw } from "lucide-react";
 import { cx } from "@/components/ui";
+import { useTooltip } from "@/components/Tooltip";
 
 /* ── helpers ────────────────────────────────────────────────────────────────── */
 
@@ -62,18 +63,25 @@ export function FieldLabel({
   /** the column width. Panels share one; a toolbar row sizes to its own word. */
   width?: string;
 }) {
+  // Most hints here name the request field the row writes to. A monospaced dotted
+  // line under the label is what says "there is provenance behind this word".
+  const tip = useTooltip(hint);
   return (
-    <label
-      htmlFor={htmlFor}
-      title={hint}
-      className={cx(
-        width,
-        "shrink-0 truncate text-[11px] leading-tight",
-        muted ? "text-text-muted" : "text-text-secondary",
-      )}
-    >
-      {children}
-    </label>
+    <>
+      <label
+        {...tip.trigger}
+        htmlFor={htmlFor}
+        className={cx(
+          width,
+          "shrink-0 truncate text-[11px] leading-tight",
+          muted ? "text-text-muted" : "text-text-secondary",
+          hint && "decoration-dotted underline-offset-2 hover:underline",
+        )}
+      >
+        {children}
+      </label>
+      {tip.node}
+    </>
   );
 }
 
@@ -264,6 +272,17 @@ export function ScrubField({
   const id = useId();
   const dp = decimals ?? stepDecimals(step);
   const dirty = resetTo !== undefined && Math.abs(value - resetTo) > step / 2;
+  const reset = useTooltip(
+    dirty ? (
+      <>
+        Reset to{" "}
+        <span className="font-mono tabular-nums">
+          {resetTo?.toFixed(dp)}
+          {unit ? ` ${unit}` : ""}
+        </span>
+      </>
+    ) : null,
+  );
 
   return (
     <div className="group flex items-center gap-1.5 py-[3px]">
@@ -297,14 +316,15 @@ export function ScrubField({
       {/* Reset stays in the layout at zero opacity rather than mounting on hover —
           a control that appears under the cursor shifts the row it belongs to. */}
       <button
+        {...reset.trigger}
         type="button"
         aria-label={`Reset ${label}`}
-        title={dirty ? `Reset to ${resetTo?.toFixed(dp)}` : undefined}
         disabled={!dirty}
         onClick={() => {
           if (resetTo === undefined) return;
           onChange(resetTo);
           onCommit?.();
+          reset.hide();
         }}
         className={cx(
           "-ml-0.5 flex h-5 w-4 shrink-0 items-center justify-center rounded-md",
@@ -317,6 +337,7 @@ export function ScrubField({
       >
         <RotateCcw className="h-3 w-3" strokeWidth={2} />
       </button>
+      {reset.node}
     </div>
   );
 }

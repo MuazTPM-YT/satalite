@@ -5,11 +5,13 @@
 // pills had drifted into three different heights. Defining them once is what
 // makes the panels look like one instrument rather than six.
 //
-// No directive here on purpose: nothing in this file uses a hook, so it inherits
-// client-ness from whichever component imports it rather than declaring its own
-// boundary (which would make Next treat these callback props as Server Actions).
+// No directive here on purpose: the file inherits client-ness from whichever
+// component imports it rather than declaring its own boundary (which would make Next
+// treat these callback props as Server Actions). Every importer is a client component,
+// so the tooltip hook below is on the client side of the line where it belongs.
 
 import type { ComponentType, ReactNode } from "react";
+import { useTooltip } from "@/components/Tooltip";
 
 export type Icon = ComponentType<{ className?: string; strokeWidth?: number }>;
 
@@ -78,6 +80,9 @@ export function Readout({
   /** The response field this came from, shown as provenance. */
   field?: string;
 }) {
+  const tip = useTooltip(
+    field ? <span className="font-mono text-[10px] text-text-secondary">{field}</span> : null,
+  );
   const toneClass = {
     default: "text-text-primary",
     amber: "text-status-amber",
@@ -88,9 +93,16 @@ export function Readout({
 
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
-      <span className="min-w-0 truncate text-[11px] text-text-muted" title={field}>
+      <span
+        {...tip.trigger}
+        className={cx(
+          "min-w-0 truncate text-[11px] text-text-muted",
+          field && "decoration-dotted underline-offset-2 hover:underline",
+        )}
+      >
         {label}
       </span>
+      {tip.node}
       <span className={cx("shrink-0 font-mono text-[12px] tabular-nums", toneClass)}>
         {value}
         {unit && <span className="ml-1 text-[10px] text-text-muted">{unit}</span>}
@@ -143,26 +155,30 @@ export function ToolbarButton({
   children: ReactNode;
   onClick?: () => void;
   active?: boolean;
-  title?: string;
+  title?: ReactNode;
   disabled?: boolean;
 }) {
+  const tip = useTooltip(title);
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={title}
-      disabled={disabled}
-      aria-pressed={onClick && active !== undefined ? active : undefined}
-      className={cx(
-        "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium",
-        active
-          ? "bg-accent-blue-dim text-accent-blue"
-          : "text-text-secondary hover:bg-elevate-2 hover:text-text-primary",
-      )}
-    >
-      {Icon && <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />}
-      {children}
-    </button>
+    <>
+      <button
+        {...tip.trigger}
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        aria-pressed={onClick && active !== undefined ? active : undefined}
+        className={cx(
+          "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium",
+          active
+            ? "bg-accent-blue-dim text-accent-blue"
+            : "text-text-secondary hover:bg-elevate-2 hover:text-text-primary",
+        )}
+      >
+        {Icon && <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />}
+        {children}
+      </button>
+      {tip.node}
+    </>
   );
 }
 
@@ -176,30 +192,46 @@ export function ToolbarToggle({
   onClick,
   active = false,
   disabled,
+  hint,
 }: {
   icon: Icon;
   label: string;
   onClick?: () => void;
   active?: boolean;
   disabled?: boolean;
+  /** a second line under the name — what the control is for, not what it is called */
+  hint?: ReactNode;
 }) {
+  const tip = useTooltip(
+    hint ? (
+      <>
+        <span className="block font-medium">{label}</span>
+        <span className="mt-0.5 block text-text-secondary">{hint}</span>
+      </>
+    ) : (
+      label
+    ),
+  );
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      className={cx(
-        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-        active
-          ? "bg-accent-blue-dim text-accent-blue"
-          : "text-text-muted hover:bg-elevate-2 hover:text-text-primary",
-      )}
-    >
-      <Icon className="h-4 w-4" strokeWidth={2} />
-    </button>
+    <>
+      <button
+        {...tip.trigger}
+        type="button"
+        onClick={onClick}
+        aria-label={label}
+        aria-pressed={active}
+        disabled={disabled}
+        className={cx(
+          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+          active
+            ? "bg-accent-blue-dim text-accent-blue"
+            : "text-text-muted hover:bg-elevate-2 hover:text-text-primary",
+        )}
+      >
+        <Icon className="h-4 w-4" strokeWidth={2} />
+      </button>
+      {tip.node}
+    </>
   );
 }
 

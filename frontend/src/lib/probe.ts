@@ -21,6 +21,34 @@ export interface Sample {
     fallback: boolean;
 }
 
+/**
+ * A reading, published by whichever viewer took it.
+ *
+ * The studio owns this rather than the viewer, because the readout is a palette in
+ * the command bar now: a temperature at a point is the same answer whichever viewer
+ * asked, and two copies of it would eventually disagree.
+ *
+ * The marker position travels WITH the pick, in the reporting viewer's own space.
+ * There is no shared space to put it in - an elevation reads a face and has no
+ * section coordinate along the length, so a point drawn from `section_m` alone would
+ * land somewhere the reader never clicked.
+ */
+export interface ProbePick {
+    sample: Sample;
+    /** where the sample was read in the section, metres */
+    section_m: [number, number];
+    /** which viewer reported it */
+    source: "2d" | "3d";
+    /** the 2D view id the click landed in, null in 3D */
+    view: string | null;
+    /** true when distances to the section's faces and corners are meaningful */
+    isSection: boolean;
+    /** marker position in the 2D sheet's view space, metres */
+    uv: [number, number] | null;
+    /** marker position in the 3D scene, metres */
+    world: [number, number, number] | null;
+}
+
 function clamp(v: number, lo: number, hi: number): number {
     return Math.min(Math.max(v, lo), hi);
 }

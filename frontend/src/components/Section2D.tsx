@@ -13,12 +13,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SimulationResult } from "@/lib/api";
-import { sampleField, frameRange, type Frame, type Sample } from "@/lib/probe";
+import { sampleField, frameRange, type Frame, type ProbePick } from "@/lib/probe";
 import { tempToColor } from "@/lib/thermalColormap";
-import { elevationLines, probeGeometry } from "@/lib/sectionMetrics";
+import { elevationLines, sectionFeatures, type ProbeGeometry } from "@/lib/sectionMetrics";
 import ThermalLegend from "@/components/ThermalLegend";
-import ProbeCard from "@/components/ProbeCard";
-import { Maximize2, Minus, Plus, SquareDashed, Target, X } from "lucide-react";
+import { Maximize2, Minus, Plus, SquareDashed, Tags, Target } from "lucide-react";
 import { Toolbar, ToolbarButton, ToolbarDivider, ToolbarToggle, Flag, cx } from "@/components/ui";
 import { ScrubField } from "@/components/fields";
 import { fmtLen, type LengthUnit } from "@/lib/units";
@@ -45,6 +44,11 @@ const FALLBACK_BOX = { w: 900, h: 460 };
 const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 24;
 
+// Above this many vertices the label layer names only the features the readout is
+// citing. A 128-sided circle carries 128 letters and 128 numbers, which is a wall of
+// type, not an annotation.
+const MAX_NAMED_VERTICES = 12;
+
 export type ViewId = "front" | "back" | "left" | "right" | "top" | "bottom";
 
 const VIEWS: { id: ViewId; label: string; hint: string }[] = [
@@ -62,6 +66,16 @@ interface Section2DProps {
   frameIndex: number;
   length_m: number;
   units: LengthUnit;
+  /** the reading on screen, owned by the studio so the Probe palette shares it */
+  pick: ProbePick | null;
+  onPick: (pick: ProbePick | null) => void;
+  /** distances from that reading, computed once by the studio for both viewers */
+  geometry: ProbeGeometry | null;
+  /** the edge-letter and corner-number layer */
+  showLabels: boolean;
+  onToggleLabels: () => void;
+  /** the measured distance lines, toggled from the Probe palette */
+  showDistances: boolean;
 }
 
 /** One drawable patch in view space: where it sits, and what it reads. */
@@ -146,25 +160,82 @@ function Dim({
   );
 }
 
-export default function Section2D({ sim, frameIndex, length_m, units }: Section2DProps) {
+/**
+ * A name on the drawing: an edge's letter or a corner's number.
+ *
+ * Everything inside the sheet's group is scaled by the zoom, so the size is divided
+ * back out - annotation is chrome and stays the same size on screen however far in
+ * the reader has gone. The plate behind it is what keeps a letter legible where it
+ * crosses the bright end of the colour ramp.
+ */
+function Tag({
+  x,
+  y,
+  zoom,
+  emphasis,
+  round,
+  children,
+}: {
+  x: number;
+  y: number;
+  zoom: number;
+  emphasis: boolean;
+  /** a corner's number sits in a disc, an edge's letter in a rounded plate */
+  round?: boolean;
+  children: string;
+}) {
+  const size = 11 / zoom;
+  const halfW = (round ? 7 : 5 + children.length * 3.2) / zoom;
+  const halfH = 7 / zoom;
+  return (
+    <g>
+      <rect
+        x={x - halfW}
+        y={y - halfH}
+        width={halfW * 2}
+        height={halfH * 2}
+        rx={round ? halfH : 3 / zoom}
+        fill="var(--bg-primary)"
+        fillOpacity={0.82}
+        stroke="var(--accent-blue)"
+        strokeOpacity={emphasis ? 0.75 : 0.35}
+        strokeWidth={1 / zoom}
+      />
+      <text
+        x={x}
+        y={y}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={size}
+        fontWeight={emphasis ? 600 : 500}
+        fill="var(--accent-blue)"
+      >
+        {children}
+      </text>
+    </g>
+  );
+}
+
+export default function Section2D({
+  sim,
+  frameIndex,
+  length_m,
+  units,
+  pick,
+  onPick,
+  geometry,
+  showLabels,
+  onToggleLabels,
+  showDistances,
+}: Section2DProps) {
   const [view, setView] = useState<ViewId>("front");
   const [opacity, setOpacity] = useState(100);
-  const [showDistances, setShowDistances] = useState(false);
   // Orthographic convention, on by default: an elevation draws the lengthwise edges
   // behind the face as well as the ones on it, dashed rather than solid.
   const [showHidden, setShowHidden] = useState(true);
   // pan is in SHEET pixels, applied before the zoom, so a wheel zoom about the cursor
   // is one multiply rather than a chain of compensating translates.
   const [viewport, setViewport] = useState({ zoom: 1, tx: 0, ty: 0 });
-  // `at` is where on the canvas the popup sits. Anchoring the readout to the click
-  // rather than docking it in a corner is what keeps it out of the palettes' way at
-  // any window size — and it is where the eye already is.
-  const [probe, setProbe] = useState<{
-    sample: Sample;
-    section_m: [number, number];
-    uv: [number, number];
-    at: { x: number; y: number };
-  } | null>(null);
   // mirrors dragRef.moved for the cursor. The ref is what the pointer handlers read;
   // this is the only part of it the render needs, and a ref read during render is not
   // guaranteed to have made it into the frame being painted.
@@ -511,33 +582,35 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
     setViewport((vp) => ({ ...vp, tx: drag.tx + dx, ty: drag.ty + dy }));
   };
 
-  // where the popup can sit without leaving the canvas. Sized generously so the
-  // expanded distances list does not push itself off the bottom edge.
-  const anchorFor = useCallback((clientX: number, clientY: number) => {
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 16, y: 16 };
-    const W = 264;
-    const H = 300;
-    return {
-      x: Math.max(8, Math.min(clientX - rect.left + 16, rect.width - W - 8)),
-      y: Math.max(8, Math.min(clientY - rect.top - 40, rect.height - H - 8)),
-    };
-  }, []);
-
   const sampleAtSheet = useCallback(
-    (sx: number, sy: number, at: { x: number; y: number }) => {
+    (sx: number, sy: number) => {
       if (!fields || !frame) return;
       const u = (sx - originX) / scale;
       const v = vExt - (sy - originY) / scale;
       const section = projection.toSection(u, v);
       if (!section) {
-        setProbe(null);
+        onPick(null);
         return;
       }
       const s = sampleField(frame, fields.dx_m, section[0], section[1]);
-      setProbe(s ? { sample: s, section_m: section, uv: [u, v], at } : null);
+      onPick(
+        s
+          ? {
+              sample: s,
+              section_m: section,
+              source: "2d",
+              view,
+              // Only a cut section has faces to measure into. An elevation reads the
+              // outermost cell of a face, and a "distance to the left face" from a
+              // point on the left face is a number about nothing.
+              isSection: view === "front" || view === "back",
+              uv: [u, v],
+              world: null,
+            }
+          : null,
+      );
     },
-    [fields, frame, scale, vExt, originX, originY, projection],
+    [fields, frame, scale, vExt, originX, originY, projection, onPick, view],
   );
 
   const handlePointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
@@ -549,7 +622,7 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
     }
     if (drag?.moved) return;
     const sheet = toSheet(e.clientX, e.clientY);
-    if (sheet) sampleAtSheet(sheet[0], sheet[1], anchorFor(e.clientX, e.clientY));
+    if (sheet) sampleAtSheet(sheet[0], sheet[1]);
   };
 
   // jump the probe to the point the backend reported its own core temperature at.
@@ -561,19 +634,46 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
     const s = sampleField(frame, fields.dx_m, x_m, y_m);
     if (!s) return;
     setView("front");
-    const rect = wrapRef.current?.getBoundingClientRect();
-    setProbe({
+    onPick({
       sample: s,
       section_m: [x_m, y_m],
+      source: "2d",
+      view: "front",
+      isSection: true,
       uv: [x_m, y_m],
-      at: { x: 16, y: rect ? Math.max(8, rect.height - 320) : 16 },
+      world: null,
     });
   };
 
-  const geometry = useMemo(
-    () => (probe ? probeGeometry(sim.outline_m, probe.section_m) : null),
-    [probe, sim.outline_m],
+  // Which edges and corners carry a name on the sheet.
+  //
+  // The names come from the polygon, not from the probe, so the layer draws with or
+  // without a reading. Only a many-sided section falls back to naming the cited few.
+  const labels = useMemo(() => {
+    const all = sectionFeatures(sim.outline_m);
+    if (sim.outline_m.length <= MAX_NAMED_VERTICES) return all;
+    if (!geometry) return { edges: [], corners: [] };
+    const edgeIdx = new Set(geometry.edges.slice(0, 3).map((e) => e.index));
+    const cornerIdx = new Set(geometry.corners.slice(0, 3).map((c) => c.index));
+    return {
+      edges: all.edges.filter((e) => edgeIdx.has(e.index)),
+      corners: all.corners.filter((c) => cornerIdx.has(c.index)),
+    };
+  }, [sim.outline_m, geometry]);
+
+  // the two the readout is actually citing, drawn heavier than the rest
+  const cited = useMemo(
+    () => ({
+      edges: new Set(geometry?.edges.slice(0, 2).map((e) => e.index) ?? []),
+      corners: new Set(geometry?.corners.slice(0, 2).map((c) => c.index) ?? []),
+    }),
+    [geometry],
   );
+
+  // the marker belongs to the view it was read in: a point sampled on the top plan is
+  // not at those coordinates in the front section, and drawing it there would claim
+  // a reading that was never taken.
+  const marker = pick && pick.source === "2d" && pick.view === view ? pick.uv : null;
 
   const peakFrameIdx = fields
     ? fields.frame_indices.indexOf(sim.core_temp_c.indexOf(Math.max(...sim.core_temp_c)))
@@ -697,25 +797,23 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
                 );
               })()}
 
-            {/* Which edge is which.
-                A distance to "the nearest edge" is unreadable unless the edge is
-                named on the drawing too, so every edge the readout can cite carries
-                its letter out on the outside of the section, and the two the probe is
-                measured to are drawn heavier. */}
-            {showDistances && isSection && geometry && (
+            {/* The label layer.
+                A distance to "the nearest edge" or "corner 4" is unreadable unless
+                the drawing names them too, so every edge carries its letter and every
+                vertex its number, both placed on the OUTSIDE along the outward normal.
+                The ones the readout is citing are drawn heavier. Off with one press,
+                because on a small section the names crowd the drawing. */}
+            {showLabels && isSection && (
               <g>
-                {geometry.edges.map((e, i) => {
-                  const near = i < 2;
-                  // a 128-sided circle would be a wall of letters; only the cited
-                  // ones are named there.
-                  if (!near && sim.outline_m.length > 12) return null;
+                {labels.edges.map((e) => {
+                  const near = cited.edges.has(e.index);
                   const mirror = view === "back";
                   const ux = (x: number) => (mirror ? w_m - x : x);
                   const [x1, y1] = toPx(ux(e.from[0]), e.from[1]);
                   const [x2, y2] = toPx(ux(e.to[0]), e.to[1]);
                   const nx = mirror ? -e.normal[0] : e.normal[0];
                   return (
-                    <g key={e.index} opacity={near ? 1 : 0.55}>
+                    <g key={`e${e.index}`} opacity={near ? 1 : 0.6}>
                       <line
                         x1={x1}
                         y1={y1}
@@ -725,17 +823,45 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
                         strokeWidth={(near ? 2 : 1) / viewport.zoom}
                         strokeLinecap="round"
                       />
-                      <text
-                        x={(x1 + x2) / 2 + nx * 14}
-                        y={(y1 + y2) / 2 - e.normal[1] * 14}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        fontSize="11"
-                        fontWeight={near ? 600 : 400}
-                        fill="var(--accent-blue)"
+                      <Tag
+                        x={(x1 + x2) / 2 + nx * 15}
+                        y={(y1 + y2) / 2 - e.normal[1] * 15}
+                        zoom={viewport.zoom}
+                        emphasis={near}
                       >
                         {e.tag}
-                      </text>
+                      </Tag>
+                    </g>
+                  );
+                })}
+
+                {/* Corners. Same rule as the edges, so "corner 4" in the readout is a
+                    vertex the reader can point at. */}
+                {labels.corners.map((c) => {
+                  const near = cited.corners.has(c.index);
+                  const mirror = view === "back";
+                  const cu = mirror ? w_m - c.at[0] : c.at[0];
+                  const [x0, y0] = toPx(cu, c.at[1]);
+                  const nx = mirror ? -c.normal[0] : c.normal[0];
+                  return (
+                    <g key={`c${c.index}`} opacity={near ? 1 : 0.6}>
+                      <circle
+                        cx={x0}
+                        cy={y0}
+                        r={3 / viewport.zoom}
+                        fill="var(--bg-primary)"
+                        stroke="var(--accent-blue)"
+                        strokeWidth={(near ? 1.8 : 1.2) / viewport.zoom}
+                      />
+                      <Tag
+                        x={x0 + nx * 17}
+                        y={y0 - c.normal[1] * 17}
+                        zoom={viewport.zoom}
+                        emphasis={near}
+                        round
+                      >
+                        {c.tag}
+                      </Tag>
                     </g>
                   );
                 })}
@@ -743,9 +869,9 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
             )}
 
             {/* the clicked point, with its distance lines to the two nearest faces */}
-            {probe &&
+            {marker &&
               (() => {
-                const [cx0, cy0] = toPx(probe.uv[0], probe.uv[1]);
+                const [cx0, cy0] = toPx(marker[0], marker[1]);
                 const r = 4 / viewport.zoom;
                 return (
                   <g>
@@ -815,59 +941,34 @@ export default function Section2D({ sim, frameIndex, length_m, units }: Section2
           >
             Hidden lines
           </ToolbarButton>
+          <ToolbarButton
+            icon={Tags}
+            active={showLabels && isSection}
+            disabled={!isSection}
+            onClick={onToggleLabels}
+            title={
+              isSection
+                ? "Name every edge with a letter and every corner with a number, so the distances in the Probe palette can be traced to lines you can see"
+                : "Section views only — an elevation shows a face, not the cut the letters name"
+            }
+          >
+            Labels
+          </ToolbarButton>
           <ToolbarDivider />
-          <ToolbarButton icon={Target} onClick={probeAtBackendPoint} title="Probe the point the backend reported its own core temperature at">
+          <ToolbarButton
+            icon={Target}
+            onClick={probeAtBackendPoint}
+            title="Read the point the backend sampled its own core temperature at, and send it to the Probe palette"
+          >
             Backend point
           </ToolbarButton>
         </Toolbar>
       </div>
 
-      {/* Probe readout, anchored at the click. */}
-      {probe && (
-        <div
-          className="pointer-events-auto absolute z-20 w-[264px]"
-          style={{ left: `${probe.at.x}px`, top: `${probe.at.y}px` }}
-        >
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setProbe(null)}
-              aria-label="Dismiss probe"
-              className="absolute -right-1 -top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-bg-surface text-text-muted ring-1 ring-inset ring-hairline hover:bg-elevate-2 hover:text-text-primary"
-            >
-              <X className="h-3.5 w-3.5" strokeWidth={2.5} />
-            </button>
-            <ProbeCard
-              sample={probe.sample}
-              geometry={isSection ? geometry : null}
-              units={units}
-              showDistances={showDistances}
-              onToggleDistances={() => setShowDistances((s) => !s)}
-              emptyHint=""
-              footer={
-                <>
-                  backend probe_xy_m [{sim.probe_xy_m[0].toFixed(3)}, {sim.probe_xy_m[1].toFixed(3)}] m
-                  <br />
-                  peak_core_temp_c {sim.peak_core_temp_c.toFixed(2)} °C at {sim.peak_core_time_h.toFixed(1)} h
-                </>
-              }
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Sheet metadata and the interaction hint, stacked above the control strip.
-          Both used to live in a corner, and both corners are where a palette docks —
-          a title block behind a palette is a title block nobody reads. The centre
-          column is the one strip of the viewer that nothing else claims. */}
+      {/* The sheet's title block. It used to live in a corner, and both corners are
+          where a palette docks — a title block behind a palette is a title block
+          nobody reads. The centre column is the one strip nothing else claims. */}
       <div className="pointer-events-none absolute bottom-[68px] left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-0.5 text-center">
-        {!probe && (
-          <p className="whitespace-nowrap text-[11px] text-text-muted">
-            {isSection
-              ? "Click the section to sample a point · drag to pan · wheel to zoom"
-              : "Click the face to read the outermost solved cell there · drag to pan · wheel to zoom"}
-          </p>
-        )}
         <p className="whitespace-nowrap font-mono text-[10px] tabular-nums text-text-muted/70">
           {fields
             ? `${fields.nx}×${fields.ny} @ ${(fields.dx_m * 1000).toFixed(0)} mm · bands ${BAND_STEP_C} °C`
