@@ -1,16 +1,21 @@
 // integration self-check against a running backend.
 //   npx tsx src/lib/test_studio_live.ts
 //
-// The claim being tested: the request the studio builds from its own default inputs is
-// a request the backend accepts, and the mix it describes by DESIGN (content, w/cm,
-// fly ash) reaches the solver as the same mix the fixed scenario was solved with.
+// Three claims are tested here.
 //
-// That second half is the one worth a test. The frontend deliberately does not compute
-// h_u, alpha_u or tau_h - it sends the design and lets the backend's own hydration
+// The studio opens on the scenario the artifact was actually solved for: it reads the
+// inputs back off the request and must rebuild that request exactly, because that
+// equality is what lets the ensemble panel say the band belongs to the run beside it.
+//
+// The mix it describes by DESIGN (content, w/cm, fly ash) reaches the solver as the
+// same mix the standard one is. The frontend deliberately does not compute h_u,
+// alpha_u or tau_h - it sends the design and lets the backend's own hydration
 // equations do it - so the only way to know the translation is right is to solve both
 // ways and compare the answers.
+//
+// And a changed input changes the answer, or nothing is driving the solve at all.
 import { demoEnsemble, simulate } from "./api";
-import { DEFAULT_ELEMENT_CONFIG, toSimulationRequest } from "./elementConfig";
+import { configFromRequest, toSimulationRequest } from "./elementConfig";
 
 function assert(condition: boolean, msg: string) {
   if (!condition) {
@@ -23,13 +28,21 @@ async function main() {
   const demo = await demoEnsemble();
   const ambient = demo.scenario.ambient;
 
-  // The studio's defaults are the standard element and the standard mix DESIGN.
-  const request = toSimulationRequest(DEFAULT_ELEMENT_CONFIG, ambient);
-  assert(request.mix?.mix_id === "design", "the studio must send a design mix");
-  assert(request.mix?.h_u_j_per_kg == null, "the studio must NOT compute hydration parameters itself");
+  // What the studio opens on: the artifact's own scenario, read back into the inputs.
+  const opened = configFromRequest(demo.scenario);
+  const request = toSimulationRequest(opened, ambient);
+  assert(
+    JSON.stringify(request) === JSON.stringify(demo.scenario),
+    "the studio must open on the scenario the artifact was solved for, exactly",
+  );
+
+  // the same inputs, described as a mix DESIGN rather than by name
+  const design = toSimulationRequest({ ...opened, mix_id: "design" }, ambient);
+  assert(design.mix?.mix_id === "design", "the design basis must send a design mix");
+  assert(design.mix?.h_u_j_per_kg == null, "the studio must NOT compute hydration parameters itself");
 
   const byDesign = await simulate(
-    { ...request, element: { ...request.element, dx_m: 0.02 } },
+    { ...design, element: { ...design.element, dx_m: 0.02 } },
     { fields: true, fields_stride_h: 6 },
   );
 
@@ -66,16 +79,21 @@ async function main() {
   );
   console.log(`outline      ${byDesign.outline_m.length} vertices`);
 
-  // a changed input has to change the answer, or nothing is actually driving the solve
+  // A changed input has to change the answer, or nothing is actually driving the solve.
+  // Relative to the scenario's OWN placement temperature, not to a number typed here —
+  // the studio opens on whatever the artifact carries.
+  // 50 C is the backend's own bound on placement_temp_c, and the scenario already
+  // places at 46 - so the step is whatever room is left, not a fixed +6.
+  const warmer_c = Math.min(50, design.element.placement_temp_c! + 6);
   const hotter = await simulate(
     {
-      ...request,
-      element: { ...request.element, dx_m: 0.02, placement_temp_c: 35 },
+      ...design,
+      element: { ...design.element, dx_m: 0.02, placement_temp_c: warmer_c },
     },
     {},
   );
   const shift = hotter.peak_core_temp_c - byDesign.peak_core_temp_c;
-  console.log(`+6 C placement moves peak_core by ${shift.toFixed(3)} C`);
+  console.log(`placement ${design.element.placement_temp_c!.toFixed(1)} -> ${warmer_c.toFixed(1)} C moves peak_core by ${shift.toFixed(3)} C`);
   assert(shift > 1.0, "raising the placement temperature must raise the peak core");
 
   console.log("\nSTUDIO OK. inputs reach the solver and the answer follows them.");

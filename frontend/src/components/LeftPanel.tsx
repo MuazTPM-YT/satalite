@@ -13,6 +13,7 @@ import {
   FORMWORK_OPTIONS,
   GRADE_OPTIONS,
   GRID_OPTIONS,
+  MIX_BASIS_OPTIONS,
   defaultDims,
   type ElementConfig,
 } from "@/lib/elementConfig";
@@ -30,6 +31,12 @@ export interface IfcUiState {
 
 export interface LeftPanelProps {
   config: ElementConfig;
+  /**
+   * What every Reset control returns to: the scenario the artifact was solved for,
+   * read off the response. Hand-typed reset targets drifted from it the moment the
+   * artifact was regenerated, and nothing could catch that.
+   */
+  defaults: ElementConfig;
   onChange: <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => void;
   /** one dimension of the current shape, in millimetres */
   onDimChange: (key: string, value_mm: number) => void;
@@ -113,6 +120,7 @@ function SectionHeader({ title, icon }: { title: string; icon: typeof Box }) {
 
 export default function LeftPanel({
   config,
+  defaults,
   onChange,
   onDimChange,
   onCommit,
@@ -129,7 +137,13 @@ export default function LeftPanel({
   const shapeDef = SHAPE_BY_ID[config.shape];
   const dims = clampDims(config.shape, config.dims_mm);
   const preview = importedOutline ?? outlineFor(config.shape, dims);
-  const defaults = defaultDims(config.shape);
+  // A dimension resets to the scenario's value only while the shape is still the
+  // scenario's; a different shape has different keys, so its own spec is the target.
+  const dimDefaults =
+    defaults.shape === config.shape
+      ? clampDims(config.shape, defaults.dims_mm)
+      : defaultDims(config.shape);
+  const designing = config.mix_id === "design";
 
   // Dimensions are edited in the DISPLAY unit and stored in millimetres. The
   // conversion lives here rather than in the field so canonical state never depends
@@ -205,7 +219,7 @@ export default function LeftPanel({
             min={toDisp(d.min_mm)}
             max={toDisp(d.max_mm)}
             step={dimStep}
-            resetTo={toDisp(defaults[d.key])}
+            resetTo={toDisp(dimDefaults[d.key] ?? d.default_mm)}
             onChange={(v) => onDimChange(d.key, fromDisp(v))}
             onCommit={onCommit}
           />
@@ -219,7 +233,7 @@ export default function LeftPanel({
           min={toDisp(500)}
           max={toDisp(30000)}
           step={dimStep}
-          resetTo={toDisp(6000)}
+          resetTo={toDisp(defaults.length_mm)}
           onChange={(v) => onChange("length_mm", fromDisp(v))}
         />
         <p className="mb-1 pl-[80px] text-[10px] leading-snug text-text-muted">
@@ -307,8 +321,25 @@ export default function LeftPanel({
           }}
         />
         <SelectField
+          label="Mix basis"
+          hint="Which mix goes on the wire: the backend's own standard mix, or a design derived from the rows below"
+          value={config.mix_id}
+          options={MIX_BASIS_OPTIONS.map((m) => ({ id: m.id, label: m.label, note: m.note }))}
+          onChange={(v) => {
+            onChange("mix_id", v);
+            onCommit();
+          }}
+        />
+        {!designing && (
+          <p className="mb-1.5 pl-[80px] text-[10px] leading-snug text-text-muted">
+            The backend builds the hydration parameters itself. This is the mix the
+            precomputed ensemble band and season replay were solved with.
+          </p>
+        )}
+        <SelectField
           label="Cement"
           hint="ASTM C150 type — picks the cement heat, physics.constants.H_CEM_BY_TYPE"
+          disabled={!designing}
           value={config.cement_type}
           options={CEMENT_OPTIONS.map((c) => ({ id: c.id, label: c.label, note: c.note }))}
           onChange={(v) => {
@@ -324,7 +355,8 @@ export default function LeftPanel({
           min={200}
           max={700}
           step={5}
-          resetTo={400}
+          resetTo={defaults.cement_kg_m3}
+          disabled={!designing}
           onChange={(v) => onChange("cement_kg_m3", v)}
           onCommit={onCommit}
         />
@@ -335,7 +367,8 @@ export default function LeftPanel({
           min={0.25}
           max={0.75}
           step={0.01}
-          resetTo={0.45}
+          resetTo={defaults.wcm}
+          disabled={!designing}
           onChange={(v) => onChange("wcm", v)}
           onCommit={onCommit}
         />
@@ -347,7 +380,8 @@ export default function LeftPanel({
           min={0}
           max={50}
           step={1}
-          resetTo={20}
+          resetTo={defaults.fly_ash_pct}
+          disabled={!designing}
           onChange={(v) => onChange("fly_ash_pct", v)}
           onCommit={onCommit}
         />
@@ -357,9 +391,11 @@ export default function LeftPanel({
           unit="°C"
           value={config.placement_temp_c}
           min={0}
+          // 50 C is app/models ElementSpec's own bound. A wider slider here would
+          // send a request the backend answers with a 422.
           max={50}
           step={0.5}
-          resetTo={29}
+          resetTo={defaults.placement_temp_c}
           onChange={(v) => onChange("placement_temp_c", v)}
           onCommit={onCommit}
         />
@@ -375,7 +411,7 @@ export default function LeftPanel({
           min={12}
           max={Math.min(336, Math.round(ambientSpan_h))}
           step={1}
-          resetTo={72}
+          resetTo={defaults.cure_window_h}
           onChange={(v) => onChange("cure_window_h", v)}
           onCommit={onCommit}
         />
@@ -400,7 +436,7 @@ export default function LeftPanel({
           min={5}
           max={40}
           step={0.5}
-          resetTo={20}
+          resetTo={defaults.t_ref_c}
           onChange={(v) => onChange("t_ref_c", v)}
           onCommit={onCommit}
         />

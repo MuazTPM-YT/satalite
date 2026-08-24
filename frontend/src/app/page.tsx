@@ -42,11 +42,13 @@ import {
   loadPourWindows,
   loadSeason,
   loadValidation,
+  requestKey as stableKey,
   scaleBounds,
   demoScenario,
 } from "@/lib/scenario";
 import {
   DEFAULT_ELEMENT_CONFIG,
+  configFromRequest,
   defaultDims,
   lengthM,
   toSimulationRequest,
@@ -106,7 +108,13 @@ export default function StudioPage() {
 
   const [importedOutline, setImportedOutline] = useState<Outline | null>(null);
   const [ifcUi, setIfcUi] = useState<IfcUiState>({ busy: false, error: null, name: null });
+  // The inputs, and the scenario they opened on.
+  //
+  // Both come from the artifact rather than from constants typed here: `scenarioConfig`
+  // is what every Reset control returns to, so "reset" means "back to the scenario the
+  // backend actually solved" and not "back to a number somebody once copied".
   const [config, setConfig] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
+  const [scenarioConfig, setScenarioConfig] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
 
   const [frameIndex, setFrameIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("2d");
@@ -147,7 +155,9 @@ export default function StudioPage() {
     () => (ambient ? toSimulationRequest(config, ambient) : null),
     [config, ambient],
   );
-  const requestKey = useMemo(() => (request ? JSON.stringify(request) : null), [request]);
+  // Order-independent, so a request rebuilt from the inputs matches the identical one
+  // the backend sent back rather than differing by pydantic's field order.
+  const requestKey = useMemo(() => (request ? stableKey(request) : null), [request]);
   const stale = requestKey !== null && run !== null && requestKey !== run.key;
 
   // Drop a response whose request has already been superseded. Without this, releasing
@@ -220,6 +230,11 @@ export default function StudioPage() {
         if (!live) return;
         setDemo(d);
         setAmbient(d.scenario.ambient);
+        // Open on the scenario the artifact was solved for. Every input follows from
+        // the response, so a regenerated artifact moves the studio with it.
+        const seeded = configFromRequest(d.scenario);
+        setScenarioConfig(seeded);
+        setConfig(seeded);
       })
       .catch((err: unknown) => {
         if (!live) return;
@@ -396,11 +411,8 @@ export default function StudioPage() {
 
   // The precomputed band describes ONE fixed scenario. Once the inputs move off it,
   // the band is no longer a band for the run on screen and has to say so.
-  const demoKey = useMemo(
-    () => (demo ? JSON.stringify(demo.scenario) : null),
-    [demo],
-  );
-  const matchesDemo = demoKey !== null && run !== null && demoKey === JSON.stringify(run.request);
+  const demoKey = useMemo(() => (demo ? stableKey(demo.scenario) : null), [demo]);
+  const matchesDemo = demoKey !== null && run !== null && demoKey === stableKey(run.request);
 
   // a sweep is only shown beside the run it was computed for.
   const pourReady = pour && run && pour.key === run.key ? pour : null;
@@ -525,6 +537,7 @@ export default function StudioPage() {
               >
                 <LeftPanel
                   config={config}
+                  defaults={scenarioConfig}
                   onChange={updateConfig}
                   onDimChange={updateDim}
                   onCommit={commit}

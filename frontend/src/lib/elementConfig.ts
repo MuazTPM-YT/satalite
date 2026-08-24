@@ -5,7 +5,7 @@
 // translated below does not get an input box above. `toSimulationRequest` is the whole
 // contract, and it is a total function - the panel cannot construct a state that fails
 // validation at the boundary.
-import type { ElementSpec, MixSpec, SimulationRequest, AmbientSpec } from "@/lib/api";
+import { SHAPES, type ElementSpec, type MixSpec, type SimulationRequest, type AmbientSpec } from "@/lib/api";
 import { SHAPE_BY_ID, clampDims, type ShapeId } from "@/lib/shapes";
 
 // UI label -> the formwork key physics.equations.boundary.FORMWORK_R is keyed by.
@@ -38,6 +38,23 @@ export const GRADE_OPTIONS = [
   { id: "6000psi", label: "6000 psi", note: "42 MPa" },
 ] as const;
 
+/**
+ * Where the hydration parameters come from.
+ *
+ * `standard` sends the mix the backend builds itself — every hydration field null,
+ * which is exactly what the precomputed artifacts were solved with. `design` sends
+ * the rows below and asks the backend to derive h_u, alpha_u and tau_h from them
+ * through the same Schindler-Folliard regressions.
+ *
+ * This is a real choice, not a display toggle: it decides which of two different
+ * requests goes on the wire, and it is the only way the studio can reproduce the
+ * scenario the ensemble band was computed for.
+ */
+export const MIX_BASIS_OPTIONS = [
+  { id: "standard", label: "Backend standard", note: "as the precomputed scenario" },
+  { id: "design", label: "Mix design", note: "derived from the rows below" },
+] as const;
+
 // Solver grid pitch. Coarser is faster and blockier; this is the single biggest lever
 // on how long a solve takes, so it is exposed rather than hidden at 10 mm.
 export const GRID_OPTIONS = [
@@ -49,6 +66,8 @@ export const GRID_OPTIONS = [
 
 export interface ElementConfig {
   shape: ShapeId;
+  /** which mix goes on the wire. See MIX_BASIS_OPTIONS. */
+  mix_id: string;
   /** millimetre dims, keyed exactly as physics.geometry.outline reads them */
   dims_mm: Record<string, number>;
   /** view-only: the solver is 2D, so length extrudes the answer, it does not change it */
@@ -74,11 +93,14 @@ export function defaultDims(shape: ShapeId): Record<string, number> {
   return Object.fromEntries(SHAPE_BY_ID[shape].dims.map((d) => [d.key, d.default_mm]));
 }
 
-// The 300 mm suspended slab of physics.season_analysis.STANDARD_ELEMENT, and the mix
-// design that standard_mix() is built from. Opening on the scenario the demo artifact
-// was computed for means the first frame on screen matches the precomputed band.
+// The fallback, used only until the scenario artifact lands and `configFromRequest`
+// replaces it. It is physics.season_analysis.STANDARD_ELEMENT: a 300 mm suspended
+// slab. Nothing on screen is ever solved from these numbers - the studio's first
+// solve waits for the artifact, so this exists to keep the panel from rendering
+// against an empty object, not to describe any run.
 export const DEFAULT_ELEMENT_CONFIG: ElementConfig = {
   shape: "slab",
+  mix_id: "standard",
   dims_mm: defaultDims("slab"),
   length_mm: 6000,
   dx_m: 0.01,
@@ -117,13 +139,86 @@ export function toElementSpec(c: ElementConfig): ElementSpec {
 // uses. Deriving them here instead would mean a second copy of the hydration
 // equations living in TypeScript, which is exactly the drift this project forbids.
 export function toMixSpec(c: ElementConfig): MixSpec {
+  // Every field of MixSpec, explicitly, in both branches. A null and a missing key mean
+  // the same thing to the backend, but they do NOT stringify the same - and the studio
+  // compares its request against the scenario the ensemble band was solved for.
+  const base = {
+    mix_id: c.mix_id,
+    cement_type: null as string | null,
+    cement_kg_m3: null as number | null,
+    w_cm: null as number | null,
+    fly_ash_frac: null as number | null,
+    h_u_j_per_kg: null,
+    alpha_u: null,
+    tau_h: null,
+    beta: null,
+    grade: c.grade,
+  };
+  // The backend's own mix. Every hydration field null, so app/services/simulate builds
+  // it from the same defaults the offline artifacts were solved with - which is the
+  // only request shape that can reproduce them.
+  if (c.mix_id !== "design") return base;
   return {
+    ...base,
     mix_id: "design",
     cement_type: c.cement_type === "" ? null : c.cement_type,
     cement_kg_m3: c.cement_kg_m3,
     w_cm: c.wcm,
     fly_ash_frac: c.fly_ash_pct / 100,
-    grade: c.grade,
+  };
+}
+
+/** Is `id` one of the shapes the solver rasterises? */
+function isShapeId(id: string): id is ShapeId {
+  return (SHAPES as readonly string[]).includes(id);
+}
+
+/**
+ * The studio's inputs, read back OFF a request the backend actually solved.
+ *
+ * This is what the studio opens on. The alternative was a hand-copied constant per
+ * field — a 300 mm slab at 29 °C, typed here because that is what the artifact
+ * happened to contain when it was written. Regenerating the artifact then left the
+ * studio opening on an element nobody had solved, silently, with no test that could
+ * catch it.
+ *
+ * Anything the request does not carry falls back to `base`. `length_mm` never comes
+ * from a request at all - the solver is 2D, so length is a view parameter and no
+ * response has an opinion about it.
+ */
+export function configFromRequest(
+  request: SimulationRequest,
+  base: ElementConfig = DEFAULT_ELEMENT_CONFIG,
+): ElementConfig {
+  const el = request.element;
+  const mix = request.mix ?? {};
+  const shape = typeof el.shape === "string" && isShapeId(el.shape) ? el.shape : base.shape;
+
+  // rebuilt in the SHAPE's own key order rather than the request's, so two requests
+  // that name the same dimensions in a different order produce one config.
+  const dims_mm = Object.fromEntries(
+    SHAPE_BY_ID[shape].dims.map((d) => [d.key, el.dims_mm?.[d.key] ?? d.default_mm]),
+  );
+
+  const design = mix.mix_id === "design";
+  return {
+    ...base,
+    shape,
+    dims_mm: clampDims(shape, dims_mm),
+    mix_id: mix.mix_id ?? base.mix_id,
+    dx_m: el.dx_m ?? base.dx_m,
+    formwork: el.formwork ?? base.formwork,
+    placement_temp_c: el.placement_temp_c ?? base.placement_temp_c,
+    cement_type: mix.cement_type ?? "",
+    cement_kg_m3: mix.cement_kg_m3 ?? base.cement_kg_m3,
+    // A design request carries these; a standard one does not, and reading a null
+    // back as 0 would open the studio on a w/cm of zero.
+    wcm: (design ? mix.w_cm : null) ?? base.wcm,
+    fly_ash_pct: design && mix.fly_ash_frac != null ? mix.fly_ash_frac * 100 : base.fly_ash_pct,
+    grade: mix.grade ?? base.grade,
+    cure_window_h: request.duration_hours ?? base.cure_window_h,
+    start_offset_h: 0,
+    t_ref_c: request.t_ref_c ?? base.t_ref_c,
   };
 }
 

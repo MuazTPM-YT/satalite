@@ -32,6 +32,28 @@ export interface LoadedRun {
     demo: DemoEnsembleResponse;
 }
 
+/**
+ * A request's identity, independent of key order.
+ *
+ * Two things compare requests: staleness (have the inputs moved off the run on
+ * screen) and the ensemble band (is this still the scenario it was computed for).
+ * Both used `JSON.stringify`, which is order-sensitive - so a request rebuilt from
+ * the studio's own inputs compared unequal to the identical request the backend had
+ * sent back, purely because pydantic serialises its fields in declaration order.
+ * That made the band permanently disclaim a run it did in fact describe.
+ */
+export function requestKey(value: unknown): string {
+    return JSON.stringify(value, (_k, v) =>
+        v && typeof v === "object" && !Array.isArray(v)
+            ? Object.fromEntries(
+                  Object.keys(v as Record<string, unknown>)
+                      .sort()
+                      .map((k) => [k, (v as Record<string, unknown>)[k]]),
+              )
+            : v,
+    );
+}
+
 // the scenario artifact. The studio reads its AMBIENT series and solves whatever the
 // input panel currently describes against it - the artifact is the weather, not the
 // element, and every other field of the scenario is only there so a panel can say what
@@ -49,16 +71,44 @@ export async function loadDemoRun(): Promise<LoadedRun> {
     return { request, result, demo };
 }
 
-// candidate start offsets for the pour sweep, hours after the scenario's own start.
-export const CANDIDATE_OFFSETS_H = [0, 4, 8, 12, 16, 20];
+/** how many start hours the sweep tries. Each one is a full deterministic solve. */
+export const N_CANDIDATES = 6;
+
+/**
+ * Candidate start offsets, spread across the room the series actually has.
+ *
+ * These used to be the literal [0, 4, 8, 12, 16, 20]: six hours picked because a
+ * 96 h series minus a 72 h window leaves 24. Shorten the cure window and the sweep
+ * kept testing the same 20 h while 60 h of weather sat unexamined; lengthen it past
+ * 76 h and every candidate but the first ran off the end of the data, where the
+ * backend has to hold the last hour flat - a made-up forecast wearing real data's
+ * clothes.
+ *
+ * So the offsets come from the span. Whole hours, deduplicated, and never past
+ * `span - duration`, which is the last start whose whole run is inside real weather.
+ * A series with no room at all yields the single honest answer: start now.
+ */
+export function candidateOffsets(span_h: number, duration_h: number): number[] {
+    const room = Math.floor(span_h - duration_h);
+    if (!Number.isFinite(room) || room <= 0) return [0];
+    const step = room / (N_CANDIDATES - 1);
+    const out: number[] = [];
+    for (let i = 0; i < N_CANDIDATES; i++) {
+        const h = Math.round(i * step);
+        if (out[out.length - 1] !== h) out.push(h);
+    }
+    return out;
+}
 
 // sweep the same element and weather across candidate start hours.
 export function loadPourWindows(request: SimulationRequest): Promise<PourWindowResult> {
+    const hours = request.ambient.hours_h;
+    const span_h = hours.length > 1 ? hours[hours.length - 1] - hours[0] : 0;
     return pourWindows({
         element: request.element,
         mix: request.mix,
         ambient: request.ambient,
-        candidate_offsets_h: CANDIDATE_OFFSETS_H,
+        candidate_offsets_h: candidateOffsets(span_h, request.duration_hours ?? span_h),
         duration_hours: request.duration_hours,
         t_ref_c: request.t_ref_c,
     });
