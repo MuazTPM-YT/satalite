@@ -14,10 +14,10 @@
 // live on the same scale.
 "use client";
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, Maximize2, X } from "lucide-react";
 import type { SimulationResult, TrippedBy } from "@/lib/api";
-import { SectionLabel, cx } from "@/components/ui";
+import { SectionLabel, ToolbarToggle, cx } from "@/components/ui";
 
 interface HistoryChartProps {
   sim: SimulationResult;
@@ -49,6 +49,15 @@ const MR = 12;
 const MT = 12;
 const MB = 24;
 
+/** The three panels, by the quantity each one plots. */
+export type TrackId = "temperature" | "strength" | "differential";
+
+const TRACK_TITLE: Record<TrackId, string> = {
+  temperature: "Temperature",
+  strength: "Strength fraction",
+  differential: "Core–surface differential",
+};
+
 const GRID = "rgba(255,255,255,0.06)";
 const AXIS = "rgba(255,255,255,0.22)";
 const INK = "rgba(255,255,255,0.45)";
@@ -58,6 +67,14 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
   // hover time in hours, or null. Shared across all three panels so one pointer
   // reads every quantity at the same instant.
   const [hover, setHover] = useState<number | null>(null);
+  // Which panel, if any, is filling the screen.
+  //
+  // The dock gives each track about 150 px of height, which is enough to see the
+  // shape of a curve and not enough to read a crossing off it. Expanding re-renders
+  // the SAME track into the whole viewport - the viewBox does the zooming, so every
+  // annotation, threshold and tick grows with it rather than staying at dock size on
+  // a bigger picture.
+  const [zoomed, setZoomed] = useState<TrackId | null>(null);
 
   const max_h = sim.times_h[sim.times_h.length - 1] ?? 0;
   const x = (h: number) => ML + (max_h > 0 ? h / max_h : 0) * (W - ML - MR);
@@ -82,6 +99,16 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
         );
 
   const track = { x, tick_hs, now_h, hover, hoverIdx, setHover, max_h, sim };
+
+  // Escape closes the expanded panel, the way it closes every other transient
+  // surface in the studio.
+  const close = useCallback(() => setZoomed(null), []);
+  useEffect(() => {
+    if (!zoomed) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed, close]);
 
   return (
     <section className="shrink-0 border-t border-border-default bg-bg-surface">
@@ -118,9 +145,9 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
       {open && (
         <>
           <div className="grid grid-cols-1 gap-px border-t border-border-default bg-border-default lg:grid-cols-3">
-            <TemperatureTrack {...track} />
-            <StrengthTrack {...track} />
-            <DifferentialTrack {...track} />
+            <TemperatureTrack {...track} onZoom={setZoomed} />
+            <StrengthTrack {...track} onZoom={setZoomed} />
+            <DifferentialTrack {...track} onZoom={setZoomed} />
           </div>
 
           {/* why each flag reads the way it does, in the response's own terms */}
@@ -140,6 +167,39 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
           </div>
         </>
       )}
+
+      {/* The expanded panel. A backdrop rather than a palette: this is one thing to
+          read, not one more surface to arrange, and it goes away on Escape, on the
+          close button, or on a click outside the plot. */}
+      {zoomed && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${TRACK_TITLE[zoomed]} — expanded`}
+          onClick={close}
+          className="fixed inset-0 z-[900] flex flex-col bg-bg-primary/90 p-4 backdrop-blur-sm sm:p-8"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-default bg-bg-surface shadow-2xl shadow-black/60"
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-border-default bg-elevate-1 px-4 py-2">
+              <SectionLabel>{TRACK_TITLE[zoomed]}</SectionLabel>
+              <div className="ml-auto flex items-center gap-4">
+                <span className="hidden font-mono text-[10px] tabular-nums text-text-muted sm:inline">
+                  0 – {max_h.toFixed(0)} h after placement
+                </span>
+                <ToolbarToggle icon={X} label="Close the expanded chart" onClick={close} />
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col p-2">
+              {zoomed === "temperature" && <TemperatureTrack {...track} tall />}
+              {zoomed === "strength" && <StrengthTrack {...track} tall />}
+              {zoomed === "differential" && <DifferentialTrack {...track} tall />}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -155,36 +215,53 @@ interface TrackProps {
   hover: number | null;
   hoverIdx: number | null;
   setHover: (h: number | null) => void;
+  /** offered in the dock, absent in the expanded copy — it is already expanded */
+  onZoom?: (id: TrackId) => void;
+  /** render at full height rather than at dock height */
+  tall?: boolean;
 }
 
 /** A titled panel with a readout slot, wrapping one plot. */
 function Track({
-  title,
+  id,
   unit,
   readout,
   children,
   onHover,
   onLeave,
+  onZoom,
+  tall,
 }: {
-  title: string;
+  id: TrackId;
   unit: string;
   readout?: React.ReactNode;
   children: React.ReactNode;
   onHover: (e: React.PointerEvent<SVGSVGElement>) => void;
   onLeave: () => void;
+  onZoom?: (id: TrackId) => void;
+  tall?: boolean;
 }) {
+  const title = TRACK_TITLE[id];
   return (
-    <div className="min-w-0 bg-bg-surface px-3 pb-1 pt-2">
-      <div className="mb-0.5 flex items-baseline gap-2">
+    <div className={cx("flex min-w-0 flex-col bg-bg-surface px-3 pb-1 pt-2", tall && "min-h-0 flex-1")}>
+      <div className="mb-0.5 flex shrink-0 items-center gap-2">
         <SectionLabel>{title}</SectionLabel>
         <span className="font-mono text-[9px] text-text-muted">{unit}</span>
-        <span className="ml-auto truncate font-mono text-[10px] tabular-nums text-text-primary">
+        <span className="ml-auto min-w-0 truncate font-mono text-[10px] tabular-nums text-text-primary">
           {readout}
         </span>
+        {onZoom && (
+          <ToolbarToggle
+            icon={Maximize2}
+            label={`Expand ${title.toLowerCase()}`}
+            hint="Fill the screen with this plot. Escape closes it."
+            onClick={() => onZoom(id)}
+          />
+        )}
       </div>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="h-[150px] w-full touch-none"
+        className={cx("w-full touch-none", tall ? "min-h-0 flex-1" : "h-[150px]")}
         preserveAspectRatio="xMidYMid meet"
         onPointerMove={onHover}
         onPointerLeave={onLeave}
@@ -286,7 +363,7 @@ function useHourFromPointer(max_h: number) {
 /* ── Tracks ─────────────────────────────────────────────────────────────────── */
 
 /** Core and surface temperature against the DEF threshold. */
-function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover }: TrackProps) {
+function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover, onZoom, tall }: TrackProps) {
   const def_c = sim.breaches.def_threshold_c;
   const values = [...sim.core_temp_c, ...sim.surface_temp_c, def_c, sim.max_core_temp_anywhere_c];
   const T_MIN = Math.floor(Math.min(...values) / 10) * 10;
@@ -304,8 +381,10 @@ function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setH
 
   return (
     <Track
-      title="Temperature"
+      id="temperature"
       unit="°C"
+      onZoom={onZoom}
+      tall={tall}
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
@@ -345,7 +424,7 @@ function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setH
 }
 
 /** Strength development. Its own panel because % and °C are not comparable. */
-function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover }: TrackProps) {
+function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover, onZoom, tall }: TrackProps) {
   const y = (p: number) => MT + (1 - p / 100) * (H - MT - MB);
   const ticks = [0, 25, 50, 75, 100];
   const path = sim.strength_fraction
@@ -357,8 +436,10 @@ function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHove
 
   return (
     <Track
-      title="Strength fraction"
+      id="strength"
       unit="% of f'c"
+      onZoom={onZoom}
+      tall={tall}
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
@@ -389,7 +470,7 @@ function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHove
 // The cracking limit is a GAP, not a level, so it cannot share the temperature axis -
 // 19.4 °C plotted next to a 60 °C core would read as a threshold the core is nowhere
 // near. It gets its own axis, in °C of differential.
-function DifferentialTrack({ sim, x, tick_hs, now_h, max_h, hover, setHover }: TrackProps) {
+function DifferentialTrack({ sim, x, tick_hs, now_h, max_h, hover, setHover, onZoom, tall }: TrackProps) {
   const limit_c = sim.breaches.cracking_limit_c;
   const D_MAX =
     Math.ceil((Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c) * 1.2) / 5) * 5;
@@ -403,8 +484,10 @@ function DifferentialTrack({ sim, x, tick_hs, now_h, max_h, hover, setHover }: T
 
   return (
     <Track
-      title="Core–surface differential"
+      id="differential"
       unit="ΔT °C"
+      onZoom={onZoom}
+      tall={tall}
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
