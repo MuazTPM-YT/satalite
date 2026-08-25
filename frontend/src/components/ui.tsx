@@ -169,13 +169,15 @@ export function ToolbarButton({
   icon: Icon,
   children,
   onClick,
-  active = false,
+  active,
   title,
   disabled,
 }: {
   icon?: Icon;
   children: ReactNode;
   onClick?: () => void;
+  /** Only pass this on a control that really has an on/off state. Leaving it out is
+      what makes a plain action button stop announcing itself as a pressed toggle. */
   active?: boolean;
   title?: ReactNode;
   disabled?: boolean;
@@ -188,7 +190,7 @@ export function ToolbarButton({
         type="button"
         onClick={onClick}
         disabled={disabled}
-        aria-pressed={onClick && active !== undefined ? active : undefined}
+        aria-pressed={active}
         className={cx(
           "flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium",
           active
@@ -212,13 +214,17 @@ export function ToolbarToggle({
   icon: Icon,
   label,
   onClick,
-  active = false,
+  active,
   disabled,
   hint,
 }: {
   icon: Icon;
   label: string;
   onClick?: () => void;
+  /** Only pass this on a control that really has an on/off state. Most of these are
+      actions - zoom, fit, close, the transport - and an action that reports
+      aria-pressed="false" tells a screen reader it is an unpressed toggle, which is a
+      lie about what the control does. */
   active?: boolean;
   disabled?: boolean;
   /** a second line under the name — what the control is for, not what it is called */
