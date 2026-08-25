@@ -8,10 +8,39 @@
 "use client";
 
 import type { ValidationCase, ValidationResponse } from "@/lib/api";
-import { SectionLabel } from "@/components/ui";
+import { SectionLabel, SectionTitle } from "@/components/ui";
+import { useTooltip } from "@/components/Tooltip";
 
 interface ValidationPanelProps {
   validation: ValidationResponse;
+}
+
+/** One coverage checkpoint: whether the measurement fell inside the predicted band. */
+function Checkpoint({ inside, at_h, index }: { inside: boolean; at_h?: number; index: number }) {
+  const tip = useTooltip(
+    at_h === undefined ? null : (
+      <>
+        <span className="block font-mono tabular-nums">{at_h} h after placement</span>
+        <span className={inside ? "text-status-green" : "text-status-red"}>
+          measured {inside ? "inside" : "outside"} the predicted band
+        </span>
+      </>
+    ),
+    "top",
+  );
+  return (
+    <>
+      <span
+        {...tip.trigger}
+        className={`rounded-sm px-1 text-[9px] ${
+          inside ? "bg-status-green-dim text-status-green" : "bg-status-red-dim text-status-red"
+        }`}
+      >
+        {at_h !== undefined ? `${at_h}h` : index + 1}
+      </span>
+      {tip.node}
+    </>
+  );
 }
 
 export default function ValidationPanel({ validation }: ValidationPanelProps) {
@@ -156,19 +185,9 @@ function CaseCard({ c, warn_c }: { c: ValidationCase; warn_c: number | null }) {
             {cov.n_inside} of {cov.n_checkpoints} checkpoint{cov.n_checkpoints === 1 ? "" : "s"}
           </span>
           {cov.inside && (
-            <span className="flex gap-1">
+            <span className="flex flex-wrap gap-1">
               {cov.inside.map((ok, i) => (
-                <span
-                  key={i}
-                  title={
-                    b?.checkpoints_h ? `${b.checkpoints_h[i]} h: ${ok ? "inside" : "outside"}` : undefined
-                  }
-                  className={`px-1 rounded-sm text-[9px] ${
-                    ok ? "bg-status-green-dim text-status-green" : "bg-status-red-dim text-status-red"
-                  }`}
-                >
-                  {b?.checkpoints_h ? `${b.checkpoints_h[i]}h` : i + 1}
-                </span>
+                <Checkpoint key={i} inside={ok} at_h={b?.checkpoints_h?.[i]} index={i} />
               ))}
             </span>
           )}
@@ -313,11 +332,3 @@ function Fragment({ label, value, warn }: { label: string; value: string; warn?:
   );
 }
 
-function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="flex items-baseline gap-2 mb-1">
-      <SectionLabel>{title}</SectionLabel>
-      <span className="text-[10px] text-text-muted">{subtitle}</span>
-    </div>
-  );
-}

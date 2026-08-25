@@ -13,9 +13,10 @@ import TopBar from "@/components/TopBar";
 import type { ViewMode } from "@/components/TopBar";
 import LeftPanel from "@/components/LeftPanel";
 import type { IfcUiState } from "@/components/LeftPanel";
-import Viewer from "@/components/Viewer";
+import dynamic from "next/dynamic";
 import Section2D from "@/components/Section2D";
 import ChecksPanel from "@/components/ChecksPanel";
+import ProbeCard from "@/components/ProbeCard";
 import TimeScrubber from "@/components/TimeScrubber";
 import HistoryChart from "@/components/HistoryChart";
 import PourWindowTable from "@/components/PourWindowTable";
@@ -41,28 +42,51 @@ import {
   loadPourWindows,
   loadSeason,
   loadValidation,
+  requestKey as stableKey,
   scaleBounds,
   demoScenario,
 } from "@/lib/scenario";
 import {
   DEFAULT_ELEMENT_CONFIG,
+  configFromRequest,
   defaultDims,
   lengthM,
   toSimulationRequest,
   type ElementConfig,
 } from "@/lib/elementConfig";
+import { probeGeometry } from "@/lib/sectionMetrics";
+import type { ProbePick } from "@/lib/probe";
 import { clampDims, type Outline, type ShapeId } from "@/lib/shapes";
-import { importIfcOutline } from "@/lib/ifcImport";
 import type { LengthUnit } from "@/lib/units";
+
+// three.js, @react-three/fiber and drei are about a megabyte of the bundle, and the
+// studio opens in 2D. Loading them on demand means the sheet is interactive without
+// ever paying for a WebGL renderer the reader may not open. `ssr: false` because there
+// is no canvas to render on the server, and the fallback is the same spinner the first
+// solve uses so switching views does not introduce a second loading vocabulary.
+const Viewer = dynamic(() => import("@/components/Viewer"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3">
+      <span className="h-5 w-5 animate-spin rounded-full border-2 border-border-strong border-t-accent-blue" />
+      <p className="text-xs text-text-secondary">Loading the 3D viewer…</p>
+    </div>
+  ),
+});
 
 // Spawn x for a palette that should open against the RIGHT edge. clampGeo pulls any
 // overshoot back to `width - w - margin`, so asking for "further right than possible"
 // is how a palette says "dock me right" without knowing the viewport.
 const DOCK_RIGHT = 100_000;
+// and the same trick downward, for a palette that belongs at the foot of the viewer
+const DOCK_BOTTOM = 100_000;
 
 // where each palette opens before first drag/resize
 const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }> = {
   element: { x: 16, y: 16, w: 340, h: 600, minW: 300, minH: 260 },
+  // Bottom-left, which is the one corner nothing else claims. Docking it to the right
+  // put it exactly on top of Checks, which opens there by default.
+  probe: { x: 16, y: DOCK_BOTTOM, w: 300, h: 336, minW: 260, minH: 150 },
   checks: { x: DOCK_RIGHT, y: 16, w: 316, h: 600, minW: 268, minH: 240 },
   pour: { x: 380, y: 340, w: 860, h: 300, minW: 420, minH: 200 },
   ensemble: { x: 60, y: 60, w: 940, h: 700, minW: 620, minH: 360 },
@@ -102,7 +126,13 @@ export default function StudioPage() {
 
   const [importedOutline, setImportedOutline] = useState<Outline | null>(null);
   const [ifcUi, setIfcUi] = useState<IfcUiState>({ busy: false, error: null, name: null });
+  // The inputs, and the scenario they opened on.
+  //
+  // Both come from the artifact rather than from constants typed here: `scenarioConfig`
+  // is what every Reset control returns to, so "reset" means "back to the scenario the
+  // backend actually solved" and not "back to a number somebody once copied".
   const [config, setConfig] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
+  const [scenarioConfig, setScenarioConfig] = useState<ElementConfig>(DEFAULT_ELEMENT_CONFIG);
 
   const [frameIndex, setFrameIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("2d");
@@ -112,6 +142,7 @@ export default function StudioPage() {
   // is hidden by starting closed.
   const [openPanels, setOpenPanels] = useState<Record<PanelId, boolean>>({
     element: false,
+    probe: false,
     checks: true,
     pour: false,
     ensemble: false,
@@ -119,6 +150,17 @@ export default function StudioPage() {
     validation: false,
   });
   const [units, setUnits] = useState<LengthUnit>("m");
+
+  // The probe lives HERE, not in a viewer.
+  //
+  // It used to be a popup anchored at the click inside each viewer - two copies of the
+  // same state, each covering the drawing it was describing, and neither reachable
+  // once it was dismissed. As one palette launched from the command bar it is parked
+  // where the reader wants it, survives switching between 2D and 3D, and there is one
+  // answer on screen rather than two that can disagree.
+  const [pick, setPick] = useState<ProbePick | null>(null);
+  const [showDistances, setShowDistances] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
 
   // The surface palettes are bounded to, and its measured size. The page owns the
   // measurement so every palette re-clamps off the same numbers at the same moment.
@@ -131,7 +173,9 @@ export default function StudioPage() {
     () => (ambient ? toSimulationRequest(config, ambient) : null),
     [config, ambient],
   );
-  const requestKey = useMemo(() => (request ? JSON.stringify(request) : null), [request]);
+  // Order-independent, so a request rebuilt from the inputs matches the identical one
+  // the backend sent back rather than differing by pydantic's field order.
+  const requestKey = useMemo(() => (request ? stableKey(request) : null), [request]);
   const stale = requestKey !== null && run !== null && requestKey !== run.key;
 
   // Drop a response whose request has already been superseded. Without this, releasing
@@ -204,6 +248,11 @@ export default function StudioPage() {
         if (!live) return;
         setDemo(d);
         setAmbient(d.scenario.ambient);
+        // Open on the scenario the artifact was solved for. Every input follows from
+        // the response, so a regenerated artifact moves the studio with it.
+        const seeded = configFromRequest(d.scenario);
+        setScenarioConfig(seeded);
+        setConfig(seeded);
       })
       .catch((err: unknown) => {
         if (!live) return;
@@ -335,12 +384,15 @@ export default function StudioPage() {
     }));
   }, []);
 
+  // The IFC reader is loaded when a file is chosen, not before. web-ifc is the
+  // largest dependency in the project by a wide margin and most sessions never open
+  // an IFC at all, so it has no business in the bundle that draws the first frame.
   const handleImportIfc = useCallback((file: File) => {
     setIfcUi({ busy: true, error: null, name: null });
     setOpenPanels((prev) => ({ ...prev, element: true }));
     file
       .arrayBuffer()
-      .then(importIfcOutline)
+      .then(async (buf) => (await import("@/lib/ifcImport")).importIfcOutline(buf))
       .then((outcome) => {
         if (!outcome.ok) {
           setIfcUi({ busy: false, error: `${file.name}: ${outcome.error}`, name: null });
@@ -380,16 +432,37 @@ export default function StudioPage() {
 
   // The precomputed band describes ONE fixed scenario. Once the inputs move off it,
   // the band is no longer a band for the run on screen and has to say so.
-  const demoKey = useMemo(
-    () => (demo ? JSON.stringify(demo.scenario) : null),
-    [demo],
-  );
-  const matchesDemo = demoKey !== null && run !== null && demoKey === JSON.stringify(run.request);
+  const demoKey = useMemo(() => (demo ? stableKey(demo.scenario) : null), [demo]);
+  const matchesDemo = demoKey !== null && run !== null && demoKey === stableKey(run.request);
 
   // a sweep is only shown beside the run it was computed for.
   const pourReady = pour && run && pour.key === run.key ? pour : null;
 
   const length_m = lengthM(config);
+
+  // Distances are measured against the SOLVED outline, once, for both viewers - so
+  // the 2D sheet, the 3D scene and the readout cannot cite three different geometries.
+  const pickGeometry = useMemo(
+    () => (run && pick && pick.isSection ? probeGeometry(run.result.outline_m, pick.section_m) : null),
+    [run, pick],
+  );
+
+  // A reading belongs to the run it was taken from. A new solve moves the field out
+  // from under it, so the number in the palette would be a temperature from the
+  // previous answer. Adjusting during render rather than in an effect is React's
+  // documented pattern for reacting to changed state, and it avoids painting the
+  // stale reading once before clearing it.
+  const [pickedFrom, setPickedFrom] = useState<string | null>(null);
+  if (run && run.key !== pickedFrom) {
+    setPickedFrom(run.key);
+    if (pick) setPick(null);
+  }
+
+  // reading the probe is the moment the palette is worth opening
+  const handlePick = useCallback((next: ProbePick | null) => {
+    setPick(next);
+    if (next) setOpenPanels((prev) => (prev.probe ? prev : { ...prev, probe: true }));
+  }, []);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -433,6 +506,12 @@ export default function StudioPage() {
                 scale_max_c={bounds?.max_c}
                 length_m={length_m}
                 units={units}
+                pick={pick}
+                onPick={handlePick}
+                geometry={pickGeometry}
+                showLabels={showLabels}
+                onToggleLabels={() => setShowLabels((v) => !v)}
+                showDistances={showDistances}
               />
             ) : (
               <Section2D
@@ -440,6 +519,14 @@ export default function StudioPage() {
                 frameIndex={frameIndex}
                 length_m={length_m}
                 units={units}
+                scale_min_c={bounds?.min_c}
+                scale_max_c={bounds?.max_c}
+                pick={pick}
+                onPick={handlePick}
+                geometry={pickGeometry}
+                showLabels={showLabels}
+                onToggleLabels={() => setShowLabels((v) => !v)}
+                showDistances={showDistances}
               />
             )}
 
@@ -473,6 +560,7 @@ export default function StudioPage() {
               >
                 <LeftPanel
                   config={config}
+                  defaults={scenarioConfig}
                   onChange={updateConfig}
                   onDimChange={updateDim}
                   onCommit={commit}
@@ -486,6 +574,37 @@ export default function StudioPage() {
                   onSolve={solveNow}
                 />
               </FloatingPanel>
+
+              {run && (
+                <FloatingPanel
+                  title="Probe"
+                  open={openPanels.probe}
+                  containerSize={overlaySize}
+                  defaultGeo={PANEL_GEO.probe}
+                  minWidth={PANEL_GEO.probe.minW}
+                  minHeight={PANEL_GEO.probe.minH}
+                  onClose={() => closePanel("probe")}
+                >
+                  <ProbeCard
+                    pick={pick}
+                    geometry={pickGeometry}
+                    units={units}
+                    showDistances={showDistances}
+                    onToggleDistances={() => setShowDistances((v) => !v)}
+                    showLabels={showLabels}
+                    onToggleLabels={() => setShowLabels((v) => !v)}
+                    footer={
+                      <>
+                        backend probe_xy_m [{run.result.probe_xy_m[0].toFixed(3)},{" "}
+                        {run.result.probe_xy_m[1].toFixed(3)}] m
+                        <br />
+                        peak_core_temp_c {run.result.peak_core_temp_c.toFixed(2)} °C at{" "}
+                        {run.result.peak_core_time_h.toFixed(1)} h
+                      </>
+                    }
+                  />
+                </FloatingPanel>
+              )}
 
               {run && (
                 <FloatingPanel
@@ -579,7 +698,7 @@ export default function StudioPage() {
                   </div>
                 ) : (
                   <p className="p-3 text-[11px] text-text-secondary">
-                    Sweeping candidate start hours for these inputs — six solves.
+                    Sweeping candidate start hours for these inputs. One full solve each.
                   </p>
                 )}
               </FloatingPanel>

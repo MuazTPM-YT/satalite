@@ -8,7 +8,7 @@
 
 import type { SeasonAnalysisResponse, SeasonHourStats } from "@/lib/api";
 import { wilson, countFromPct } from "@/lib/stats";
-import { SectionLabel } from "@/components/ui";
+import { SectionLabel, SectionTitle } from "@/components/ui";
 
 interface SeasonPanelProps {
   season: SeasonAnalysisResponse;
@@ -334,11 +334,3 @@ function Fragmented({ label, value }: { label: string; value: number }) {
   );
 }
 
-function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="flex items-baseline gap-2 mb-1">
-      <SectionLabel>{title}</SectionLabel>
-      <span className="text-[10px] text-text-muted">{subtitle}</span>
-    </div>
-  );
-}

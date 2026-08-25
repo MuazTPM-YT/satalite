@@ -35,16 +35,27 @@ tested and reviewed in isolation from the web layer.
 
 ## Setup
 
+Two env files, and they are not interchangeable. The backend reads the one at the repo
+root; Next only ever reads files under `frontend/`, so a `NEXT_PUBLIC_*` written at the
+root is inert.
+
 ```bash
-cp .env.example .env      # then put your FortyGuard API key in it
+cp .env.example .env                                # backend: API key, cache, CORS
+cp frontend/.env.local.example frontend/.env.local  # frontend: which backend to call
 ```
 
-The backend refuses to start without `FORTYGUARD_API_KEY`. That is deliberate — a missing
-key fails loudly at startup rather than as a confusing 401 on the first request.
+Put your FortyGuard key in `.env`. The backend refuses to start without
+`FORTYGUARD_API_KEY` — a missing key fails loudly at startup rather than as a confusing
+401 on the first request.
 
 Requires Python 3.12 (fetched automatically by [uv](https://docs.astral.sh/uv/)) and Node 20+.
 
-## Start backend
+## Run it
+
+Two processes, two terminals. Start the backend first — the studio's first paint is a
+solve, so a frontend with no backend behind it shows the error rather than a drawing.
+
+**Terminal 1 — backend on :8000**
 
 ```bash
 cd backend
@@ -55,7 +66,7 @@ uv run uvicorn app.main:app --reload --port 8000
 Health check: <http://localhost:8000/api/health> → `{"status":"ok","version":"0.1.0"}`
 Interactive API docs: <http://localhost:8000/docs>
 
-## Start frontend
+**Terminal 2 — frontend on :3000**
 
 ```bash
 cd frontend
@@ -63,8 +74,42 @@ npm install
 npm run dev
 ```
 
-<http://localhost:3000>. It reads `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
-With the backend up, the landing page shows `Backend: ok (v0.1.0)`.
+Open <http://localhost:3000>. With the backend up, the status dot at the right of the
+command bar is green, and hovering it names the version and the origin it reached. Red
+means the fetch failed, and the tooltip carries the reason verbatim — a CORS block and a
+dead backend look identical otherwise, and they need different fixes.
+
+### The two ports have to agree
+
+`ALLOWED_ORIGINS` in `.env` defaults to `http://localhost:3000,http://127.0.0.1:3000`,
+and the browser blocks a cross-origin fetch the server has not named. So if you move
+either side, move both:
+
+```bash
+# frontend somewhere else? name it on the backend.
+ALLOWED_ORIGINS=http://localhost:3001
+
+# backend somewhere else? name it in frontend/.env.local, and REBUILD if not in dev.
+NEXT_PUBLIC_API_URL=http://localhost:8001
+```
+
+Next 16 also holds a one-dev-server lock per directory: a second `npm run dev` from
+`frontend/` refuses and prints the port and PID of the one already running.
+
+### Production build
+
+`NEXT_PUBLIC_*` is inlined at **build** time, so both must be set before `next build` —
+editing `.env.local` afterwards changes nothing:
+
+```bash
+cd frontend
+npm run build
+npm start                 # serves the built app on :3000
+```
+
+`NEXT_PUBLIC_SITE_URL` (default `http://localhost:3000`) is read only by the metadata:
+the canonical URL, Open Graph, `robots.txt` and `sitemap.xml` are all absolute, and a
+crawler cannot resolve a relative one.
 
 ## Checks
 
@@ -77,7 +122,7 @@ uv run mypy physics app     # strict on physics/, lenient elsewhere
 uv run pytest -v
 ```
 
-Expect `159 passed`. `validation/` is deliberately outside `testpaths` — it runs real
+Expect `203 passed`. `validation/` is deliberately outside `testpaths` — it runs real
 measured cases and is invoked on purpose:
 
 ```bash
@@ -91,6 +136,28 @@ cd frontend
 npm run lint
 npx tsc --noEmit
 npm run build
+```
+
+The studio also carries self-checks in `frontend/src/lib/`. They are plain scripts, not a
+test framework — run the one you want:
+
+```bash
+cd frontend
+npx tsx src/lib/test_scenario.ts          # candidate start hours, config round trip
+npx tsx src/lib/test_section_metrics.ts   # probe distances, cut volumes, elevations
+npx tsx src/lib/test_probe.ts             # the probe stencil, against the backend's
+npx tsx src/lib/test_extrude.ts           # the extrusion carries no gradient along z
+npx tsx src/lib/test_stats.ts             # Wilson interval at 0/n and n/n
+```
+
+The `*_live.ts` ones need the backend up, and are how the frontend proves its claims
+against real responses rather than against fixtures:
+
+```bash
+npx tsx src/lib/test_studio_live.ts       # the studio opens on the artifact's scenario
+npx tsx src/lib/test_probe_live.ts        # viewer and solver agree on the same point
+npx tsx src/lib/test_shapes_live.ts       # all eight shapes, vertex for vertex
+npx tsx src/lib/test_ensemble_live.ts     # nominal under the limit, tail across it
 ```
 
 ## Precomputed answers
@@ -116,6 +183,10 @@ so a 92-day season is roughly 388,000 of a ~2,000,000 credit budget. The fetch i
 resumable and checks the cache before every call. Do not run it casually.
 
 ## Docker
+
+The image is the **backend only**. The frontend is a Next build served however you like
+— see [Production build](#production-build) — and whatever origin it ends up on has to
+be named in `ALLOWED_ORIGINS` below.
 
 The build context is the **repository root**, not `backend/` — `docs/` holds the
 validation report the API serves, and it lives outside `backend/`:

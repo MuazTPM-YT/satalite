@@ -11,13 +11,16 @@ import type { Outline } from "@/lib/shapes";
 /** Which way a face looks, taken from the polygon's own outward normal. */
 export type Facing = "top" | "soffit" | "left" | "right" | "skew";
 
-export interface EdgeDistance {
+/**
+ * One edge of the section, named and oriented.
+ *
+ * This half of an edge depends only on the polygon, so the LABEL LAYER can be drawn
+ * without a probe: the letters on the section are a property of the section, not of
+ * wherever the reader happened to click last.
+ */
+export interface EdgeFeature {
   /** index of the polygon edge, so a caller can highlight the one it means */
   index: number;
-  /** perpendicular distance to the segment, metres */
-  distance_m: number;
-  /** the closest point ON that edge, metres */
-  at: [number, number];
   /** which way the edge runs, for a human-readable label */
   orientation: "horizontal" | "vertical" | "skew";
   /**
@@ -33,6 +36,15 @@ export interface EdgeDistance {
   to: [number, number];
   /** unit outward normal, for placing the tag on the outside of the section */
   normal: [number, number];
+  /** the segment's midpoint, metres — where a label with no probe to aim at sits */
+  mid: [number, number];
+}
+
+export interface EdgeDistance extends EdgeFeature {
+  /** perpendicular distance to the segment, metres */
+  distance_m: number;
+  /** the closest point ON that edge, metres */
+  at: [number, number];
 }
 
 /** The letter drawn on edge `i`. Past Z it carries a digit rather than repeating. */
@@ -51,10 +63,31 @@ export const FACING_LABEL: Record<Facing, string> = {
   skew: "sloped face",
 };
 
-export interface CornerDistance {
+export interface CornerFeature {
   index: number;
-  distance_m: number;
   at: [number, number];
+  /**
+   * The corner's name on the drawing: 1, 2, 3 … derived from `index` alone, the same
+   * way `tag` names an edge. The readout used to print "Corner 3" from the array
+   * position after sorting by distance, which is a different number every time the
+   * probe moves and matches nothing drawn anywhere.
+   */
+  tag: string;
+  /**
+   * Unit vector pointing OUT of the section at this vertex — the average of the two
+   * adjoining edge normals. It is where the corner's number goes, so the digit sits
+   * clear of the concrete instead of on top of it.
+   */
+  normal: [number, number];
+}
+
+export interface CornerDistance extends CornerFeature {
+  distance_m: number;
+}
+
+/** The number drawn on corner `i`. One-based, because drawings are. */
+export function cornerTag(index: number): string {
+  return String(index + 1);
 }
 
 export interface ProbeGeometry {
@@ -134,30 +167,66 @@ function facingOf(normal: [number, number]): Facing {
   return "skew";
 }
 
-/** Every edge and corner distance from one point, nearest first. */
-export function probeGeometry(outline: Outline, point: [number, number]): ProbeGeometry {
+/**
+ * The section's own edges and corners, in polygon order.
+ *
+ * No probe involved: this is what the label layer draws. Both viewers call it, so a
+ * letter means the same edge in the 2D sheet and in the 3D scene by construction
+ * rather than by two implementations agreeing.
+ */
+export function sectionFeatures(outline: Outline): {
+  edges: EdgeFeature[];
+  corners: CornerFeature[];
+} {
   const ccw = signedArea2(outline) > 0;
-  const edges: EdgeDistance[] = outline.map((a, i) => {
-    const b = outline[(i + 1) % outline.length];
-    const { at, distance_m } = closestOnSegment(point, a, b);
+  const n = outline.length;
+
+  const edges: EdgeFeature[] = outline.map((a, i) => {
+    const b = outline[(i + 1) % n];
     const normal = outwardNormal(a, b, ccw);
     return {
       index: i,
-      distance_m,
-      at,
       orientation: orientationOf(a, b),
       tag: edgeTag(i),
       facing: facingOf(normal),
-      from: [a[0], a[1]],
-      to: [b[0], b[1]],
+      from: [a[0], a[1]] as [number, number],
+      to: [b[0], b[1]] as [number, number],
       normal,
+      mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2] as [number, number],
     };
   });
 
-  const corners: CornerDistance[] = outline.map((c, i) => ({
-    index: i,
-    at: [c[0], c[1]] as [number, number],
-    distance_m: Math.hypot(point[0] - c[0], point[1] - c[1]),
+  // A vertex's outward direction is the average of the two edges meeting there. On a
+  // right angle that is the diagonal, which is exactly where the number belongs.
+  const corners: CornerFeature[] = outline.map((c, i) => {
+    const prev = edges[(i - 1 + n) % n].normal;
+    const next = edges[i].normal;
+    const nx = prev[0] + next[0];
+    const ny = prev[1] + next[1];
+    const len = Math.hypot(nx, ny);
+    return {
+      index: i,
+      at: [c[0], c[1]] as [number, number],
+      tag: cornerTag(i),
+      normal: (len === 0 ? [0, 0] : [nx / len, ny / len]) as [number, number],
+    };
+  });
+
+  return { edges, corners };
+}
+
+/** Every edge and corner distance from one point, nearest first. */
+export function probeGeometry(outline: Outline, point: [number, number]): ProbeGeometry {
+  const { edges: features, corners: vertices } = sectionFeatures(outline);
+
+  const edges: EdgeDistance[] = features.map((e) => {
+    const { at, distance_m } = closestOnSegment(point, e.from, e.to);
+    return { ...e, at, distance_m };
+  });
+
+  const corners: CornerDistance[] = vertices.map((c) => ({
+    ...c,
+    distance_m: Math.hypot(point[0] - c.at[0], point[1] - c.at[1]),
   }));
 
   const xs = outline.map((p) => p[0]);

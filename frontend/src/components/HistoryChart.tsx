@@ -14,10 +14,10 @@
 // live on the same scale.
 "use client";
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, Maximize2, X } from "lucide-react";
 import type { SimulationResult, TrippedBy } from "@/lib/api";
-import { SectionLabel, cx } from "@/components/ui";
+import { SectionLabel, ToolbarToggle, cx } from "@/components/ui";
 
 interface HistoryChartProps {
   sim: SimulationResult;
@@ -42,12 +42,47 @@ const STRENGTH = "#00a99c";
 const LIMIT = "#e5484d";
 const MEASURED = "#c2933c";
 
-const W = 520;
-const H = 168;
-const ML = 40;
-const MR = 12;
-const MT = 12;
-const MB = 24;
+/**
+ * A plot's own coordinate system.
+ *
+ * The dock and the expanded panel draw the same tracks at two very different sizes,
+ * and a single viewBox could not serve both: scaling a 520-unit box up to fill the
+ * screen scales its 9-unit type with it, and the threshold caption came out three
+ * times the height of the axis numbers. Two geometries, one set of drawing code —
+ * the type is sized in the box it is drawn in.
+ */
+interface Geom {
+  W: number;
+  H: number;
+  ML: number;
+  MR: number;
+  MT: number;
+  MB: number;
+  /** axis and annotation type size, in this box's own units */
+  font: number;
+  /** curve stroke width, likewise */
+  stroke: number;
+  /** hover marker radius */
+  dot: number;
+}
+
+const DOCK: Geom = { W: 520, H: 168, ML: 40, MR: 12, MT: 12, MB: 24, font: 9, stroke: 2, dot: 3.5 };
+const FULL: Geom = { W: 1240, H: 560, ML: 76, MR: 28, MT: 28, MB: 52, font: 13, stroke: 3, dot: 5 };
+
+/** The three panels, by the quantity each one plots. */
+export type TrackId = "temperature" | "strength" | "differential";
+
+const TRACK_TITLE: Record<TrackId, string> = {
+  temperature: "Temperature",
+  strength: "Strength fraction",
+  differential: "Core–surface differential",
+};
+
+const TRACK_UNIT: Record<TrackId, string> = {
+  temperature: "°C",
+  strength: "% of f'c",
+  differential: "ΔT °C",
+};
 
 const GRID = "rgba(255,255,255,0.06)";
 const AXIS = "rgba(255,255,255,0.22)";
@@ -58,9 +93,19 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
   // hover time in hours, or null. Shared across all three panels so one pointer
   // reads every quantity at the same instant.
   const [hover, setHover] = useState<number | null>(null);
+  // Which panel, if any, is filling the screen.
+  //
+  // The dock gives each track about 150 px of height, which is enough to see the
+  // shape of a curve and not enough to read a crossing off it. Expanding re-renders
+  // the SAME track into the whole viewport - the viewBox does the zooming, so every
+  // annotation, threshold and tick grows with it rather than staying at dock size on
+  // a bigger picture.
+  const [zoomed, setZoomed] = useState<TrackId | null>(null);
 
   const max_h = sim.times_h[sim.times_h.length - 1] ?? 0;
-  const x = (h: number) => ML + (max_h > 0 ? h / max_h : 0) * (W - ML - MR);
+  // Time to x, in whichever box the track is being drawn in.
+  const xIn = (g: Geom) => (h: number) =>
+    g.ML + (max_h > 0 ? h / max_h : 0) * (g.W - g.ML - g.MR);
 
   // the "now" marker lives on the FIELD frame cadence; map it back to the full series
   const seriesIdx = sim.fields
@@ -81,7 +126,17 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
           0,
         );
 
-  const track = { x, tick_hs, now_h, hover, hoverIdx, setHover, max_h, sim };
+  const track = { xIn, tick_hs, now_h, hover, hoverIdx, setHover, max_h, sim };
+
+  // Escape closes the expanded panel, the way it closes every other transient
+  // surface in the studio.
+  const close = useCallback(() => setZoomed(null), []);
+  useEffect(() => {
+    if (!zoomed) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [zoomed, close]);
 
   return (
     <section className="shrink-0 border-t border-border-default bg-bg-surface">
@@ -117,10 +172,18 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
 
       {open && (
         <>
-          <div className="grid grid-cols-1 gap-px border-t border-border-default bg-border-default lg:grid-cols-3">
-            <TemperatureTrack {...track} />
-            <StrengthTrack {...track} />
-            <DifferentialTrack {...track} />
+          {/* Three across on a wide screen. Narrower, they SCROLL sideways rather
+              than stacking: stacked, the dock was 570 px of a 656 px window and the
+              viewer it annotates had nothing left to be. */}
+          <div
+            className={cx(
+              "flex snap-x snap-mandatory gap-px overflow-x-auto border-t border-border-default bg-border-default",
+              "lg:grid lg:grid-cols-3 lg:overflow-x-visible",
+            )}
+          >
+            <TemperatureTrack {...track} onZoom={setZoomed} />
+            <StrengthTrack {...track} onZoom={setZoomed} />
+            <DifferentialTrack {...track} onZoom={setZoomed} />
           </div>
 
           {/* why each flag reads the way it does, in the response's own terms */}
@@ -140,6 +203,40 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
           </div>
         </>
       )}
+
+      {/* The expanded panel. A backdrop rather than a palette: this is one thing to
+          read, not one more surface to arrange, and it goes away on Escape, on the
+          close button, or on a click outside the plot. */}
+      {zoomed && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${TRACK_TITLE[zoomed]} — expanded`}
+          onClick={close}
+          className="fixed inset-0 z-[900] flex flex-col bg-bg-primary/90 p-4 backdrop-blur-sm sm:p-8"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-default bg-bg-surface shadow-2xl shadow-black/60"
+          >
+            <div className="flex shrink-0 items-center gap-3 border-b border-border-default bg-elevate-1 px-4 py-2">
+              <SectionLabel>{TRACK_TITLE[zoomed]}</SectionLabel>
+              <span className="font-mono text-[10px] text-text-muted">{TRACK_UNIT[zoomed]}</span>
+              <div className="ml-auto flex items-center gap-4">
+                <span className="hidden font-mono text-[10px] tabular-nums text-text-muted sm:inline">
+                  0 – {max_h.toFixed(0)} h after placement
+                </span>
+                <ToolbarToggle icon={X} label="Close the expanded chart" onClick={close} />
+              </div>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col p-2">
+              {zoomed === "temperature" && <TemperatureTrack {...track} tall />}
+              {zoomed === "strength" && <StrengthTrack {...track} tall />}
+              {zoomed === "differential" && <DifferentialTrack {...track} tall />}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -148,43 +245,82 @@ export default function HistoryChart({ sim, frameIndex }: HistoryChartProps) {
 
 interface TrackProps {
   sim: SimulationResult;
-  x: (h: number) => number;
+  /** time to x, bound to the box the track is about to be drawn in */
+  xIn: (g: Geom) => (h: number) => number;
   tick_hs: number[];
   now_h: number;
   max_h: number;
   hover: number | null;
   hoverIdx: number | null;
   setHover: (h: number | null) => void;
+  /** offered in the dock, absent in the expanded copy — it is already expanded */
+  onZoom?: (id: TrackId) => void;
+  /** render at full height rather than at dock height */
+  tall?: boolean;
 }
 
 /** A titled panel with a readout slot, wrapping one plot. */
 function Track({
-  title,
-  unit,
+  id,
   readout,
   children,
   onHover,
   onLeave,
+  onZoom,
+  tall,
 }: {
-  title: string;
-  unit: string;
+  id: TrackId;
   readout?: React.ReactNode;
   children: React.ReactNode;
   onHover: (e: React.PointerEvent<SVGSVGElement>) => void;
   onLeave: () => void;
+  onZoom?: (id: TrackId) => void;
+  tall?: boolean;
 }) {
+  const title = TRACK_TITLE[id];
+  const unit = TRACK_UNIT[id];
+  const g = tall ? FULL : DOCK;
   return (
-    <div className="min-w-0 bg-bg-surface px-3 pb-1 pt-2">
-      <div className="mb-0.5 flex items-baseline gap-2">
-        <SectionLabel>{title}</SectionLabel>
-        <span className="font-mono text-[9px] text-text-muted">{unit}</span>
-        <span className="ml-auto truncate font-mono text-[10px] tabular-nums text-text-primary">
+    <div
+      className={cx(
+        "flex flex-col bg-bg-surface px-3 pb-1 pt-2",
+        tall
+          ? "min-h-0 flex-1"
+          // basis-0 + grow so the three share the row evenly once they are a grid,
+          // and a floor wide enough that a scrolled one is still a readable plot.
+          : "w-[min(100%,26rem)] shrink-0 snap-start lg:w-auto lg:min-w-0",
+      )}
+    >
+      {/* Expanded, the dialog's own header already names the plot and its unit, so
+          this row keeps only the readout — at a size that belongs to the picture it
+          is annotating rather than to the dock it came from. */}
+      <div className="mb-0.5 flex shrink-0 items-center gap-2">
+        {!tall && (
+          <>
+            <SectionLabel>{title}</SectionLabel>
+            <span className="font-mono text-[9px] text-text-muted">{unit}</span>
+          </>
+        )}
+        <span
+          className={cx(
+            "ml-auto min-w-0 truncate font-mono tabular-nums text-text-primary",
+            tall ? "text-[13px]" : "text-[10px]",
+          )}
+        >
           {readout}
         </span>
+        {onZoom && (
+          <ToolbarToggle
+            icon={Maximize2}
+            label={`Expand ${title.toLowerCase()}`}
+            hint="Fill the screen with this plot. Escape closes it."
+            onClick={() => onZoom(id)}
+          />
+        )}
       </div>
       <svg
-        viewBox={`0 0 ${W} ${H}`}
-        className="h-[150px] w-full touch-none"
+        viewBox={`0 0 ${g.W} ${g.H}`}
+        className={cx("w-full touch-none", tall ? "min-h-0 flex-1" : "h-[150px]")}
         preserveAspectRatio="xMidYMid meet"
         onPointerMove={onHover}
         onPointerLeave={onLeave}
@@ -204,33 +340,42 @@ function Frame({
   fmt,
   tick_hs,
   x,
+  g,
 }: {
   ticks: number[];
   y: (v: number) => number;
   fmt: (v: number) => string;
   tick_hs: number[];
   x: (h: number) => number;
+  g: Geom;
 }) {
   return (
     <>
       {ticks.map((t) => (
         <g key={t}>
-          <line x1={ML} y1={y(t)} x2={W - MR} y2={y(t)} stroke={GRID} />
-          <text x={ML - 6} y={y(t) + 3} textAnchor="end" fontSize="9" fill={INK} fontFamily="var(--font-mono)">
+          <line x1={g.ML} y1={y(t)} x2={g.W - g.MR} y2={y(t)} stroke={GRID} />
+          <text
+            x={g.ML - g.font * 0.7}
+            y={y(t) + g.font / 3}
+            textAnchor="end"
+            fontSize={g.font}
+            fill={INK}
+            fontFamily="var(--font-mono)"
+          >
             {fmt(t)}
           </text>
         </g>
       ))}
-      <line x1={ML} y1={MT} x2={ML} y2={H - MB} stroke={AXIS} />
-      <line x1={ML} y1={H - MB} x2={W - MR} y2={H - MB} stroke={AXIS} />
+      <line x1={g.ML} y1={g.MT} x2={g.ML} y2={g.H - g.MB} stroke={AXIS} />
+      <line x1={g.ML} y1={g.H - g.MB} x2={g.W - g.MR} y2={g.H - g.MB} stroke={AXIS} />
       {tick_hs.map((h) => (
         <g key={h}>
-          <line x1={x(h)} y1={H - MB} x2={x(h)} y2={H - MB + 4} stroke={AXIS} />
+          <line x1={x(h)} y1={g.H - g.MB} x2={x(h)} y2={g.H - g.MB + g.font * 0.45} stroke={AXIS} />
           <text
             x={x(h)}
-            y={H - MB + 15}
+            y={g.H - g.MB + g.font * 1.7}
             textAnchor="middle"
-            fontSize="9"
+            fontSize={g.font}
             fill={INK}
             fontFamily="var(--font-mono)"
           >
@@ -247,38 +392,41 @@ function Cursors({
   x,
   now_h,
   hover,
+  g,
 }: {
   x: (h: number) => number;
   now_h: number;
   hover: number | null;
+  g: Geom;
 }) {
+  const w = g.stroke / 2;
   return (
     <>
       <line
         x1={x(now_h)}
-        y1={MT}
+        y1={g.MT}
         x2={x(now_h)}
-        y2={H - MB}
+        y2={g.H - g.MB}
         stroke="rgba(255,255,255,0.5)"
-        strokeWidth="1"
-        strokeDasharray="4 4"
+        strokeWidth={w}
+        strokeDasharray={`${g.font * 0.45} ${g.font * 0.45}`}
       />
       {hover !== null && (
-        <line x1={x(hover)} y1={MT} x2={x(hover)} y2={H - MB} stroke="#7599fa" strokeWidth="1" />
+        <line x1={x(hover)} y1={g.MT} x2={x(hover)} y2={g.H - g.MB} stroke="#7599fa" strokeWidth={w} />
       )}
     </>
   );
 }
 
 /** Turn a pointer event into a time in hours, clamped to the plot area. */
-function useHourFromPointer(max_h: number) {
+function useHourFromPointer(max_h: number, g: Geom) {
   return (e: React.PointerEvent<SVGSVGElement>): number => {
     const r = e.currentTarget.getBoundingClientRect();
     // the viewBox is letterboxed by xMidYMid meet — recover the mapping
-    const k = Math.min(r.width / W, r.height / H);
-    const ox = (r.width - W * k) / 2;
+    const k = Math.min(r.width / g.W, r.height / g.H);
+    const ox = (r.width - g.W * k) / 2;
     const vx = (e.clientX - r.left - ox) / k;
-    const f = (vx - ML) / (W - ML - MR);
+    const f = (vx - g.ML) / (g.W - g.ML - g.MR);
     return Math.max(0, Math.min(1, f)) * max_h;
   };
 }
@@ -286,12 +434,14 @@ function useHourFromPointer(max_h: number) {
 /* ── Tracks ─────────────────────────────────────────────────────────────────── */
 
 /** Core and surface temperature against the DEF threshold. */
-function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover }: TrackProps) {
+function TemperatureTrack({ sim, xIn, tick_hs, now_h, max_h, hover, hoverIdx, setHover, onZoom, tall }: TrackProps) {
+  const g = tall ? FULL : DOCK;
+  const x = xIn(g);
   const def_c = sim.breaches.def_threshold_c;
   const values = [...sim.core_temp_c, ...sim.surface_temp_c, def_c, sim.max_core_temp_anywhere_c];
   const T_MIN = Math.floor(Math.min(...values) / 10) * 10;
   const T_MAX = Math.ceil(Math.max(...values) / 10) * 10;
-  const y = (t: number) => MT + ((T_MAX - t) / (T_MAX - T_MIN || 1)) * (H - MT - MB);
+  const y = (t: number) => g.MT + ((T_MAX - t) / (T_MAX - T_MIN || 1)) * (g.H - g.MT - g.MB);
 
   const ticks: number[] = [];
   for (let t = T_MIN; t <= T_MAX; t += 10) ticks.push(t);
@@ -300,12 +450,13 @@ function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setH
     vals.map((v, i) => `${i === 0 ? "M" : "L"}${x(sim.times_h[i]).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
 
   const at = hoverIdx ?? null;
-  const toHour = useHourFromPointer(max_h);
+  const toHour = useHourFromPointer(max_h, g);
 
   return (
     <Track
-      title="Temperature"
-      unit="°C"
+      id="temperature"
+      onZoom={onZoom}
+      tall={tall}
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
@@ -321,23 +472,24 @@ function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setH
         )
       }
     >
-      <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} />
+      <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} g={g} />
 
       {/* the two quantities the DEF flag is tested against, drawn where they peak */}
       <Measured
         y={y(sim.max_core_temp_anywhere_c)}
         label={`max anywhere ${sim.max_core_temp_anywhere_c.toFixed(2)}`}
+        g={g}
       />
-      <Threshold y={y(def_c)} label={`DEF ${def_c} °C · USBR DSO-12-02`} />
+      <Threshold y={y(def_c)} label={`DEF ${def_c} °C · USBR DSO-12-02`} g={g} />
 
-      <path d={path(sim.surface_temp_c)} fill="none" stroke={SURFACE} strokeWidth="2" strokeLinejoin="round" />
-      <path d={path(sim.core_temp_c)} fill="none" stroke={CORE} strokeWidth="2" strokeLinejoin="round" />
+      <path d={path(sim.surface_temp_c)} fill="none" stroke={SURFACE} strokeWidth={g.stroke} strokeLinejoin="round" />
+      <path d={path(sim.core_temp_c)} fill="none" stroke={CORE} strokeWidth={g.stroke} strokeLinejoin="round" />
 
-      <Cursors x={x} now_h={now_h} hover={hover} />
+      <Cursors x={x} now_h={now_h} hover={hover} g={g} />
       {at !== null && (
         <>
-          <Dot cx={x(sim.times_h[at])} cy={y(sim.core_temp_c[at])} fill={CORE} />
-          <Dot cx={x(sim.times_h[at])} cy={y(sim.surface_temp_c[at])} fill={SURFACE} />
+          <Dot cx={x(sim.times_h[at])} cy={y(sim.core_temp_c[at])} fill={CORE} g={g} />
+          <Dot cx={x(sim.times_h[at])} cy={y(sim.surface_temp_c[at])} fill={SURFACE} g={g} />
         </>
       )}
     </Track>
@@ -345,20 +497,23 @@ function TemperatureTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setH
 }
 
 /** Strength development. Its own panel because % and °C are not comparable. */
-function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHover }: TrackProps) {
-  const y = (p: number) => MT + (1 - p / 100) * (H - MT - MB);
+function StrengthTrack({ sim, xIn, tick_hs, now_h, max_h, hover, hoverIdx, setHover, onZoom, tall }: TrackProps) {
+  const g = tall ? FULL : DOCK;
+  const x = xIn(g);
+  const y = (p: number) => g.MT + (1 - p / 100) * (g.H - g.MT - g.MB);
   const ticks = [0, 25, 50, 75, 100];
   const path = sim.strength_fraction
     .map((s, i) => `${i === 0 ? "M" : "L"}${x(sim.times_h[i]).toFixed(1)} ${y(s * 100).toFixed(1)}`)
     .join(" ");
 
   const at = hoverIdx ?? null;
-  const toHour = useHourFromPointer(max_h);
+  const toHour = useHourFromPointer(max_h, g);
 
   return (
     <Track
-      title="Strength fraction"
-      unit="% of f'c"
+      id="strength"
+      onZoom={onZoom}
+      tall={tall}
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
@@ -376,11 +531,11 @@ function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHove
         )
       }
     >
-      <Frame ticks={ticks} y={y} fmt={(v) => `${v}`} tick_hs={tick_hs} x={x} />
-      <path d={path} fill="none" stroke={STRENGTH} strokeWidth="2" strokeLinejoin="round" />
-      <Cursors x={x} now_h={now_h} hover={hover} />
+      <Frame ticks={ticks} y={y} fmt={(v) => `${v}`} tick_hs={tick_hs} x={x} g={g} />
+      <path d={path} fill="none" stroke={STRENGTH} strokeWidth={g.stroke} strokeLinejoin="round" />
+      <Cursors x={x} now_h={now_h} hover={hover} g={g} />
       {at !== null && (
-        <Dot cx={x(sim.times_h[at])} cy={y((sim.strength_fraction[at] ?? 0) * 100)} fill={STRENGTH} />
+        <Dot cx={x(sim.times_h[at])} cy={y((sim.strength_fraction[at] ?? 0) * 100)} fill={STRENGTH} g={g} />
       )}
     </Track>
   );
@@ -389,42 +544,47 @@ function StrengthTrack({ sim, x, tick_hs, now_h, max_h, hover, hoverIdx, setHove
 // The cracking limit is a GAP, not a level, so it cannot share the temperature axis -
 // 19.4 °C plotted next to a 60 °C core would read as a threshold the core is nowhere
 // near. It gets its own axis, in °C of differential.
-function DifferentialTrack({ sim, x, tick_hs, now_h, max_h, hover, setHover }: TrackProps) {
+function DifferentialTrack({ sim, xIn, tick_hs, now_h, max_h, hover, setHover, onZoom, tall }: TrackProps) {
+  const g = tall ? FULL : DOCK;
+  const x = xIn(g);
   const limit_c = sim.breaches.cracking_limit_c;
   const D_MAX =
     Math.ceil((Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c) * 1.2) / 5) * 5;
-  const y = (d: number) => MT + ((D_MAX - d) / (D_MAX || 1)) * (H - MT - MB);
+  const y = (d: number) => g.MT + ((D_MAX - d) / (D_MAX || 1)) * (g.H - g.MT - g.MB);
 
   const ticks: number[] = [];
   const stepD = D_MAX > 30 ? 20 : 10;
   for (let d = 0; d <= D_MAX; d += stepD) ticks.push(d);
 
-  const toHour = useHourFromPointer(max_h);
+  const toHour = useHourFromPointer(max_h, g);
 
   return (
     <Track
-      title="Core–surface differential"
-      unit="ΔT °C"
+      id="differential"
+      onZoom={onZoom}
+      tall={tall}
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
         <span className="text-text-muted">maxima only — no series in the response</span>
       }
     >
-      <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} />
+      <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} g={g} />
 
       <Measured
         y={y(sim.max_anywhere_surface_diff_c)}
         label={`max anywhere ${sim.max_anywhere_surface_diff_c.toFixed(2)}`}
+        g={g}
       />
       <Measured
         y={y(sim.max_core_surface_diff_c)}
         color={CORE}
         label={`max core ${sim.max_core_surface_diff_c.toFixed(2)}`}
+        g={g}
       />
-      <Threshold y={y(limit_c)} label={`cracking ${limit_c} °C · ACI 207`} />
+      <Threshold y={y(limit_c)} label={`cracking ${limit_c} °C · ACI 207`} g={g} />
 
-      <Cursors x={x} now_h={now_h} hover={hover} />
+      <Cursors x={x} now_h={now_h} hover={hover} g={g} />
     </Track>
   );
 }
@@ -432,11 +592,30 @@ function DifferentialTrack({ sim, x, tick_hs, now_h, max_h, hover, setHover }: T
 /* ── Marks ──────────────────────────────────────────────────────────────────── */
 
 /** A measured maximum, drawn as a level where it sits. */
-function Measured({ y, label, color = MEASURED }: { y: number; label: string; color?: string }) {
+function Measured({
+  y,
+  label,
+  color = MEASURED,
+  g,
+}: {
+  y: number;
+  label: string;
+  color?: string;
+  g: Geom;
+}) {
   return (
     <g>
-      <line x1={ML} y1={y} x2={W - MR} y2={y} stroke={color} strokeWidth="1" strokeDasharray="2 3" opacity={0.8} />
-      <text x={ML + 4} y={y - 4} fontSize="9" fill={color} fontFamily="var(--font-mono)">
+      <line
+        x1={g.ML}
+        y1={y}
+        x2={g.W - g.MR}
+        y2={y}
+        stroke={color}
+        strokeWidth={g.stroke / 2}
+        strokeDasharray={`${g.font * 0.22} ${g.font * 0.33}`}
+        opacity={0.8}
+      />
+      <text x={g.ML + g.font * 0.45} y={y - g.font * 0.45} fontSize={g.font} fill={color} fontFamily="var(--font-mono)">
         {label}
       </text>
     </g>
@@ -444,11 +623,26 @@ function Measured({ y, label, color = MEASURED }: { y: number; label: string; co
 }
 
 /** A limit, drawn with the standard it comes from. */
-function Threshold({ y, label }: { y: number; label: string }) {
+function Threshold({ y, label, g }: { y: number; label: string; g: Geom }) {
   return (
     <g>
-      <line x1={ML} y1={y} x2={W - MR} y2={y} stroke={LIMIT} strokeWidth="1" strokeDasharray="6 4" />
-      <text x={W - MR - 2} y={y - 4} textAnchor="end" fontSize="9" fill={LIMIT} fontFamily="var(--font-mono)">
+      <line
+        x1={g.ML}
+        y1={y}
+        x2={g.W - g.MR}
+        y2={y}
+        stroke={LIMIT}
+        strokeWidth={g.stroke / 2}
+        strokeDasharray={`${g.font * 0.67} ${g.font * 0.45}`}
+      />
+      <text
+        x={g.W - g.MR - g.font * 0.22}
+        y={y - g.font * 0.45}
+        textAnchor="end"
+        fontSize={g.font}
+        fill={LIMIT}
+        fontFamily="var(--font-mono)"
+      >
         {label}
       </text>
     </g>
@@ -456,8 +650,8 @@ function Threshold({ y, label }: { y: number; label: string }) {
 }
 
 /** A sample marker. The surface-coloured ring keeps it legible over any curve. */
-function Dot({ cx: x, cy, fill }: { cx: number; cy: number; fill: string }) {
-  return <circle cx={x} cy={cy} r="3.5" fill={fill} stroke="#101213" strokeWidth="2" />;
+function Dot({ cx: x, cy, fill, g }: { cx: number; cy: number; fill: string; g: Geom }) {
+  return <circle cx={x} cy={cy} r={g.dot} fill={fill} stroke="#101213" strokeWidth={g.stroke} />;
 }
 
 function Key({ color, label, dashed }: { color: string; label: string; dashed?: boolean }) {

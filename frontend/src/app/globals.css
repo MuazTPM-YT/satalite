@@ -349,6 +349,17 @@ button,
   background-clip: content-box;
 }
 
+/* A strip that scrolls but must not show a bar: the command bar's control pill on a
+   narrow window. The scroll is the overflow behaviour, not a feature to decorate. */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
 /* ── Floating palettes ──────────────────────────────────────────────────────────
    A closed palette is hidden with `visibility`, not `display`.
 
@@ -407,6 +418,16 @@ button,
   from {
     opacity: 0;
     transform: translateY(-4px) scale(0.98);
+  }
+}
+
+/* ── Tooltips ─────────────────────────────────────────────────────────────────
+   Opacity only. The bubble carries its own `transform` inline (it is centred on the
+   trigger and flips above it near the bottom of the screen), and a keyframe that
+   also wrote transform would have to know which of those two it was overriding. */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
   }
 }
 

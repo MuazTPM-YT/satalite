@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from physics import FloatArray, IntArray
+from physics import BoolArray, FloatArray, IntArray, TagArray
 
 SHAPES = (
     "slab",
@@ -39,8 +39,8 @@ CIRCLE_SEGMENTS = 128
 class Section:
     """Rasterised cross-section plus the outline it came from."""
 
-    mask: np.ndarray          # (ny, nx) bool. True = concrete.
-    face_tags: np.ndarray     # (4, ny, nx) uint8, one tag per direction per cell
+    mask: BoolArray           # (ny, nx) bool. True = concrete.
+    face_tags: TagArray       # (4, ny, nx) uint8, one tag per direction per cell
     outline_m: list[list[float]]
     dx_m: float
 
@@ -50,7 +50,8 @@ class Section:
         ny, nx = self.mask.shape
         x = (np.arange(nx) + 0.5) * self.dx_m
         y = (np.arange(ny) + 0.5) * self.dx_m
-        return np.meshgrid(x, y)
+        xs, ys = np.meshgrid(x, y)
+        return np.asarray(xs, dtype=np.float64), np.asarray(ys, dtype=np.float64)
 
     # cross-section area from the mask, m2.
     @property
@@ -119,8 +120,10 @@ def outline(shape: str, dims_mm: dict[str, float]) -> list[list[float]]:
         return _rect(mm("width"), mm("height"))
     if shape == "circular_column":
         r = mm("diameter") / 2.0
-        a = np.linspace(0.0, 2.0 * np.pi, CIRCLE_SEGMENTS, endpoint=False)
-        return [[float(r + r * np.cos(t)), float(r + r * np.sin(t))] for t in a]
+        # not `a`: the section branches below bind `a` to a flange offset, and one name
+        # holding an array here and a float there is a name doing two jobs.
+        angles = np.linspace(0.0, 2.0 * np.pi, CIRCLE_SEGMENTS, endpoint=False)
+        return [[float(r + r * np.cos(t)), float(r + r * np.sin(t))] for t in angles]
     if shape == "t_section":
         fw, ft, ww, h = mm("flange_width"), mm("flange_thickness"), mm("web_width"), mm("height")
         a, b, y = (fw - ww) / 2.0, (fw + ww) / 2.0, h - ft
@@ -144,7 +147,7 @@ def _rect(w_m: float, h_m: float) -> list[list[float]]:
 
 
 # even-odd ray cast, vectorised over cells and looped over the few polygon edges.
-def _inside(poly: list[list[float]], xs: FloatArray, ys: FloatArray) -> np.ndarray:
+def _inside(poly: list[list[float]], xs: FloatArray, ys: FloatArray) -> BoolArray:
     inside = np.zeros(xs.shape, dtype=bool)
     x1, y1 = poly[-1]
     for x2, y2 in poly:

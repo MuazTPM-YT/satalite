@@ -10,7 +10,7 @@ import * as THREE from "three";
 import type { ThreeEvent } from "@react-three/fiber";
 import type { SimulationResult } from "@/lib/api";
 import { sampleField, type Sample } from "@/lib/probe";
-import { buildHeatmapTexture } from "@/lib/thermalColormap";
+import { buildHeatmapTexture } from "@/lib/heatmapTexture";
 import { buildSectionGeometry } from "@/lib/extrude";
 
 /** A probe hit: the sampled cell, plus where it landed in the scene. */
