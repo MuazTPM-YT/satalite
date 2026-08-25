@@ -349,15 +349,15 @@ export default function LeftPanel({
         />
         <ScrubField
           label="Content"
-          hint="cement_kg_m3 — cementitious content"
+          hint="cementitious_kg_m3 — cement + fly ash + any SCM"
           unit="kg/m³"
-          value={config.cement_kg_m3}
+          value={config.cementitious_kg_m3}
           min={200}
           max={700}
           step={5}
-          resetTo={defaults.cement_kg_m3}
+          resetTo={defaults.cementitious_kg_m3}
           disabled={!designing}
-          onChange={(v) => onChange("cement_kg_m3", v)}
+          onChange={(v) => onChange("cementitious_kg_m3", v)}
           onCommit={onCommit}
         />
         <ScrubField

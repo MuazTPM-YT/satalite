@@ -188,7 +188,7 @@ def test_standard_element_has_not_been_tuned() -> None:
 
 def test_standard_mix_matches_the_stated_design() -> None:
     mix = standard_mix()
-    assert mix.cement_kg_m3 == 400.0
+    assert mix.cementitious_kg_m3 == 400.0
     # 20% fly ash at w/cm 0.45: Schindler-Folliard ultimate degree, not a guess
     assert mix.alpha_u == pytest.approx(0.8204, abs=1e-3)
     assert 300e3 < mix.h_u_j_per_kg < 500e3

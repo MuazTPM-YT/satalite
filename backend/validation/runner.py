@@ -199,7 +199,7 @@ def build_mix(case: dict[str, Any]) -> Mix:
         return 0.5 * (low + high)
 
     return Mix(
-        cement_kg_m3=cementitious,
+        cementitious_kg_m3=cementitious,
         h_u_j_per_kg=ultimate_heat_j_per_kg(
             h_cem_j_per_g=h_cem, p_cem=p_cem, p_fa=p_fa, p_fa_cao=p_fa_cao
         ),

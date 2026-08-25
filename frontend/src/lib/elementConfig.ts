@@ -77,7 +77,8 @@ export interface ElementConfig {
   placement_temp_c: number;
   /** "" means unknown, which the wire carries as null */
   cement_type: string;
-  cement_kg_m3: number;
+  /** TOTAL cementitious content, cement + fly ash + any SCM */
+  cementitious_kg_m3: number;
   wcm: number;
   fly_ash_pct: number;
   grade: string;
@@ -107,7 +108,7 @@ export const DEFAULT_ELEMENT_CONFIG: ElementConfig = {
   formwork: "plywood_18mm",
   placement_temp_c: 29,
   cement_type: "",
-  cement_kg_m3: 400,
+  cementitious_kg_m3: 400,
   wcm: 0.45,
   fly_ash_pct: 20,
   grade: "4000psi",
@@ -134,7 +135,7 @@ export function toElementSpec(c: ElementConfig): ElementSpec {
 
 // config in, the mix half out.
 //
-// Sending cement_kg_m3 with w_cm and fly_ash_frac asks the backend to derive h_u,
+// Sending cementitious_kg_m3 with w_cm and fly_ash_frac asks the backend to derive h_u,
 // alpha_u and tau_h through the same Schindler-Folliard regressions standard_mix()
 // uses. Deriving them here instead would mean a second copy of the hydration
 // equations living in TypeScript, which is exactly the drift this project forbids.
@@ -145,9 +146,11 @@ export function toMixSpec(c: ElementConfig): MixSpec {
   const base = {
     mix_id: c.mix_id,
     cement_type: null as string | null,
-    cement_kg_m3: null as number | null,
+    cementitious_kg_m3: null as number | null,
     w_cm: null as number | null,
     fly_ash_frac: null as number | null,
+    // no studio input: silica fume is expressible on the wire but not in this panel.
+    silica_fume_frac: null as number | null,
     h_u_j_per_kg: null,
     alpha_u: null,
     tau_h: null,
@@ -162,7 +165,7 @@ export function toMixSpec(c: ElementConfig): MixSpec {
     ...base,
     mix_id: "design",
     cement_type: c.cement_type === "" ? null : c.cement_type,
-    cement_kg_m3: c.cement_kg_m3,
+    cementitious_kg_m3: c.cementitious_kg_m3,
     w_cm: c.wcm,
     fly_ash_frac: c.fly_ash_pct / 100,
   };
@@ -210,7 +213,7 @@ export function configFromRequest(
     formwork: el.formwork ?? base.formwork,
     placement_temp_c: el.placement_temp_c ?? base.placement_temp_c,
     cement_type: mix.cement_type ?? "",
-    cement_kg_m3: mix.cement_kg_m3 ?? base.cement_kg_m3,
+    cementitious_kg_m3: mix.cementitious_kg_m3 ?? base.cementitious_kg_m3,
     // A design request carries these; a standard one does not, and reading a null
     // back as 0 would open the studio on a w/cm of zero.
     wcm: (design ? mix.w_cm : null) ?? base.wcm,

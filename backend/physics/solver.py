@@ -129,7 +129,7 @@ def solve(
     t_e_h = np.zeros(mask.shape, dtype=np.float64)
     h_sum = np.zeros(mask.shape, dtype=np.float64)
     q_sum = np.zeros(mask.shape, dtype=np.float64)
-    heat_scale = mix.h_u_j_per_kg * mix.cement_kg_m3 / 3600.0
+    heat_scale = mix.h_u_j_per_kg * mix.cementitious_kg_m3 / 3600.0
     q_face_w_m2 = np.zeros(surf_rows.size, dtype=np.float64)
 
     # films and the reconstructed free-surface temperature at one weather index. Pulled
