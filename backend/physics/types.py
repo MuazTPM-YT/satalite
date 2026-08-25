@@ -20,7 +20,7 @@ class Mix:
     it does not derive them.
     """
 
-    cement_kg_m3: float       # C_c, binder content
+    cementitious_kg_m3: float  # C_c, TOTAL cementitious content: cement + fly ash + any SCM
     h_u_j_per_kg: float       # H_u. J/kg. NOT J/g. trap 1.
     alpha_u: float            # ultimate degree of hydration
     tau_h: float              # hydration time parameter, hours
@@ -42,7 +42,7 @@ class Mix:
     @property
     def adiabatic_rise_c(self) -> float:
         return (
-            self.h_u_j_per_kg * self.cement_kg_m3 * self.alpha_u
+            self.h_u_j_per_kg * self.cementitious_kg_m3 * self.alpha_u
         ) / (self.rho_kg_m3 * self.cp_j_kg_k)
 
 

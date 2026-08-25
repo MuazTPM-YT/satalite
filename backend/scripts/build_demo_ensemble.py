@@ -23,6 +23,7 @@ from app.models import (
     ElementSpec,
     MixSpec,
     SimulationRequest,
+    Site,
 )
 from app.services.simulate import run_bands, to_ambient, to_element, to_mix
 from physics.season_analysis import (
@@ -45,6 +46,8 @@ HOT_DAY = DayWeather(
     date="2025-07-15", day_of_year=196, t_min_c=30.0, t_mean_c=36.5, t_max_c=43.0
 )
 LAT_DEG = 33.45
+LON_DEG = -112.07
+SITE_LABEL = "Phoenix, AZ"
 PLACEMENT_HOUR = 14
 
 # a power of two, so Sobol gets a complete balanced block. 2048 is also above the 2000
@@ -126,6 +129,17 @@ def main() -> None:
     payload = DemoEnsembleResponse(
         scenario=request,
         ensemble=ensemble,
+        # source="stated" and not "cached" on purpose: HOT_DAY's min/mean/max were
+        # written down, not fetched. Calling them cached would dress three constants
+        # up as an observation.
+        site=Site(
+            label=SITE_LABEL,
+            lat_deg=LAT_DEG,
+            lon_deg=LON_DEG,
+            date=HOT_DAY.date,
+            placement_hour=PLACEMENT_HOUR,
+            source="stated",
+        ),
         built_at=datetime.now(UTC).isoformat(timespec="seconds"),
         sampler="scipy.stats.qmc.Sobol(scramble=True)",
         dt_s=30.0,  # mirrors run_ensemble's default. change both or neither.

@@ -84,7 +84,7 @@ def h_cem_for(cement_type: str | None) -> float:
 # conservative direction for a low-C3A type, which is the one worth being careful about.
 def to_mix(spec: MixSpec) -> Mix:
     base = standard_mix()
-    if spec.mix_id == "standard" and spec.cement_kg_m3 is None:
+    if spec.mix_id == "standard" and spec.cementitious_kg_m3 is None:
         h_cem = h_cem_for(spec.cement_type)
         if h_cem == base.h_cem_j_per_g:
             return base
@@ -96,10 +96,10 @@ def to_mix(spec: MixSpec) -> Mix:
     # The standard-mix branch above has already returned, so reaching here without a
     # content means a mix_id nothing knows how to build. Testing the content alone
     # rather than the pair also says plainly that it is required from here down.
-    if spec.cement_kg_m3 is None:
+    if spec.cementitious_kg_m3 is None:
         raise ValueError(
             f"unknown mix_id {spec.mix_id!r}. Either use 'standard' or supply "
-            "cement_kg_m3, h_u_j_per_kg, alpha_u and tau_h explicitly."
+            "cementitious_kg_m3, h_u_j_per_kg, alpha_u and tau_h explicitly."
         )
     # a stated DESIGN - content, w/cm, fly ash - rather than stated solver parameters.
     # Derived through the same three regressions standard_mix() uses, with the same
@@ -108,15 +108,26 @@ def to_mix(spec: MixSpec) -> Mix:
     if spec.h_u_j_per_kg is None and spec.alpha_u is None and spec.tau_h is None:
         if spec.w_cm is None:
             raise ValueError(
-                "a mix given by design needs w_cm alongside cement_kg_m3, or give "
+                "a mix given by design needs w_cm alongside cementitious_kg_m3, or give "
                 "h_u_j_per_kg, alpha_u and tau_h explicitly instead."
             )
         p_fa = 0.0 if spec.fly_ash_frac is None else float(spec.fly_ash_frac)
+        # Silica fume is BINDER MASS THAT MAKES NO HEAT. Schindler-Folliard 2005 regresses
+        # Class F ash, Class C ash and GGBF slag only - there is no silica fume term in
+        # H_u - so p_sf is subtracted out of the cement fraction here and then passed to
+        # nothing. It stays inside cementitious_kg_m3, so the solver still carries its
+        # mass; it simply contributes no heat. This is exactly what validation/runner.py
+        # does when it takes p_cem straight from the case's own cement mass.
+        #
+        # Getting this wrong is not cosmetic: counting silica fume as cement puts 5.95%
+        # more heat into the Deer Creek mix than the path we validated against.
+        p_sf = 0.0 if spec.silica_fume_frac is None else float(spec.silica_fume_frac)
+        p_cem = 1.0 - p_fa - p_sf
         h_cem = h_cem_for(spec.cement_type)
         return Mix(
-            cement_kg_m3=float(spec.cement_kg_m3),
+            cementitious_kg_m3=float(spec.cementitious_kg_m3),
             h_u_j_per_kg=ultimate_heat_j_per_kg(
-                h_cem_j_per_g=h_cem, p_cem=1.0 - p_fa, p_fa=p_fa, p_fa_cao=P_FLY_ASH_CAO
+                h_cem_j_per_g=h_cem, p_cem=p_cem, p_fa=p_fa, p_fa_cao=P_FLY_ASH_CAO
             ),
             alpha_u=ultimate_degree(float(spec.w_cm), p_fa=p_fa),
             tau_h=tau_hours(
@@ -132,13 +143,13 @@ def to_mix(spec: MixSpec) -> Mix:
         )
     missing = [
         name
-        for name in ("cement_kg_m3", "h_u_j_per_kg", "alpha_u", "tau_h")
+        for name in ("cementitious_kg_m3", "h_u_j_per_kg", "alpha_u", "tau_h")
         if getattr(spec, name) is None
     ]
     if missing:
         raise ValueError(f"custom mix is missing {missing}")
     return Mix(
-        cement_kg_m3=float(spec.cement_kg_m3),
+        cementitious_kg_m3=float(spec.cementitious_kg_m3),
         h_u_j_per_kg=float(spec.h_u_j_per_kg),      # type: ignore[arg-type]
         alpha_u=float(spec.alpha_u),                # type: ignore[arg-type]
         tau_h=float(spec.tau_h),                    # type: ignore[arg-type]

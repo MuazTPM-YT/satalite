@@ -30,7 +30,7 @@ CP_J_KG_K = 1000.0     # concrete specific heat
 K_W_M_K = 2.2          # concrete conductivity
 
 GOLDEN_400 = Mix(
-    cement_kg_m3=CEMENT_KG_M3,
+    cementitious_kg_m3=CEMENT_KG_M3,
     h_u_j_per_kg=HU_J_PER_KG,
     alpha_u=ALPHA_U,
     tau_h=TAU_H,
@@ -42,7 +42,7 @@ GOLDEN_400 = Mix(
 
 # Same thermal properties, zero binder: pure heat equation, no source term at all.
 GOLDEN_INERT = Mix(
-    cement_kg_m3=0.0,
+    cementitious_kg_m3=0.0,
     h_u_j_per_kg=0.0,
     alpha_u=ALPHA_U,
     tau_h=TAU_H,
@@ -245,7 +245,7 @@ def test_golden_4_energy_balance_every_timestep() -> None:
             section.mask,
             hydration.heat_rate_w_m3(
                 t_e_h, np.nan_to_num(temp_c, nan=20.0), GOLDEN_400.alpha_u, GOLDEN_400.tau_h,
-                GOLDEN_400.beta, GOLDEN_400.h_u_j_per_kg, GOLDEN_400.cement_kg_m3,
+                GOLDEN_400.beta, GOLDEN_400.h_u_j_per_kg, GOLDEN_400.cementitious_kg_m3,
             ),
             0.0,
         )

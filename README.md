@@ -148,6 +148,7 @@ npx tsx src/lib/test_section_metrics.ts   # probe distances, cut volumes, elevat
 npx tsx src/lib/test_probe.ts             # the probe stencil, against the backend's
 npx tsx src/lib/test_extrude.ts           # the extrusion carries no gradient along z
 npx tsx src/lib/test_stats.ts             # Wilson interval at 0/n and n/n
+npx tsx src/lib/test_location.ts          # US coverage bounds, archive/forecast window
 ```
 
 The `*_live.ts` ones need the backend up, and are how the frontend proves its claims

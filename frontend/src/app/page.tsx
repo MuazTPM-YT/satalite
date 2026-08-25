@@ -29,6 +29,7 @@ import type { PanelId } from "@/components/PanelId";
 import {
   ApiError,
   simulate,
+  type AmbientResponse,
   type AmbientSpec,
   type DemoEnsembleResponse,
   type PourWindowResult,
@@ -58,6 +59,7 @@ import { probeGeometry } from "@/lib/sectionMetrics";
 import type { ProbePick } from "@/lib/probe";
 import { clampDims, type Outline, type ShapeId } from "@/lib/shapes";
 import type { LengthUnit } from "@/lib/units";
+import type { ActiveLocation } from "@/components/LocationChip";
 
 // three.js, @react-three/fiber and drei are about a megabyte of the bundle, and the
 // studio opens in 2D. Loading them on demand means the sheet is interactive without
@@ -85,7 +87,7 @@ const DOCK_BOTTOM = 100_000;
 const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }> = {
   element: { x: 16, y: 16, w: 340, h: 600, minW: 300, minH: 260 },
   // Bottom-left, which is the one corner nothing else claims. Docking it to the right
-  // put it exactly on top of Checks, which opens there by default.
+  // put it exactly on top of Checks, which spawns there.
   probe: { x: 16, y: DOCK_BOTTOM, w: 300, h: 336, minW: 260, minH: 150 },
   checks: { x: DOCK_RIGHT, y: 16, w: 316, h: 600, minW: 268, minH: 240 },
   pour: { x: 380, y: 340, w: 860, h: 300, minW: 420, minH: 200 },
@@ -110,6 +112,8 @@ export default function StudioPage() {
   // solved, so reusing it costs no FortyGuard quota and is reproducible between runs.
   const [demo, setDemo] = useState<DemoEnsembleResponse | null>(null);
   const [ambient, setAmbient] = useState<AmbientSpec | null>(null);
+  // Where the pour is. null until the artifact lands, then the artifact's own site.
+  const [location, setLocation] = useState<ActiveLocation | null>(null);
 
   const [run, setRun] = useState<Run | null>(null);
   const [solving, setSolving] = useState(false);
@@ -137,13 +141,14 @@ export default function StudioPage() {
   const [frameIndex, setFrameIndex] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("2d");
   // Palettes float OVER the drawing, so every one that opens by default is drawing
-  // the user cannot see. Checks earns its place - it is the answer. The inputs open
-  // from the command bar, which also carries the Solve button, so nothing about them
-  // is hidden by starting closed.
+  // the user cannot see. Checks used to open on load, on the argument that it is the
+  // answer - but it covers a third of the section on a laptop, and the first thing a
+  // new reader wants is the pour itself. Every palette is one click away in the
+  // command bar, which also carries the Solve button, so nothing is hidden by this.
   const [openPanels, setOpenPanels] = useState<Record<PanelId, boolean>>({
     element: false,
     probe: false,
-    checks: true,
+    checks: false,
     pour: false,
     ensemble: false,
     season: false,
@@ -248,6 +253,19 @@ export default function StudioPage() {
         if (!live) return;
         setDemo(d);
         setAmbient(d.scenario.ambient);
+        // The artifact names its own site now, so the chip opens on a location that was
+        // actually solved rather than on a string typed into the frontend.
+        if (d.site) {
+          setLocation({
+            label: d.site.label,
+            lat: d.site.lat_deg,
+            lon: d.site.lon_deg,
+            date: d.site.date,
+            placementHour: d.site.placement_hour,
+            source: d.site.source === "cached" ? "cached" : "stated",
+            mode: "archive",
+          });
+        }
         // Open on the scenario the artifact was solved for. Every input follows from
         // the response, so a regenerated artifact moves the studio with it.
         const seeded = configFromRequest(d.scenario);
@@ -458,6 +476,30 @@ export default function StudioPage() {
     if (pick) setPick(null);
   }
 
+  // A new location replaces the weather the studio solves against.
+  //
+  // The ambient comes back already built by physics.season_analysis.build_ambient at the
+  // selected latitude, so the solar term follows the site rather than being recomputed
+  // here - there is no second copy of the solar geometry in TypeScript. Changing it
+  // changes the request key, which is what makes the precomputed ensemble band disclaim
+  // itself: that band was computed for one fixed scenario and this is no longer it.
+  const handleLocationApply = useCallback(
+    (response: AmbientResponse, label: string) => {
+      setAmbient(response.ambient);
+      setLocation({
+        label,
+        lat: response.resolved_lat_deg,
+        lon: response.resolved_lon_deg,
+        date: response.resolved_date,
+        placementHour: response.resolved_placement_hour,
+        source: response.source,
+        mode: response.mode,
+      });
+      commit();
+    },
+    [commit],
+  );
+
   // reading the probe is the moment the palette is worth opening
   const handlePick = useCallback((next: ProbePick | null) => {
     setPick(next);
@@ -476,6 +518,9 @@ export default function StudioPage() {
         solving={solving}
         stale={stale}
         onSolve={solveNow}
+        location={location}
+        durationHours={config.cure_window_h}
+        onLocationApply={handleLocationApply}
       />
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">

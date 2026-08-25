@@ -115,13 +115,19 @@ export interface ElementSpec {
 export interface MixSpec {
     mix_id?: string;
     cement_type?: string | null;
-    cement_kg_m3?: number | null;
-    // Mix DESIGN. Sent WITH cement_kg_m3 and WITHOUT h_u/alpha_u/tau_h, these ask the
-    // backend to derive the hydration parameters through the same Schindler-Folliard
+    // TOTAL cementitious content: cement + fly ash + any other SCM. The old wire name
+    // was cement_kg_m3, which said the opposite of what it held.
+    cementitious_kg_m3?: number | null;
+    // Mix DESIGN. Sent WITH cementitious_kg_m3 and WITHOUT h_u/alpha_u/tau_h, these ask
+    // the backend to derive the hydration parameters through the same Schindler-Folliard
     // regressions physics.season_analysis.standard_mix uses. fly_ash_frac is a
     // FRACTION 0-1, not the percentage the input box shows.
     w_cm?: number | null;
     fly_ash_frac?: number | null;
+    // Fraction of total cementitious that is silica fume. Carried as MASS with NO heat -
+    // Schindler-Folliard has no silica fume term. The studio has no input for it, so it
+    // is always null here; it exists so this interface mirrors the backend's MixSpec.
+    silica_fume_frac?: number | null;
     h_u_j_per_kg?: number | null;
     alpha_u?: number | null;
     tau_h?: number | null;
@@ -287,11 +293,25 @@ export interface PourWindowResult {
     ensemble: EnsembleResult | null;
 }
 
+export interface Site {
+    label: string;
+    lat_deg: number;
+    lon_deg: number;
+    date: string;
+    placement_hour: number;
+    // "cached" is a FortyGuard day on disk. "stated" means the daily min/mean/max were
+    // written down rather than observed, and must never be shown as a measurement.
+    source: "cached" | "stated" | string;
+}
+
 export interface DemoEnsembleResponse {
     // the scenario travels with the band on purpose: a band drawn beside a pour it was
     // not computed for is worse than no band at all.
     scenario: SimulationRequest;
     ensemble: EnsembleResult;
+    // null for an artifact built before the field existed. The studio then shows no
+    // location rather than inventing one.
+    site: Site | null;
     built_at: string;
     sampler: string;
     dt_s: number;
@@ -455,4 +475,56 @@ export function demoEnsemble(): Promise<DemoEnsembleResponse> {
 // validation summary against the USBR cases. 503 when the report has not been built.
 export function validation(): Promise<ValidationResponse> {
     return apiFetch<ValidationResponse>("/api/validation");
+}
+
+// ---------------------------------------------------------------- location
+
+export interface AmbientRequest {
+    lat: number;
+    lon: number;
+    date: string;
+    placement_hour?: number;
+    duration_hours?: number;
+    /** the money switch. false refuses an uncached day and reports its price instead. */
+    allow_live?: boolean;
+}
+
+export interface AmbientResponse {
+    ambient: AmbientSpec;
+    // echoed the way t_ref_c and probe_xy_m are: the latitude that reached build_ambient.
+    resolved_lat_deg: number;
+    resolved_lon_deg: number;
+    resolved_date: string;
+    resolved_placement_hour: number;
+    coverage: string;
+    mode: "archive" | "forecast";
+    source: "cached" | "live";
+    credits_spent: number;
+    day_of_year: number;
+    t_min_c: number;
+    t_mean_c: number;
+    t_max_c: number;
+}
+
+// what a site-day costs and whether it is in coverage. Never calls FortyGuard, so the
+// picker can ask on every selection. Out of coverage is an ANSWER here, not an error.
+export interface AmbientQuote {
+    in_coverage: boolean;
+    coverage?: string;
+    mode?: "archive" | "forecast";
+    cached?: boolean;
+    credits?: number;
+    /** why this site-day cannot be built, when it cannot. */
+    reason?: string;
+}
+
+export function ambientQuote(lat: number, lon: number, date: string): Promise<AmbientQuote> {
+    const q = new URLSearchParams({ lat: String(lat), lon: String(lon), date });
+    return apiFetch<AmbientQuote>(`/api/ambient/quote?${q.toString()}`);
+}
+
+// build the hourly ambient for a place and day. 409 when it is not cached and
+// allow_live was not set - that refusal carries the credit price in its message.
+export function buildAmbient(request: AmbientRequest): Promise<AmbientResponse> {
+    return post<AmbientResponse>("/api/ambient", request);
 }

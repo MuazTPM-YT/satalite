@@ -57,8 +57,20 @@ def face_h_discrete(h_face_w_m2_k: FloatArray | float, dx_m: float, k_w_m_k: flo
 #     (2k/dx)*(T_face - T_centre) = [h*(T_air - T_centre) + q] / (1 + h*dx/(2k))
 # so q carries exactly the factor h does. Attenuating h and passing q raw leaves a
 # residual of q*h*dx/(2k) - first order in dx, and it needs BOTH terms to be non-zero.
-# That is what the arm sweep measured: baseline p = 0.82, but the q-off arm and the
-# h-off arm were each mesh independent, and halving q raised p from 1.31 to 1.56.
+#
+# Measured after this attenuation was applied, in
+# results/grid-order-20260823T211135Z-be95ada.json, on the hottest cell so no probe
+# stencil is in the way: baseline p = 2.0498, h-off p = 2.0067, and the sealed adiabatic
+# control p = 2.0053. Second order at the boundary, which is what the interior scheme
+# already was.
+#
+# The same artifact reports p = 3.1399, 1.1177 and 0.4965 for the three
+# evaporation-off arms. Those are NOT a surviving boundary error. Their total spread
+# across dx = 5 to 20 mm is 18.8, 18.3 and 14.7 mK, and the order fitted to differences
+# that small is set by the sweep's dt policy rather than by dx: dt = SAFETY x the
+# stability limit falls as dx**2, and holding dt fixed at 2.386 s instead moves those
+# three to -0.8471, 5.0216 and 2.9947 while the baseline arm barely moves, 2.0498 to
+# 1.9792. Do not read an order off an arm whose spread is millikelvin.
 def face_q_discrete(
     q_face_w_m2: FloatArray | float,
     h_face_w_m2_k: FloatArray | float,

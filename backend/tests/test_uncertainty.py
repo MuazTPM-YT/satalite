@@ -16,7 +16,7 @@ from physics.uncertainty import (
     strip_time_h,
 )
 
-MIX = Mix(cement_kg_m3=400.0, h_u_j_per_kg=450e3, alpha_u=0.7, tau_h=15.1, beta=0.9)
+MIX = Mix(cementitious_kg_m3=400.0, h_u_j_per_kg=450e3, alpha_u=0.7, tau_h=15.1, beta=0.9)
 SLAB = Element(
     shape="slab", dims_mm={"width": 400.0, "thickness": 300.0}, dx_m=0.04, placement_temp_c=25.0
 )
@@ -55,7 +55,7 @@ def test_h_cem_is_sampled_and_reaches_the_mix() -> None:
 
 # a Type V mix perturbed about the global 500 would be handed 11% of heat it has not got
 def test_h_cem_is_sampled_around_the_mix_not_the_global_default() -> None:
-    cool = Mix(cement_kg_m3=400.0, h_u_j_per_kg=450e3, alpha_u=0.7, tau_h=15.1,
+    cool = Mix(cementitious_kg_m3=400.0, h_u_j_per_kg=450e3, alpha_u=0.7, tau_h=15.1,
                beta=0.9, h_cem_j_per_g=450.0)
     heats = [s.h_cem_j_per_g for s in draw_parameters(cool, 500, seed=4)]
     assert np.mean(heats) == pytest.approx(450.0, abs=8.0)

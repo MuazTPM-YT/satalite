@@ -220,7 +220,7 @@ def draw_parameters(
 # spread for heavily blended mixes, which is the safe direction.
 def mix_for(base: Mix, sample: ParamSample) -> Mix:
     return Mix(
-        cement_kg_m3=base.cement_kg_m3,
+        cementitious_kg_m3=base.cementitious_kg_m3,
         h_u_j_per_kg=base.h_u_j_per_kg * (sample.h_cem_j_per_g / base.h_cem_j_per_g),
         alpha_u=base.alpha_u,
         tau_h=sample.tau_h,

@@ -364,3 +364,119 @@ def test_simulate_fields_leave_holes_null_not_filled(client: TestClient) -> None
     flat = [v for row in frame for v in row]
     assert None in flat, "the notch outside the T must be null"
     assert any(v is not None for v in flat), "the concrete must carry temperatures"
+
+
+# ---------------------------------------------------------------------------
+# Location: US-only coverage, the credit gate, and latitude actually arriving
+# ---------------------------------------------------------------------------
+# Phoenix on the demo day is the one site-day that is committed to the cache, so it is
+# the only one these tests may ask the /ambient route to build. Everything else is
+# checked through /ambient/quote, which never calls the API and never spends.
+PHOENIX = {"lat": 33.45, "lon": -112.07}
+CACHED_DAY = "2025-07-15"
+
+
+def test_non_us_coordinates_are_refused_before_any_call(client: TestClient) -> None:
+    # Dubai. The failure a judge must never see is a stack trace out of the vendored
+    # client, so this has to be refused at the boundary with a sentence.
+    resp = client.post(
+        "/api/ambient", json={"lat": 25.2, "lon": 55.27, "date": CACHED_DAY}
+    )
+    assert resp.status_code == 422, resp.text
+    assert "United States only" in resp.json()["detail"]
+
+
+def test_quote_reports_out_of_coverage_without_raising(client: TestClient) -> None:
+    # the picker asks this on every keystroke, so out-of-coverage is an ANSWER here.
+    resp = client.get("/api/ambient/quote", params={"lat": 25.2, "lon": 55.27, "date": CACHED_DAY})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["in_coverage"] is False
+
+
+def test_an_uncached_site_day_names_its_price_instead_of_paying_it(
+    client: TestClient,
+) -> None:
+    # Denver: inside coverage, not on disk. Without allow_live this must refuse.
+    resp = client.post(
+        "/api/ambient", json={"lat": 39.74, "lon": -104.99, "date": CACHED_DAY}
+    )
+    assert resp.status_code == 409, resp.text
+    assert "4220 credits" in resp.json()["detail"]
+
+    quote = client.get(
+        "/api/ambient/quote", params={"lat": 39.74, "lon": -104.99, "date": CACHED_DAY}
+    ).json()
+    assert quote["cached"] is False
+    assert quote["credits"] == 4220
+
+
+# The committed cache is deliberately NOT visible to tests - conftest points CACHE_DIR at
+# a tmp_path, so nothing here can pass because of a file someone happened to fetch. So
+# seed one day into that empty cache and check the route reads it instead of calling out.
+def seed_cached_day(lat: float, lon: float, day: str) -> None:
+    from app.services.cache import cache_path
+    from app.services.location import polygon_for
+    from app.services.season import CACHE_NAME, day_params
+
+    settings = get_settings()
+    settings.cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_path(settings.cache_dir, CACHE_NAME, day_params(polygon_for(lat, lon), day))
+    path.write_text(json.dumps({
+        "result": {"map_data": {"features": [
+            {"properties": {"tile_id": "t1", "min_temperature": 30.0,
+                            "average_temperature": 36.5, "max_temperature": 43.0}},
+        ]}}
+    }))
+
+
+def test_a_cached_site_day_costs_nothing(client: TestClient) -> None:
+    params = {**PHOENIX, "date": CACHED_DAY}
+    assert client.get("/api/ambient/quote", params=params).json()["cached"] is False
+
+    seed_cached_day(PHOENIX["lat"], PHOENIX["lon"], CACHED_DAY)
+    quote = client.get("/api/ambient/quote", params=params).json()
+    assert quote["cached"] is True
+    assert quote["credits"] == 0
+    assert quote["mode"] == "archive"
+
+
+def test_dates_outside_archive_and_forecast_are_named_not_guessed(
+    client: TestClient,
+) -> None:
+    before = client.get("/api/ambient/quote", params={**PHOENIX, "date": "2019-05-01"}).json()
+    assert "archive starts" in before["reason"]
+    after = client.get("/api/ambient/quote", params={**PHOENIX, "date": "2099-05-01"}).json()
+    assert "forecast horizon" in after["reason"]
+
+
+def test_ambient_echoes_the_location_it_resolved(client: TestClient) -> None:
+    seed_cached_day(PHOENIX["lat"], PHOENIX["lon"], CACHED_DAY)
+    resp = client.post(
+        "/api/ambient",
+        json={**PHOENIX, "date": CACHED_DAY, "placement_hour": 14, "duration_hours": 72.0},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["resolved_lat_deg"] == PHOENIX["lat"]
+    assert data["resolved_lon_deg"] == PHOENIX["lon"]
+    assert data["source"] == "cached"
+    assert data["credits_spent"] == 0
+    assert len(data["ambient"]["air_temp_c"]) == 73
+
+
+# THE point of the whole control: latitude has to reach build_ambient, not sit in a
+# caption. Same day, same daily min/mean/max, two latitudes - the solar term must move.
+def test_latitude_reaches_the_solar_term(client: TestClient) -> None:
+    from physics.season_analysis import DayWeather, build_ambient
+
+    day = DayWeather(date=CACHED_DAY, day_of_year=196, t_min_c=30.0, t_mean_c=36.5,
+                     t_max_c=43.0)
+    phoenix = build_ambient(day, 33.45, 14, hours=72.0)
+    anchorage = build_ambient(day, 61.22, 14, hours=72.0)
+
+    # July: the far north has a much longer day, so more daylight hours carry sun.
+    assert int(np.count_nonzero(anchorage.ghi_w_m2)) > int(np.count_nonzero(phoenix.ghi_w_m2))
+    assert not np.allclose(phoenix.ghi_w_m2, anchorage.ghi_w_m2)
+    # and the air temperature curve follows it, because Parton-Logan is driven by
+    # sunrise and daylength too.
+    assert not np.allclose(phoenix.air_temp_c, anchorage.air_temp_c)

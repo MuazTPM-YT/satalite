@@ -79,7 +79,7 @@ BLAINE_M2_KG = 380.0
 # so the assumptions above stay visible instead of collapsing into three magic floats.
 def standard_mix() -> Mix:
     return Mix(
-        cement_kg_m3=CEMENTITIOUS_KG_M3,
+        cementitious_kg_m3=CEMENTITIOUS_KG_M3,
         h_u_j_per_kg=ultimate_heat_j_per_kg(
             h_cem_j_per_g=H_CEM_DEFAULT,
             p_cem=1.0 - P_FLY_ASH,

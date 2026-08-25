@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AliasChoices, BaseModel, Field, model_validator
 
 from physics.constants import H_CEM_BY_TYPE, T_REF_DEFAULT_C
 from physics.equations.boundary import FORMWORK_R
@@ -84,13 +84,31 @@ class MixSpec(BaseModel):
     # unit cement. None means unknown, which falls back to H_CEM_DEFAULT rather than
     # guessing a type - guessing "V" would quietly relax every temperature prediction.
     cement_type: str | None = None
-    cement_kg_m3: float | None = Field(default=None, gt=0.0)
-    # Mix DESIGN, not solver parameters. Supplying cement_kg_m3 with these two - and
+    # TOTAL cementitious content, not the cement alone: cement + fly ash + any other SCM.
+    # The old name "cement_kg_m3" said the opposite of what it held and is still accepted
+    # on the wire so existing payloads keep working.
+    cementitious_kg_m3: float | None = Field(
+        default=None,
+        gt=0.0,
+        validation_alias=AliasChoices("cementitious_kg_m3", "cement_kg_m3"),
+    )
+    # Mix DESIGN, not solver parameters. Supplying cementitious_kg_m3 with these two - and
     # without h_u/alpha_u/tau_h - asks the service to derive the hydration parameters
     # the same way physics.season_analysis.standard_mix does, from the same published
     # regressions. Supplying h_u/alpha_u/tau_h instead pins them directly.
     w_cm: float | None = Field(default=None, gt=0.0, le=1.2)
     fly_ash_frac: float | None = Field(default=None, ge=0.0, le=0.6)
+    # Silica fume as a fraction of total cementitious. Schindler-Folliard 2005 regresses
+    # Class F ash, Class C ash and GGBF slag ONLY: there is no silica fume term in H_u,
+    # tau, beta or alpha_u. So this fraction is carried as MASS and generates NO heat.
+    # It exists because without it the cement fraction is overstated by exactly this
+    # much, and every non-fly-ash binder gets counted as cement.
+    #
+    # There is deliberately no slag field. Slag is NOT inert - it carries a 461 J/g heat
+    # term, an alpha_u term and a tau term - so accepting it here without wiring those
+    # would under-predict temperature, which is the direction that misses a DEF flag.
+    # Until a validation case contains slag, a slag mix is not expressible.
+    silica_fume_frac: float | None = Field(default=None, ge=0.0, le=0.15)
     h_u_j_per_kg: float | None = Field(default=None, gt=0.0)
     alpha_u: float | None = Field(default=None, gt=0.0, le=1.09)
     tau_h: float | None = Field(default=None, gt=0.0)
@@ -104,6 +122,18 @@ class MixSpec(BaseModel):
             raise ValueError(
                 f"unknown cement_type {self.cement_type!r}, expected one of "
                 f"{sorted(H_CEM_BY_TYPE)} or null for unknown"
+            )
+        return self
+
+    # the SCM fractions come out of the cement fraction, so together they cannot reach 1:
+    # that would be a binder with no cement in it, and H_u would collapse to the ash term.
+    @model_validator(mode="after")
+    def _scm_fractions_leave_cement(self) -> "MixSpec":
+        scm = (self.fly_ash_frac or 0.0) + (self.silica_fume_frac or 0.0)
+        if scm >= 1.0:
+            raise ValueError(
+                f"fly_ash_frac + silica_fume_frac = {scm:.3f} leaves no cement; "
+                "both are fractions of TOTAL cementitious content"
             )
         return self
 
@@ -140,6 +170,47 @@ class AmbientSpec(BaseModel):
         if any(not 0.0 <= v <= 100.0 for v in self.cloud_pct):
             raise ValueError("cloud_pct is PERCENT 0-100 despite the API calling it octas")
         return self
+
+
+class AmbientRequest(BaseModel):
+    """Where and when to build an hourly ambient for. US coordinates only.
+
+    allow_live is the money switch. A site-day that is not already on disk costs 4220
+    credits to fetch, so the default refuses and reports the price instead of paying it.
+    """
+
+    lat: float = Field(ge=-90.0, le=90.0)
+    lon: float = Field(ge=-180.0, le=180.0)
+    date: str
+    placement_hour: int = Field(default=14, ge=0, le=23)
+    duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
+    # False refuses to spend. True is an explicit "yes, buy this day".
+    allow_live: bool = False
+
+
+class AmbientResponse(BaseModel):
+    """An hourly ambient, plus exactly where and what it was built from.
+
+    lat/lon are echoed the way t_ref_c and probe_xy_m are: the latitude reached
+    physics.season_analysis.build_ambient, which is what sets solar declination, sunset
+    hour angle and daylength, so a reader never has to infer which location was solved.
+    """
+
+    ambient: AmbientSpec
+    resolved_lat_deg: float
+    resolved_lon_deg: float
+    # echoed for the same reason: the day and hour the series was actually built for.
+    resolved_date: str
+    resolved_placement_hour: int
+    coverage: str            # which US coverage box holds the point
+    mode: str                # "archive" or "forecast"
+    source: str              # "cached" or "live"
+    credits_spent: int
+    day_of_year: int
+    # the daily triple build_ambient shaped the Parton-Logan curve from.
+    t_min_c: float
+    t_mean_c: float
+    t_max_c: float
 
 
 class Bands(BaseModel):
@@ -286,6 +357,23 @@ class PourWindowResult(BaseModel):
     ensemble: EnsembleResult | None = None
 
 
+class Site(BaseModel):
+    """Where and when a precomputed artifact was built for.
+
+    source says how the daily min/mean/max were obtained, and it is not decoration:
+    "cached" means a FortyGuard day that is on disk, "stated" means the three numbers
+    were written down because no season sat in the cache when the artifact was built.
+    A stated day must never be presented as an observation.
+    """
+
+    label: str
+    lat_deg: float
+    lon_deg: float
+    date: str
+    placement_hour: int
+    source: str
+
+
 class DemoEnsembleResponse(BaseModel):
     """Precomputed bands for ONE fixed scenario. Served from disk, never solved live.
 
@@ -296,6 +384,9 @@ class DemoEnsembleResponse(BaseModel):
 
     scenario: SimulationRequest
     ensemble: EnsembleResult
+    # Where the scenario is. None for an artifact built before this field existed - the
+    # studio then shows no location rather than inventing one.
+    site: Site | None = None
     built_at: str
     sampler: str
     dt_s: float
