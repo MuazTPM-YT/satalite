@@ -16,6 +16,12 @@ Carlo ensemble reports p05/p95 bands over the parameters we genuinely do not kno
 Strength calibration is still PROVISIONAL literature defaults, and says so in every
 payload that carries a strip time.
 
+**Read [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) before trusting a number.** It lists
+what is wrong and which number each item moves: one constant that was fitted against a
+validation case, silica fume modelled as inert, a forecast band with zero measured pairs
+behind it, a strip time that is a fraction of an unmeasured strength curve, and the fact
+that validation stands at 1 of 3. It also says what is solid, because that is true too.
+
 ## Layout
 
 ```
@@ -111,6 +117,53 @@ npm start                 # serves the built app on :3000
 the canonical URL, Open Graph, `robots.txt` and `sitemap.xml` are all absolute, and a
 crawler cannot resolve a relative one.
 
+## Where the pour is
+
+Location is a control in the command bar, not a caption. The chip next to the health dot
+names the active site and says whether its weather came off disk or cost credits — grey
+for the artifact's own stated day, green for cached, amber for live.
+
+Latitude is not decoration. It sets solar declination, sunset hour angle and daylength,
+so it moves the solar term and with it the whole early-morning-against-afternoon
+comparison. `POST /api/ambient` hands the chosen latitude straight to
+`physics.season_analysis.build_ambient` and echoes `resolved_lat_deg` back, the same way
+`t_ref_c` and `probe_xy_m` are echoed, so you never have to trust that it arrived.
+
+Two hard limits, both the API's rather than ours:
+
+- **Coverage is the United States only.** Coordinates are checked against the continental
+  US, Alaska (including the Aleutians east of the antimeridian) and Hawaii, in the browser
+  before any request and again at the boundary. Somewhere outside gets a sentence, not a
+  stack trace.
+- **A day that is not cached costs 4220 credits.** `GET /api/ambient/quote` prices a
+  site-day without calling FortyGuard at all, so the picker can ask on every keystroke for
+  nothing. `POST /api/ambient` without `allow_live: true` refuses and names the price
+  instead of paying it, and the button needs a second, explicit click that says the
+  number. Changing any input disarms it.
+
+Archive coverage runs from 2021-01-01; the forecast reaches 12 hours past now. Anything
+outside that is refused with the range named.
+
+Only one site-day ships in the container — Phoenix, 2025-07-15, the demo day — so that is
+the one selection that is free. Every other preset and every typed coordinate will quote
+4220 and wait for you to confirm.
+
+## The mix
+
+`MixSpec.cementitious_kg_m3` is **total cementitious content** — cement plus fly ash plus
+any other SCM. It was called `cement_kg_m3`, which said the opposite of what it held; the
+old name is still accepted on the wire so existing payloads keep working.
+
+`silica_fume_frac` is a fraction of that total, and it is carried as **mass with no heat**.
+Schindler–Folliard 2005 regresses Class F ash, Class C ash and GGBF slag only — there is
+no silica fume term in `H_u`, `tau`, `beta` or `alpha_u` — so counting it as cement
+overstates the heat, by 5.95% on the Deer Creek mix.
+
+There is deliberately **no slag field**. Slag is not inert: it carries a 461 J/g heat term,
+an `alpha_u` term and a `tau` term. Accepting it without wiring those would under-predict
+temperature, which is the direction that misses a DEF flag. Until a validation case
+contains slag, a slag mix is not expressible.
+
 ## Checks
 
 Backend — lint, types, tests:
@@ -202,6 +255,46 @@ docker run -p 8000:8000 \
 
 `ALLOWED_ORIGINS` is not optional for a real deployment. It defaults to localhost, which
 passes every test and then fails every browser request in production.
+
+`PORT` overrides the listening port and defaults to 8000. Cloud Run, Fly and most
+container hosts inject the port they want and health-check only that port, so a container
+that hardcodes one is marked unhealthy and rolled back with nothing useful in the logs.
+
+The image is a builder/runtime split so uv and the build tooling never ship. Measured on
+this project: 970 MB single-stage, 672 MB with the uv cache dropped, **578 MB** as it
+stands. That is what a scale-to-zero host pulls on every cold start, and it is the floor
+without dropping a feature — scipy is 152 MB and numpy 67 MB of the 260 MB venv.
+
+### Deploying it free
+
+The frontend goes on Vercel. For the backend, the binding number is that **one
+deterministic solve is 6.1 s of CPU** (measured: dt = 10 s, 25,920 steps, a 30×300 grid,
+433 recorded frames) with a **282 MB peak RSS**. That rules out the obvious free tiers:
+Render's free instance is 512 MB and **0.1 CPU**, which turns 6.1 s into roughly a minute,
+and it spins down after 15 minutes with a 30–60 s cold start. Hugging Face Spaces now
+requires a paid plan for Docker Spaces. Fly.io requires a card on file with no documented
+free allowance.
+
+**Google Cloud Run** is the one that works. Its always-free tier is 180,000 vCPU-seconds,
+360,000 GiB-seconds and 2M requests a month in US regions — about **29,500 free solves a
+month** at 6.1 vCPU-s each, with a real vCPU rather than a tenth of one. Billing has to be
+enabled, so a card is on file; set a budget alert and the free tier keeps it at zero.
+
+```bash
+# from the repository root — the Dockerfile needs it as build context
+gcloud run deploy satalite-api --source . --region us-central1   --memory 1Gi --cpu 1 --concurrency 2 --max-instances 4 --min-instances 0   --timeout 120 --allow-unauthenticated   --set-env-vars ALLOWED_ORIGINS=https://your-frontend.vercel.app   --set-secrets FORTYGUARD_API_KEY=fortyguard-key:latest
+```
+
+`--concurrency 2` matters. The solve is CPU-bound and single-threaded, so the default of
+80 queues requests behind each other on one vCPU until they all time out.
+
+Deploy the backend first, build the frontend with `NEXT_PUBLIC_API_URL` pointing at it —
+it is inlined at **build** time — then redeploy the backend with the real Vercel origin in
+`ALLOWED_ORIGINS`. Warm the instance with one `curl` to `/api/health` before a demo;
+`--min-instances 0` is what keeps it free, and a single warm-up removes the cold start.
+
+Most of the studio never touches the solver: the season replay, the validation report and
+the ensemble band are served straight from disk.
 
 ## Notes
 
