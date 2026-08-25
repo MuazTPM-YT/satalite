@@ -22,10 +22,12 @@ import {
 } from "lucide-react";
 import type { PanelId } from "@/components/PanelId";
 import HealthProbe from "@/components/HealthProbe";
+import LocationChip, { type ActiveLocation } from "@/components/LocationChip";
 import { Segmented, ToolbarDivider, ToolbarToggle, cx, type Icon } from "@/components/ui";
 import { useTooltip } from "@/components/Tooltip";
 import { Select } from "@/components/fields";
 import { UNIT_OPTIONS, type LengthUnit } from "@/lib/units";
+import type { AmbientResponse } from "@/lib/api";
 
 export type ViewMode = "2d" | "3d";
 
@@ -51,6 +53,10 @@ interface TopBarProps {
   /** the inputs have moved off the run on screen */
   stale: boolean;
   onSolve: () => void;
+  /** where the pour is, and whether that day cost anything */
+  location: ActiveLocation | null;
+  durationHours: number;
+  onLocationApply: (response: AmbientResponse, label: string) => void;
 }
 
 const VIEW_OPTIONS: { id: ViewMode; label: string; icon: Icon }[] = [
@@ -114,6 +120,9 @@ export default function TopBar({
   solving,
   stale,
   onSolve,
+  location,
+  durationHours,
+  onLocationApply,
 }: TopBarProps) {
   const solveTip = useTooltip(
     solving ? (
@@ -231,9 +240,15 @@ export default function TopBar({
         </button>
         {solveTip.node}
 
-        {/* A site label used to live here, but no response carries a location for the
-            run on screen and a hardcoded one is just a caption that happens to look
-            like data. Backend reachability is the honest thing to show instead. */}
+        {/* A site label used to live here as a hardcoded caption. It is a real control
+            now: /api/ambient echoes the latitude it handed to build_ambient, so the chip
+            names a location the solver actually used, and its dot says whether that day
+            came off disk or cost credits. */}
+        <LocationChip
+          active={location}
+          durationHours={durationHours}
+          onApply={onLocationApply}
+        />
         <HealthProbe />
       </div>
     </header>

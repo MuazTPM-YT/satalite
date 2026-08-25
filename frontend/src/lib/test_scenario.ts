@@ -83,9 +83,10 @@ const scenario: SimulationRequest = {
   mix: {
     mix_id: "standard",
     cement_type: null,
-    cement_kg_m3: null,
+    cementitious_kg_m3: null,
     w_cm: null,
     fly_ash_frac: null,
+    silica_fume_frac: null,
     h_u_j_per_kg: null,
     alpha_u: null,
     tau_h: null,
@@ -121,9 +122,10 @@ const design: SimulationRequest = {
   mix: {
     mix_id: "design",
     cement_type: "II",
-    cement_kg_m3: 380,
+    cementitious_kg_m3: 380,
     w_cm: 0.42,
     fly_ash_frac: 0.25,
+    silica_fume_frac: null,
     h_u_j_per_kg: null,
     alpha_u: null,
     tau_h: null,
