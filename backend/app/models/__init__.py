@@ -186,6 +186,18 @@ class AmbientRequest(BaseModel):
     duration_hours: float = Field(default=72.0, gt=0.0, le=336.0)
     # False refuses to spend. True is an explicit "yes, buy this day".
     allow_live: bool = False
+    # WHICH measured triple shapes the diurnal curve.
+    #
+    # "aoi_mean" averages every tile in the AOI. That is the reducer the season replay
+    # and every precomputed artifact were built with, so it stays the default - changing
+    # it here would silently move numbers that are already written down on disk.
+    #
+    # "tile" uses the one tile the lat/lon actually falls in. That is the hyperlocal
+    # answer, and it is the point of picking a spot on the map rather than a city: over
+    # the demo AOI the daily minimum spreads 0.37 C between tiles, which is real
+    # exposure the mean flattens. A point outside every tile falls back to the mean and
+    # the response says so.
+    reduce: Literal["aoi_mean", "tile"] = "aoi_mean"
 
 
 class AmbientResponse(BaseModel):
@@ -207,6 +219,14 @@ class AmbientResponse(BaseModel):
     source: str              # "cached" or "live"
     credits_spent: int
     day_of_year: int
+    # Which reducer produced the triple below, and the tile it came from when that was
+    # one tile. Echoed rather than assumed: a curve built from one 100 m tile and a curve
+    # built from 221 of them are different answers, and a reader must never have to guess
+    # which is on screen. "tile" was ASKED FOR and GRANTED; a request for "tile" whose
+    # point fell outside every tile comes back "aoi_mean" here, with tile_id null.
+    reduction: str
+    tile_id: str | None = None
+    n_tiles: int
     # the daily triple build_ambient shaped the Parton-Logan curve from.
     t_min_c: float
     t_mean_c: float
@@ -431,3 +451,60 @@ class ValidationResponse(BaseModel):
     n_samples: int | None = None
     assumed_chemistry_ranges: dict[str, dict[str, list[float]]] = {}
     notes: list[str] = []
+
+
+class HeatmapTile(BaseModel):
+    """One FortyGuard tile: the ground it covers, and what the day did inside it.
+
+    The footprint is the API's own ring rather than a bounding box. The tiles are laid
+    on a projected grid that is a fraction of a degree off north, so a tile is a rotated
+    quadrilateral in lon/lat - drawing it as an axis-aligned box would tilt the whole
+    field against the streets underneath it.
+
+    Every temperature is optional because the upstream feature can carry a null. A tile
+    that is missing the field being drawn is left undrawn; it is never filled with a
+    neighbour's value, and it is never counted as a zero.
+    """
+
+    tile_id: str
+    # closed [lon, lat] ring, degrees, first point repeated last
+    ring_lonlat: list[list[float]]
+    t_min_c: float | None = None
+    t_mean_c: float | None = None
+    t_max_c: float | None = None
+
+
+class HeatmapResponse(BaseModel):
+    """The measured temperature field a site-day's ambient was reduced from.
+
+    This is the SPATIAL field, not a time series. A filter_type=3 heatmap carries one
+    min/mean/max triple per tile for the whole day, so the axis here runs across the
+    tiles of the AOI and never across hours.
+
+    CACHED ONLY, and that is a money decision rather than a caching one: a site-day that
+    is not on disk costs 4220 credits, and a map that fetched on open would empty the
+    budget by being looked at. The one control allowed to spend is the location picker,
+    which asks first and names the price.
+
+    t_min_c / t_mean_c / t_max_c are the AOI reduction - the tile mean of each field,
+    which is exactly the triple physics.season_analysis.build_ambient was handed. They
+    are echoed here so the map can say which three numbers the solve actually used, the
+    same way resolved_lat_deg is echoed by /api/ambient.
+    """
+
+    resolved_lat_deg: float
+    resolved_lon_deg: float
+    resolved_date: str
+    coverage: str            # which US coverage box holds the point
+    mode: str                # "archive" or "forecast"
+    source: str = "cached"   # never "live": this route cannot spend
+    credits_spent: int = 0
+    granularity_m: int
+    day_of_year: int
+    t_min_c: float
+    t_mean_c: float
+    t_max_c: float
+    n_tiles: int
+    # [west, south, east, north] degrees, over every tile ring
+    bbox_lonlat: list[float]
+    tiles: list[HeatmapTile]
