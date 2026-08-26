@@ -92,8 +92,8 @@ export default function PourWindowTable({ candidates, best_offset_h }: PourWindo
         </div>
 
         <p className="mt-2 text-[10px] leading-relaxed text-text-muted">
-          ▲ marks a quantity the response reports as over its limit. Limits and the
-          quantity that crossed them are in the Checks palette.
+          ▲ marks a quantity the response reports as over its limit. Limits are in the Checks
+          palette.
         </p>
 
         {/* A one-row sweep is not a broken sweep, and the reader deserves to know
@@ -101,9 +101,9 @@ export default function PourWindowTable({ candidates, best_offset_h }: PourWindo
             cover would solve against weather the data does not have. */}
         {candidates.length === 1 && (
           <p className="mt-1.5 rounded-lg border border-border-default bg-elevate-1 px-2.5 py-2 text-[10px] leading-relaxed text-text-muted">
-            Only one start hour fits: the cure window is as long as the ambient series,
-            so every later start would run past the end of the weather. Shorten the cure
-            window in the Element palette to open the sweep up.
+            Only one start hour fits: the cure window is as long as the ambient series, so a
+            later start would run past the end of the weather. Shorten it in the Element palette
+            to open the sweep up.
           </p>
         )}
       </div>

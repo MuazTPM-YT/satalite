@@ -56,8 +56,8 @@ export type ViewId = "front" | "back" | "left" | "right" | "top" | "bottom";
 const VIEWS: { id: ViewId; label: string; hint: string }[] = [
   { id: "front", label: "Front", hint: "Section A-A — the solved cross-section" },
   { id: "back", label: "Back", hint: "The same section, seen from the far end" },
-  { id: "left", label: "Left", hint: "Elevation on the left face, along the length" },
-  { id: "right", label: "Right", hint: "Elevation on the right face, along the length" },
+  { id: "left", label: "Left", hint: "Elevation on the left face" },
+  { id: "right", label: "Right", hint: "Elevation on the right face" },
   { id: "top", label: "Top", hint: "Plan on the top face, along the length" },
   { id: "bottom", label: "Bottom", hint: "Plan on the soffit, along the length" },
 ];
@@ -921,8 +921,8 @@ export default function Section2D({
           the ones a drag cannot express. */}
       <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
         <Toolbar>
-          <ToolbarToggle icon={Minus} label="Zoom out" hint="Or scroll the wheel down over the sheet." onClick={() => zoomAbout(0.8)} />
-          <ToolbarToggle icon={Plus} label="Zoom in" hint="Or scroll the wheel up over the sheet." onClick={() => zoomAbout(1.25)} />
+          <ToolbarToggle icon={Minus} label="Zoom out" hint="Or scroll down over the sheet." onClick={() => zoomAbout(0.8)} />
+          <ToolbarToggle icon={Plus} label="Zoom in" hint="Or scroll up over the sheet." onClick={() => zoomAbout(1.25)} />
           {/* Frame, not Maximize: the scopes dock uses Maximize for "fill the screen",
               and one icon meaning two different things is worse than two icons. */}
           <ToolbarToggle icon={FrameIcon} label="Fit the sheet" hint="Back to 100 % zoom, centred." onClick={fitView} />
@@ -950,8 +950,8 @@ export default function Section2D({
             onClick={() => setShowHidden((v) => !v)}
             title={
               isSection
-                ? "Elevations only — a cut section has nothing behind it to hide"
-                : "Lengthwise edges: solid where the face steps, dashed where concrete in front hides them"
+                ? "Elevations only — a cut section hides nothing"
+                : "Lengthwise edges: solid where the face steps, dashed where concrete hides them"
             }
           >
             Hidden lines
@@ -963,8 +963,8 @@ export default function Section2D({
             onClick={onToggleLabels}
             title={
               isSection
-                ? "Name every edge with a letter and every corner with a number, so the distances in the Probe palette can be traced to lines you can see"
-                : "Section views only — an elevation shows a face, not the cut the letters name"
+                ? "Letter every edge and number every corner, so Probe distances trace to lines you can see"
+                : "Section views only — an elevation shows a face, not the cut"
             }
           >
             Labels

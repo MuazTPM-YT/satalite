@@ -77,9 +77,9 @@ export default function EnsemblePanel({ demo, nominal, matchesDemo }: EnsemblePa
         {!matchesDemo && (
           <p className="mb-2 rounded-lg border border-status-amber/30 bg-status-amber-dim px-2.5 py-2 text-[10px] leading-relaxed text-text-secondary">
             <span className="font-semibold text-status-amber">Not this run.</span> The band
-            below was precomputed for one fixed scenario, and the inputs no longer match it.
-            The nominal line is the run on screen; the envelope is not its envelope. Reset
-            the inputs to the scenario, or read the two apart.
+            below was precomputed for one fixed scenario and the inputs no longer match it. The
+            nominal line is the run on screen; the envelope is not its envelope. Reset the
+            inputs to compare them.
           </p>
         )}
         <div className="flex items-baseline gap-2 mb-1 flex-wrap">
@@ -182,9 +182,9 @@ export default function EnsemblePanel({ demo, nominal, matchesDemo }: EnsemblePa
               )}
               . The nominal case does not breach: a single deterministic run sits at{" "}
               <span className="tabular-nums">{nominal.peak_core_temp_c.toFixed(2)} °C</span>. What
-              crosses is the upper tail — a portion of the sampled parameter space, not the
-              nominal pour. The flag reports the nominal case; the band reports the spread.
-              Reading only one of them is how a run that could breach gets a green light.
+              crosses is the upper tail — part of the sampled parameter space, not the
+              nominal pour. The flag reports the nominal case, the band the spread. Reading
+              only one is how a run that could breach gets a green light.
             </p>
           ) : (
             <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
@@ -192,9 +192,8 @@ export default function EnsemblePanel({ demo, nominal, matchesDemo }: EnsemblePa
             </p>
           )}
           <p className="mt-2 text-[10px] text-text-muted leading-relaxed">
-            The band was solved at dx {e.dx_m} m; the nominal curve is solved live at dx{" "}
-            {demo.scenario.element.dx_m} m. They are not the same discretisation — the note
-            below quantifies the difference on this scenario.
+            Band solved at dx {e.dx_m} m, nominal live at dx{" "} {demo.scenario.element.dx_m}
+            m. Not the same discretisation — the note below quantifies the difference.
           </p>
         </div>
 
@@ -207,9 +206,9 @@ export default function EnsemblePanel({ demo, nominal, matchesDemo }: EnsemblePa
             {demo.note}
           </p>
           <p className="mt-2 text-[10px] text-text-muted leading-relaxed">
-            Reproduced word for word rather than summarised. The measured seed-to-seed
-            figures live in this string and they have been revised before; a number retyped
-            from anywhere else would be a different claim wearing the artifact&apos;s authority.
+            Word for word, not summarised. The measured seed-to-seed figures live in this string
+            and have been revised before; retyping one from elsewhere would be a different claim
+            wearing the artifact&apos;s authority.
           </p>
         </div>
 
@@ -232,8 +231,8 @@ export default function EnsemblePanel({ demo, nominal, matchesDemo }: EnsemblePa
           </div>
           {!timesMatch && (
             <p className="mt-1.5 text-status-amber leading-relaxed">
-              The band has {n} frames and the nominal run has {nominal.times_h.length}. The x
-              axis is the frame index, not hours — the two were not recorded on the same cadence.
+              Band has {n} frames, nominal run has {nominal.times_h.length}. The x axis is
+              frame index, not hours — different cadences.
             </p>
           )}
         </div>

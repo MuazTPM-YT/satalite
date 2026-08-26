@@ -476,8 +476,8 @@ export default function Viewer({
     <>
       <span className="block font-medium">Cut take-off</span>
       <span className="mt-0.5 block text-text-secondary">
-        Face area, perimeter, volume and mass of what the section cut removed — measured
-        on the solved mask, not on an idealised polygon.
+        Area, perimeter, volume and mass of what the cut removed — from the solved mask,
+        not an idealised polygon.
       </span>
     </>,
     "top",
@@ -500,7 +500,7 @@ export default function Viewer({
           icon={Scan}
           active={camView === "front"}
           onClick={() => setCamView("front")}
-          title="Look along the length, straight at the solved cross-section"
+          title="Look along the length, at the solved cross-section"
         >
           Front
         </ToolbarButton>
@@ -523,7 +523,7 @@ export default function Viewer({
         <ToolbarButton
           icon={RotateCcw}
           onClick={() => setCamView("iso")}
-          title="Put the camera back on the isometric preset"
+          title="Back to the isometric preset"
         >
           Reset
         </ToolbarButton>
@@ -532,14 +532,14 @@ export default function Viewer({
           icon={Tags}
           active={showLabels}
           onClick={onToggleLabels}
-          title="Name every edge with a letter and every corner with a number, so the distances in the Probe palette can be traced to lines you can see"
+          title="Letter every edge and number every corner, so Probe distances trace to lines you can see"
         >
           Labels
         </ToolbarButton>
         <ToolbarButton
           icon={Target}
           onClick={probeBackendPoint}
-          title="Read the point the backend sampled its own core temperature at, and send it to the Probe palette"
+          title="Read where the backend sampled its core temperature, and send it to Probe"
         >
           Backend point
         </ToolbarButton>

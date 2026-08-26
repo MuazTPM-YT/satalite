@@ -313,7 +313,7 @@ function Track({
           <ToolbarToggle
             icon={Maximize2}
             label={`Expand ${title.toLowerCase()}`}
-            hint="Fill the screen with this plot. Escape closes it."
+            hint="Fill the screen. Escape closes it."
             onClick={() => onZoom(id)}
           />
         )}
