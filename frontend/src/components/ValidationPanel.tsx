@@ -79,7 +79,7 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
           </div>
           <p className="mt-2 text-[10px] text-text-muted leading-relaxed">
             The metric is band COVERAGE, not point error: DSO-12-02 publishes no cement
-            chemistry, so a point prediction would be testing four unmeasured numbers.
+            chemistry, so a point prediction would test four unmeasured numbers.
           </p>
         </div>
 
@@ -99,14 +99,13 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
           <div className="mt-3">
             <SectionTitle
               title="Laboratory case"
-              subtitle="a different test, reported separately on purpose"
+              subtitle="a different test, reported separately"
             />
             <p className="mb-1.5 rounded-lg border border-border-default bg-elevate-1 p-2 text-[10px] leading-relaxed text-text-secondary">
-              This is an adiabatic calorimeter measurement: no boundary, no weather, no
-              geometry — it tests the hydration heat alone against a single checkpoint. It
-              says nothing about whether the solver reproduces a real placement, and the two
-              field cases above are the evidence on that question. Passing here does not
-              carry over.
+              An adiabatic calorimeter measurement: no boundary, no weather, no geometry — it
+              tests hydration heat alone against a single checkpoint. It says nothing about
+              whether the solver reproduces a real placement; the field cases above are the
+              evidence on that. Passing here does not carry over.
             </p>
             {other.map((c) => (
               <CaseCard key={c.case_id} c={c} warn_c={validation.band_width_warn_c} />
@@ -135,7 +134,7 @@ export default function ValidationPanel({ validation }: ValidationPanelProps) {
             <SectionLabel className="mb-1">assumed_chemistry_ranges</SectionLabel>
             <p className="mb-1.5 text-[10px] text-status-amber leading-relaxed">
               ASSUMPTIONS, not measurements. The source reports no oxide analysis; these are
-              typical published ASTM C150 ranges for the stated cement type.
+              published ASTM C150 ranges for the stated cement type.
             </p>
             {Object.entries(validation.assumed_chemistry_ranges).map(([type, params]) => (
               <div key={type} className="mt-1">
@@ -205,9 +204,9 @@ function CaseCard({ c, warn_c }: { c: ValidationCase; warn_c: number | null }) {
           </span>
           {c.band_too_wide && warn_c !== null && (
             <span className="text-status-amber">
-              {" "}— wider than the {warn_c} °C warn threshold. The report flags this itself: a
-              band this wide is too wide to be strong evidence either way, so covering a
-              checkpoint with it proves little.
+              {" "}— wider than the {warn_c} °C warn threshold, which the report flags itself.
+              A band this wide is weak evidence either way, so covering a checkpoint with it
+              proves little.
             </span>
           )}
           {b.peak_covered !== undefined && (

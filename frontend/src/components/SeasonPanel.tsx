@@ -36,8 +36,7 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
             {season.detail ?? "The backend reported the artifact as unavailable."}
           </p>
           <p className="mt-3 text-[10px] text-text-muted leading-relaxed">
-            This is a 200 with the data absent, not an error. Nothing is being estimated in
-            its place.
+            A 200 with the data absent, not an error. Nothing is estimated in its place.
           </p>
         </div>
       </div>
@@ -87,8 +86,8 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
               ))}
             </div>
             <p className="mt-1.5 text-[10px] text-text-muted leading-relaxed">
-              Reported as 14:00 minus 04:00. A positive mean_peak_core_temp_c means the
-              afternoon pour runs hotter by that many °C, averaged over the sampled days.
+              14:00 minus 04:00. A positive mean_peak_core_temp_c means the afternoon pour runs
+              hotter by that many °C, averaged over the sampled days.
             </p>
           </div>
         </div>
@@ -97,14 +96,14 @@ export default function SeasonPanel({ season }: SeasonPanelProps) {
         <div className="mt-3">
           <SectionTitle
             title="Not discriminating on this element"
-            subtitle="identical at both placement hours — context, not a decision signal"
+            subtitle="identical at both hours — context, not a signal"
           />
           {constant.map((f) => (
             <FlagRow key={f.key} flag={f} hours={hours} per={per} n_days={n_days} />
           ))}
           <p className="mt-1.5 text-[10px] text-text-muted leading-relaxed">
-            These rows describe the element and the season, not the choice of hour. A row
-            reading the same at every option cannot rank the options — treating one as a
+            These describe the element and the season, not the choice of hour. A row that
+            reads the same at every option cannot rank them — treating one as a
             recommendation reads a constant as a signal.
           </p>
         </div>
@@ -201,7 +200,7 @@ function Sampling({ season }: { season: SeasonAnalysisResponse }) {
       ) : (
         <p className="text-[11px] text-status-amber">
           No sampling block in this artifact — how the days were drawn is unknown, so no
-          fraction below should be read as a rate over a period.
+          fraction below is a rate over a period.
         </p>
       )}
     </div>
@@ -267,8 +266,8 @@ function FlagRow({
         })}
       </div>
       <div className="mt-1 text-[9px] text-text-muted">
-        95% Wilson score interval. Wald is not used: every fraction here is 0 or 1, where
-        Wald has zero width and would assert certainty from {n_days} observations.
+        95% Wilson score interval. Not Wald: every fraction here is 0 or 1, where Wald has zero
+        width and would assert certainty from {n_days} observations.
       </div>
     </div>
   );

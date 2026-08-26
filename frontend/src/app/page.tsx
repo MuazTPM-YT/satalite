@@ -548,8 +548,8 @@ export default function StudioPage() {
                     {solveError}
                   </p>
                   <p className="mt-3 text-[11px] leading-relaxed text-text-muted">
-                    Nothing is drawn from a placeholder. The viewer stays empty until the
-                    backend returns a run.
+                    Nothing is drawn from a placeholder. The viewer stays empty until a run
+                    lands.
                   </p>
                 </div>
               </div>
@@ -595,8 +595,7 @@ export default function StudioPage() {
             {run && solveError && (
               <div className="pointer-events-none absolute inset-x-0 top-20 z-30 flex justify-center px-4">
                 <p className="pointer-events-auto max-w-lg rounded-lg border border-status-red/40 bg-status-red-dim px-3 py-2 font-mono text-[10px] leading-relaxed text-status-red backdrop-blur-xl">
-                  The last solve was rejected: {solveError}. The drawing is still the
-                  previous answer.
+                  Last solve rejected: {solveError}. The drawing is the previous answer.
                 </p>
               </div>
             )}
@@ -610,7 +609,7 @@ export default function StudioPage() {
               className="pointer-events-none absolute inset-y-0 left-0 right-[104px]"
             >
               <FloatingPanel
-                title="Element & Mix Inputs"
+                title="Element & Mix"
                 open={openPanels.element}
                 containerSize={overlaySize}
                 defaultGeo={PANEL_GEO.element}
@@ -682,7 +681,7 @@ export default function StudioPage() {
 
               {run && demo && (
                 <FloatingPanel
-                  title="Ensemble band — precomputed, one fixed scenario"
+                  title="Ensemble band — precomputed, one scenario"
                   open={openPanels.ensemble}
                   containerSize={overlaySize}
                   defaultGeo={PANEL_GEO.ensemble}
@@ -711,7 +710,7 @@ export default function StudioPage() {
               </FloatingPanel>
 
               <FloatingPanel
-                title="Validation — USBR DSO-12-02 cases"
+                title="Validation — USBR DSO-12-02"
                 open={openPanels.validation}
                 containerSize={overlaySize}
                 defaultGeo={PANEL_GEO.validation}
@@ -758,7 +757,7 @@ export default function StudioPage() {
                   </div>
                 ) : (
                   <p className="p-3 text-[11px] text-text-secondary">
-                    Sweeping candidate start hours for these inputs. One full solve each.
+                    Sweeping start hours for these inputs. One full solve each.
                   </p>
                 )}
               </FloatingPanel>

@@ -45,7 +45,7 @@ export const SHAPE_DEFS: ShapeDef[] = [
   {
     id: "slab",
     label: "Slab",
-    note: "Sides are symmetry planes — a strip cut from a wider pour, so width cannot change the answer.",
+    note: "Sides are symmetry planes — a strip of a wider pour, so width cannot change the answer.",
     dims: [
       { key: "width", label: "Width", min_mm: 300, max_mm: 12000, default_mm: 3000 },
       { key: "thickness", label: "Thickness", min_mm: 50, max_mm: 2000, default_mm: 300 },
@@ -63,7 +63,7 @@ export const SHAPE_DEFS: ShapeDef[] = [
   {
     id: "rect_column",
     label: "Rectangular column",
-    note: "Four formed faces. Equal width and height gives a square column.",
+    note: "Four formed faces. Equal width and depth gives a square.",
     dims: [
       { key: "width", label: "Width", min_mm: 150, max_mm: 3000, default_mm: 400 },
       { key: "height", label: "Depth", min_mm: 150, max_mm: 3000, default_mm: 400 },
@@ -87,7 +87,7 @@ export const SHAPE_DEFS: ShapeDef[] = [
   {
     id: "t_section",
     label: "T-section",
-    note: "Flange on top. The soffits under the flange are tagged formed, not ground.",
+    note: "Flange on top. Soffits under it are tagged formed, not ground.",
     dims: [
       { key: "flange_width", label: "Flange width", min_mm: 200, max_mm: 4000, default_mm: 900 },
       { key: "flange_thickness", label: "Flange depth", min_mm: 50, max_mm: 800, default_mm: 150 },

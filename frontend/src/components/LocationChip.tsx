@@ -138,8 +138,8 @@ export default function LocationChip({ active, durationHours, onApply }: Props) 
                 </span>
                 <span className="mt-1 block text-text-secondary">
                     {active.reduction === "tile"
-                        ? `Solved against tile ${active.tileId} alone — the 100 m cell this point sits in.`
-                        : "Solved against the AOI mean — every tile of the day averaged. Pick a point in the Map view to use one tile instead."}
+                        ? `Solved against tile ${active.tileId} — the 100 m cell this point sits in.`
+                        : "Solved against the AOI mean — every tile averaged. Pick a point in the Map view to use one cell."}
                 </span>
             </>
         ),
@@ -261,7 +261,7 @@ function LocationPanel({
     const localProblem = !numbersOk
         ? "Latitude and longitude must both be numbers."
         : box === null
-          ? "Outside coverage. The temperature API answers for the United States only: the continental US, Alaska and Hawaii."
+          ? "Outside coverage. The API answers for the United States only: continental US, Alaska and Hawaii."
           : !dateOk
             ? when
             : null;
@@ -458,8 +458,7 @@ function LocationPanel({
                 )}
                 {!cached && !localProblem && !shown?.reason && (
                     <p className="mt-1 text-[10px] leading-snug text-text-muted">
-                        This day is not on disk. Fetching it spends {credits} credits against the
-                        remaining quota.
+                        Not on disk. Fetching it spends {credits} credits.
                     </p>
                 )}
             </div>

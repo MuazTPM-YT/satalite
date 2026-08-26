@@ -197,7 +197,7 @@ export default function LeftPanel({
 
         <SelectField<ShapeId>
           label="Shape"
-          hint="physics.geometry.SHAPES — the sections the solver can rasterise"
+          hint="physics.geometry.SHAPES — what the solver can rasterise"
           value={config.shape}
           options={SHAPE_DEFS.map((s) => ({ id: s.id, label: s.label }))}
           onChange={(v) => {
@@ -227,7 +227,7 @@ export default function LeftPanel({
 
         <ScrubField
           label="Length"
-          hint="View only — the solver is 2D because the element is prismatic, so length extrudes the answer rather than changing it"
+          hint="View only. The solve is 2D, so length extrudes the answer rather than changing it."
           unit={units}
           value={Number(toDisp(config.length_mm).toFixed(4))}
           min={toDisp(500)}
@@ -252,7 +252,7 @@ export default function LeftPanel({
         />
         <SelectField
           label="Grid"
-          hint="dx_m — the solver's cell pitch. The single biggest lever on solve time."
+          hint="dx_m — cell pitch. The biggest lever on solve time."
           value={String(config.dx_m)}
           options={GRID_OPTIONS.map((g) => ({ id: g.id, label: g.label, note: g.note }))}
           onChange={(v) => {
@@ -296,8 +296,8 @@ export default function LeftPanel({
         {importedOutline && ifc.name && (
           <p className="mb-1 mt-1 text-[10px] leading-snug text-text-muted">
             Outline from <span className="text-text-secondary">{ifc.name}</span>. The solver
-            takes a named shape and its dimensions, not an arbitrary polygon, so the import
-            is drawn as a reference — pick the preset it matches to solve it.
+            takes a named shape and dimensions, not an arbitrary polygon, so this is drawn
+            as reference only — pick the preset it matches to solve it.
           </p>
         )}
 
@@ -312,7 +312,7 @@ export default function LeftPanel({
 
         <SelectField
           label="Grade"
-          hint="physics.strength_model.GRADE_PARAMS — only calibrated grades are offered"
+          hint="physics.strength_model.GRADE_PARAMS — calibrated grades only"
           value={config.grade}
           options={GRADE_OPTIONS.map((g) => ({ id: g.id, label: g.label, note: g.note }))}
           onChange={(v) => {
@@ -322,7 +322,7 @@ export default function LeftPanel({
         />
         <SelectField
           label="Mix basis"
-          hint="Which mix goes on the wire: the backend's own standard mix, or a design derived from the rows below"
+          hint="What goes on the wire: the backend's standard mix, or the rows below"
           value={config.mix_id}
           options={MIX_BASIS_OPTIONS.map((m) => ({ id: m.id, label: m.label, note: m.note }))}
           onChange={(v) => {
@@ -332,13 +332,13 @@ export default function LeftPanel({
         />
         {!designing && (
           <p className="mb-1.5 pl-[80px] text-[10px] leading-snug text-text-muted">
-            The backend builds the hydration parameters itself. This is the mix the
-            precomputed ensemble band and season replay were solved with.
+            Backend derives the hydration parameters. The ensemble band and season
+            replay were solved with this mix.
           </p>
         )}
         <SelectField
           label="Cement"
-          hint="ASTM C150 type — picks the cement heat, physics.constants.H_CEM_BY_TYPE"
+          hint="ASTM C150 type — sets cement heat. physics.constants.H_CEM_BY_TYPE"
           disabled={!designing}
           value={config.cement_type}
           options={CEMENT_OPTIONS.map((c) => ({ id: c.id, label: c.label, note: c.note }))}
@@ -362,7 +362,7 @@ export default function LeftPanel({
         />
         <ScrubField
           label="w/cm"
-          hint="Water/cementitious ratio — drives the ultimate degree of hydration"
+          hint="Water/cementitious — drives ultimate hydration"
           value={config.wcm}
           min={0.25}
           max={0.75}
@@ -417,7 +417,7 @@ export default function LeftPanel({
         />
         <ScrubField
           label="Start offset"
-          hint="Slides the run along the ambient series, the way /api/pour-windows compares start hours"
+          hint="Slides the run along the ambient series, as /api/pour-windows does"
           unit="h"
           value={config.start_offset_h}
           min={0}
@@ -430,7 +430,7 @@ export default function LeftPanel({
         />
         <ScrubField
           label="t_ref"
-          hint="Maturity reference temperature. It must match the strength calibration."
+          hint="Maturity reference. Must match the strength calibration."
           unit="°C"
           value={config.t_ref_c}
           min={5}
@@ -444,14 +444,14 @@ export default function LeftPanel({
         <p className="mt-2 rounded-lg border border-border-default bg-elevate-1 px-2.5 py-2 text-[10px] leading-relaxed text-text-muted">
           {maxOffset_h === 0 ? (
             <>
-              The ambient series runs {ambientSpan_h.toFixed(0)} h and the cure window uses all
-              of it, so there is no room to start later. Shorten the window to slide the start.
+              The cure window uses all {ambientSpan_h.toFixed(0)} h of the ambient series.
+              Shorten it to slide the start.
             </>
           ) : (
             <>
-              Weather is the cached series that travelled with the demo scenario — real data
-              that was actually solved, not a forecast fetched now. Offsetting the start moves
-              the pour along that same {ambientSpan_h.toFixed(0)} h of it.
+              Weather is the cached series from the demo scenario — real data that was
+              solved, not a forecast fetched now. The offset moves the pour along its
+              {ambientSpan_h.toFixed(0)} h.
             </>
           )}
         </p>

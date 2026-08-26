@@ -118,14 +118,14 @@ export default function ProbeCard({
           label="Labels"
           on={showLabels}
           onClick={onToggleLabels}
-          tip="Draw the section's edge letters and corner numbers in the viewer, so a distance below can be traced to a line you can see."
+          tip="Letter the edges and number the corners in the viewer, so a distance below traces to a line you can see."
         />
         <HeaderToggle
           icon={Ruler}
           label="Distances"
           on={showDistances}
           onClick={onToggleDistances}
-          tip="Measure this point to every face and to the nearest edges and corners of the solved section."
+          tip="Measure this point to every face, and to the nearest edges and corners."
         />
         {sample?.fallback && (
           <span className="ml-auto">
@@ -153,7 +153,7 @@ export default function ProbeCard({
             </p>
             {sample.fallback && (
               <p className="mt-1.5 text-[10px] leading-snug text-status-amber">
-                The 2×2 straddled a hole or the outside — this is the nearest solid cell.
+                The 2×2 straddled a hole or the outside — nearest solid cell shown.
               </p>
             )}
 
@@ -218,7 +218,7 @@ export default function ProbeCard({
               </div>
             ) : showDistances && !geometry ? (
               <p className="mt-2.5 text-[10px] leading-relaxed text-text-muted">
-                This reading came from an elevation, which shows a FACE rather than a cut.
+                This reading came from an elevation, which shows a FACE, not a cut.
                 Distances into the section need a section view.
               </p>
             ) : null}
@@ -231,8 +231,8 @@ export default function ProbeCard({
           </>
         ) : (
           <p className="text-[11px] leading-relaxed text-text-muted">
-            Click anywhere in the viewer to read the solved temperature there. The reading
-            lands in this palette, and the point it was read at is marked in the drawing.
+            Click anywhere in the viewer to read the solved temperature there. The point
+            is marked in the drawing.
           </p>
         )}
       </div>

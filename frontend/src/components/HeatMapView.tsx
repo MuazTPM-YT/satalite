@@ -81,9 +81,9 @@ const FIELDS: { id: Field; label: string }[] = [
 // minimum, average and maximum PER TILE FOR THE DAY; it does not state the hour any of
 // them occurred at, so neither does this.
 const FIELD_NOTE: Record<Field, string> = {
-    min: "The day's lowest temperature in each tile — the night a fresh pour cures through.",
-    mean: "The day's average in each tile. This is the field the ambient curve is centred on.",
-    max: "The day's highest in each tile — the one the placement limit is read against.",
+    min: "The day's lowest in each tile — the night a fresh pour cures through.",
+    mean: "The day's average in each tile. The ambient curve is centred on this.",
+    max: "The day's highest in each tile — what the placement limit is read against.",
 };
 
 // A tile's own value for the field on screen. null stays null: a tile with no reading
@@ -734,7 +734,7 @@ export default function HeatMapView({ location, durationHours, onApply }: Props)
                 a toolbar button would otherwise bubble down here and start a drag. */}
             <div
                 role="application"
-                aria-label="Measured air temperature over the pour site. Drag to pan, arrow keys to pan, plus and minus to zoom, zero to fit the measured area."
+                aria-label="Measured air temperature over the pour site. Drag or arrow keys to pan, plus and minus to zoom, zero to fit."
                 tabIndex={0}
                 onPointerDown={onPointerDown}
                 onPointerMove={onPointerMove}
@@ -792,7 +792,7 @@ export default function HeatMapView({ location, durationHours, onApply }: Props)
                                 value={field}
                                 options={FIELDS}
                                 onChange={setField}
-                                label="Which of the day's three per-tile temperatures to draw"
+                                label="Which per-tile temperature to draw"
                                 size="sm"
                             />
                             <ToolbarDivider />
@@ -803,7 +803,7 @@ export default function HeatMapView({ location, durationHours, onApply }: Props)
                                     { id: "absolute", label: "Absolute" },
                                 ]}
                                 onChange={setScale}
-                                label="Colour scale: this field's own range, or the whole day's"
+                                label="Colour scale: this field's range, or the whole day's"
                                 size="sm"
                             />
                             <ToolbarDivider />
@@ -849,7 +849,7 @@ export default function HeatMapView({ location, durationHours, onApply }: Props)
                             <ToolbarToggle
                                 icon={Locate}
                                 label="Fit the measured area"
-                                hint="Back to the AOI this day was measured over."
+                                hint="Back to the measured AOI."
                                 onClick={fit}
                             />
                         </Toolbar>
@@ -993,8 +993,8 @@ function FieldCard({
                 </p>
                 <p className="mt-0.5 text-[10px] leading-snug text-text-muted">
                     {onTile
-                        ? "min / mean / max of that one 100 m cell. The whole cure runs on these three numbers."
-                        : "min / mean / max, averaged across every tile. Click a cell to solve against that cell instead."}
+                        ? "min / mean / max of that 100 m cell. The whole cure runs on these three."
+                        : "min / mean / max across every tile. Click a cell to solve against that cell instead."}
                 </p>
             </div>
 
@@ -1009,8 +1009,8 @@ function FieldCard({
                 <p className="mt-0.5 text-[10px] leading-snug text-text-muted">{FIELD_NOTE[field]}</p>
                 <p className="mt-1 text-[10px] leading-snug text-text-muted">
                     {scale === "stretch"
-                        ? `The ramp is stretched over that ${bounds.span.toFixed(2)} °C, so the colours show where the heat sits, not how much of it there is. The legend prints the real numbers.`
-                        : "The ramp spans the whole day, all three fields, so one colour means one temperature across every view of this day."}
+                        ? `Ramp stretched over ${bounds.span.toFixed(2)} °C — colour shows where the heat sits, not how much. The legend prints the real numbers.`
+                        : "Ramp spans the whole day, all three fields — one colour means one temperature everywhere."}
                 </p>
             </div>
 
@@ -1081,8 +1081,8 @@ function FieldCard({
                     </>
                 ) : (
                     <p className="text-[10px] leading-snug text-text-muted">
-                        Hover a cell for its own min, mean and max. Click one to pour there
-                        — the cure re-solves against that cell&rsquo;s day.
+                        Hover a cell for its min, mean and max. Click to pour there — the
+                        cure re-solves against it.
                     </p>
                 )}
             </div>
@@ -1127,8 +1127,8 @@ function Idle({
                     <>
                         <br />
                         <br />
-                        Opening this map never buys a day. Fetch it from the location control,
-                        which names the price first, and the field is free from then on.
+                        Opening this map never buys a day. Fetch it from the location
+                        control, which names the price first — free from then on.
                     </>
                 )}
             </Card>
@@ -1138,8 +1138,7 @@ function Idle({
     if (!location) {
         return (
             <Card title="No location yet">
-                The map follows the pour site. Choose one in the location control and the
-                measured field for that day appears here.
+                The map follows the pour site. Choose one in the location control.
             </Card>
         );
     }

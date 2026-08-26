@@ -94,31 +94,31 @@ const PANELS: { id: PanelId; icon: Icon; label: string; hint: string }[] = [
     id: "element",
     icon: Settings2,
     label: "Element & mix inputs",
-    hint: "Section, dimensions, mix design and cure window. Every control here reaches the solver.",
+    hint: "Section, dimensions, mix and cure window. Every control here reaches the solver.",
   },
   {
     id: "probe",
     icon: Crosshair,
     label: "Probe",
-    hint: "The point you last clicked in either viewer: its temperature, and its distances to the section's faces and corners.",
+    hint: "The point you last clicked: its temperature, and its distances to the section's faces and corners.",
   },
   {
     id: "checks",
     icon: ListChecks,
     label: "Checks & thresholds",
-    hint: "Each measured quantity beside the limit it was tested against, and the standard the limit comes from.",
+    hint: "Each measured quantity beside its limit, and the standard that limit comes from.",
   },
   {
     id: "pour",
     icon: CalendarClock,
     label: "Pour window",
-    hint: "The same element solved at every candidate start hour the ambient series has room for. One full solve each, so the sweep runs only while this is open.",
+    hint: "The same element solved at every start hour the series has room for. One full solve each, so it runs only while open.",
   },
   {
     id: "ensemble",
     icon: Waves,
     label: "Ensemble band",
-    hint: "Precomputed p05/p95 bands over the parameters we genuinely do not know. One fixed scenario.",
+    hint: "Precomputed p05/p95 bands over the parameters we do not know. One fixed scenario.",
   },
   {
     id: "season",
@@ -130,7 +130,7 @@ const PANELS: { id: PanelId; icon: Icon; label: string; hint: string }[] = [
     id: "validation",
     icon: BadgeCheck,
     label: "Validation report",
-    hint: "How the solver did against the measured USBR DSO-12-02 cases.",
+    hint: "The solver against the measured USBR DSO-12-02 cases.",
   },
 ];
 
@@ -155,15 +155,15 @@ export default function TopBar({
       <>
         <span className="block font-medium">Solve with the current inputs</span>
         <span className="mt-0.5 block text-text-secondary">
-          The boxes have moved off the run on screen. The drawing keeps showing the last
-          real answer until a new one lands.
+          The inputs have moved off the run on screen. The drawing holds the last real
+          answer until a new one lands.
         </span>
       </>
     ) : (
       <>
         <span className="block font-medium">Re-run the solve</span>
         <span className="mt-0.5 block text-text-secondary">
-          The inputs already match the run on screen, so this returns the same answer.
+          Inputs already match the run on screen — same answer.
         </span>
       </>
     ),
@@ -239,7 +239,7 @@ export default function TopBar({
               value={units}
               options={UNIT_OPTIONS.map((u) => ({ id: u, label: u, note: UNIT_NOTE[u] }))}
               onChange={onUnitsChange}
-              label="Length units — dimensions only, °C never converts"
+              label="Length units — dimensions only. °C never converts."
               className="w-[62px]"
             />
           </div>
