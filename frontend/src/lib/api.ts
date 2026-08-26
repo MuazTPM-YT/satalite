@@ -108,6 +108,12 @@ export interface ElementSpec {
     // true is rejected with 422 in this build: a GROUND face carries zero flux, which
     // is an insulated base and biases the core HIGH.
     on_ground?: boolean;
+    /**
+     * How deep under the face a surface sensor is taken to sit, metres. Default 0.050.
+     * A CHOICE that must match the governing spec, like t_ref_c - the cracking flag is
+     * evaluated against this reading, not against the true free surface.
+     */
+    surface_probe_depth_m?: number;
     // [x, y] metres from the section origin. null/absent samples the section centroid.
     probe_xy_m?: [number, number] | null;
 }
@@ -258,6 +264,13 @@ export interface SimulationResult {
     max_core_surface_diff_c: number;
     // the same differential from the hottest point, not the probe. The conservative one.
     max_anywhere_surface_diff_c: number;
+    // What a sensor at surface_probe_depth_m reads, and the two differentials measured
+    // against it. THESE are what breaches.cracking fires on - ACI 301's limit is written
+    // against an embedded thermocouple. The free-surface pair above is the upper bound.
+    surface_probe_temp_c: number[];
+    max_core_probe_diff_c: number;
+    max_anywhere_probe_diff_c: number;
+    surface_probe_depth_m: number;
     // hottest point anywhere in the section. The DEF-relevant number.
     max_core_temp_anywhere_c: number;
     // where peak_core_temp_c was actually sampled, [x, y] metres.
@@ -281,6 +294,9 @@ export interface PourWindowCandidate {
     max_core_temp_anywhere_c: number;
     max_core_surface_diff_c: number;
     max_anywhere_surface_diff_c: number;
+    // the sensor-depth pair, which is what this row's cracking flag actually fired on.
+    max_core_probe_diff_c: number;
+    max_anywhere_probe_diff_c: number;
     peak_evaporation_kg_m2_h: number;
     strip_time_h: number | null;
     breaches: BreachFlags;

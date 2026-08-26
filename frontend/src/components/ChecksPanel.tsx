@@ -75,8 +75,8 @@ export default function ChecksPanel({ sim, request }: ChecksPanelProps) {
             cite="ACI 207 · 35 °F core-to-surface"
             trippedBy={b.cracking_tripped_by}
             measures={[
-              { label: "probe", value: sim.max_core_surface_diff_c, field: "max_core_surface_diff_c" },
-              { label: "hottest", value: sim.max_anywhere_surface_diff_c, field: "max_anywhere_surface_diff_c" },
+              { label: "probe", value: sim.max_core_probe_diff_c, field: "max_core_probe_diff_c" },
+              { label: "hottest", value: sim.max_anywhere_probe_diff_c, field: "max_anywhere_probe_diff_c" },
             ]}
             governing={1}
           />

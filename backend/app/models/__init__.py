@@ -50,6 +50,12 @@ class ElementSpec(BaseModel):
     on_ground: bool = False
     # [x, y] metres from the section origin. None samples the section centroid.
     probe_xy_m: list[float] | None = Field(default=None, min_length=2, max_length=2)
+    # how deep under the face the surface sensor is taken to sit, metres. A CHOICE that
+    # has to match the governing spec, exactly like t_ref_c: ACI 207 says only "a few
+    # inches below the nearest surface", ALDOT 930-860R instrumented at 1 in (0.025) and
+    # USBR DSO-12-02 at 6 in (0.152). 0.050 is the common DOT thermal-control-plan value.
+    # The cracking flag is evaluated against this reading, not against the free surface.
+    surface_probe_depth_m: float = Field(default=0.050, ge=0.0, le=0.5)
 
     # reject unknown shapes and formwork here, at the boundary, not with a KeyError
     # three layers down inside the solver.
@@ -328,6 +334,15 @@ class SimulationResult(BaseModel):
     max_anywhere_surface_diff_c: float
     # hottest point anywhere in the section, not the probe. The DEF-relevant number.
     max_core_temp_anywhere_c: float
+    # what a surface sensor at surface_probe_depth_m would read, and the two differentials
+    # measured against it. THESE are what breaches.cracking is evaluated on: ACI 301's
+    # 35 degF is written against an embedded reading, and the free-surface pair above
+    # answers a different question - it is the strict upper bound on the gradient, kept
+    # so a reader can see how much of the difference is probe placement.
+    surface_probe_temp_c: list[float]
+    max_core_probe_diff_c: float
+    max_anywhere_probe_diff_c: float
+    surface_probe_depth_m: float
     # where peak_core_temp_c was actually sampled, [x, y] metres. Run metadata.
     probe_xy_m: list[float]
     # the maturity reference temperature this run integrated at. Run metadata, and it
@@ -350,6 +365,9 @@ class PourWindowCandidate(BaseModel):
     max_core_temp_anywhere_c: float
     max_core_surface_diff_c: float
     max_anywhere_surface_diff_c: float
+    # the sensor-depth pair, which is what this row's cracking flag actually fired on.
+    max_core_probe_diff_c: float
+    max_anywhere_probe_diff_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float | None
     breaches: BreachFlags

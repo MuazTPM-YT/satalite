@@ -19,7 +19,7 @@
   "4": {
    "n_days": 30,
    "pct_days_breaching_def": 0.0,
-   "pct_days_breaching_cracking": 100.0,
+   "pct_days_breaching_cracking": 0.0,
    "pct_days_breaching_evaporation": 100.0,
    "pct_days_breaching_placement": 60.0,
    "mean_peak_core_temp_c": 53.227258473454505,
@@ -31,7 +31,7 @@
   "14": {
    "n_days": 30,
    "pct_days_breaching_def": 0.0,
-   "pct_days_breaching_cracking": 100.0,
+   "pct_days_breaching_cracking": 50.0,
    "pct_days_breaching_evaporation": 100.0,
    "pct_days_breaching_placement": 100.0,
    "mean_peak_core_temp_c": 59.08750546696392,
@@ -43,7 +43,7 @@
  },
  "delta_14_minus_04": {
   "pct_days_breaching_def": 0.0,
-  "pct_days_breaching_cracking": 0.0,
+  "pct_days_breaching_cracking": 50.0,
   "pct_days_breaching_evaporation": 0.0,
   "pct_days_breaching_placement": 40.0,
   "mean_peak_core_temp_c": 5.8602469935094135,

@@ -68,6 +68,7 @@ def to_element(spec: ElementSpec) -> Element:
         formwork=spec.formwork,
         on_ground=spec.on_ground,
         probe_xy_m=None if spec.probe_xy_m is None else (spec.probe_xy_m[0], spec.probe_xy_m[1]),
+        surface_probe_depth_m=spec.surface_probe_depth_m,
     )
 
 
@@ -177,6 +178,7 @@ def to_ambient(spec: AmbientSpec, offset_h: float = 0.0) -> Ambient:
 def to_breaches(
     peak_core_temp_c: float,
     max_core_temp_anywhere_c: float,
+    *,
     max_diff_c: float,
     max_anywhere_diff_c: float,
     peak_evap_kg_m2_h: float,
@@ -190,9 +192,15 @@ def to_breaches(
     # actually happens, and on a 300 mm slab the two differ by about 4 C.
     def_by_probe = bool(breaches_def(peak_core_temp_c, threshold_c))
     def_by_anywhere = bool(breaches_def(max_core_temp_anywhere_c, threshold_c))
-    # same treatment for cracking, for the same reason. The probe-based differential is
+    # same treatment for cracking, for the same reason. The core-probe differential is
     # the LESS conservative of the two - on a 300 mm slab it reads about 4.5 C low - so
     # evaluating the flag on it alone was the DEF defect wearing a different name.
+    #
+    # Both are measured against the surface SENSOR, not the free surface. ACI 301's
+    # 35 degF is written against a thermocouple cast a few inches under a face; the true
+    # free surface is colder than that reading, so flagging on it fired on placements
+    # that measured less than half the limit and made the flag carry no information.
+    # SolveResult still reports the free-surface pair - it is the strict upper bound.
     crack_by_probe = bool(breaches_cracking(max_diff_c))
     crack_by_anywhere = bool(breaches_cracking(max_anywhere_diff_c))
     return BreachFlags(
@@ -285,6 +293,10 @@ def run_deterministic(
         max_core_surface_diff_c=result.max_core_surface_diff_c,
         max_anywhere_surface_diff_c=result.max_anywhere_surface_diff_c,
         max_core_temp_anywhere_c=result.max_core_temp_anywhere_c,
+        surface_probe_temp_c=result.surface_probe_temp_c.tolist(),
+        max_core_probe_diff_c=result.max_core_probe_diff_c,
+        max_anywhere_probe_diff_c=result.max_anywhere_probe_diff_c,
+        surface_probe_depth_m=result.surface_probe_depth_m,
         probe_xy_m=list(result.probe_xy_m),
         t_ref_c=t_ref_c,
         peak_evaporation_kg_m2_h=peak_evap_kg_m2_h,
@@ -292,10 +304,10 @@ def run_deterministic(
         breaches=to_breaches(
             result.peak_core_temp_c,
             result.max_core_temp_anywhere_c,
-            result.max_core_surface_diff_c,
-            result.max_anywhere_surface_diff_c,
-            peak_evap_kg_m2_h,
-            element.placement_temp_c,
+            max_diff_c=result.max_core_probe_diff_c,
+            max_anywhere_diff_c=result.max_anywhere_probe_diff_c,
+            peak_evap_kg_m2_h=peak_evap_kg_m2_h,
+            placement_temp_c=element.placement_temp_c,
         ),
         outline_m=result.outline_m,
     )
@@ -314,6 +326,8 @@ def to_candidate(
         max_core_temp_anywhere_c=payload.max_core_temp_anywhere_c,
         max_core_surface_diff_c=payload.max_core_surface_diff_c,
         max_anywhere_surface_diff_c=payload.max_anywhere_surface_diff_c,
+        max_core_probe_diff_c=payload.max_core_probe_diff_c,
+        max_anywhere_probe_diff_c=payload.max_anywhere_probe_diff_c,
         peak_evaporation_kg_m2_h=payload.peak_evaporation_kg_m2_h,
         strip_time_h=payload.strip_time_h,
         breaches=breaches,
