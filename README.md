@@ -19,8 +19,10 @@ payload that carries a strip time.
 **Read [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) before trusting a number.** It lists
 what is wrong and which number each item moves: one constant that was fitted against a
 validation case, silica fume modelled as inert, a forecast band with zero measured pairs
-behind it, a strip time that is a fraction of an unmeasured strength curve, and the fact
-that validation stands at 1 of 3. It also says what is solid, because that is true too.
+behind it, a strip time that is a fraction of an unmeasured strength curve, a time to peak
+that runs a mean 8.7 h late across seven measured field elements, a core-to-surface
+differential that over-reads those same elements by 24 to 36 °C, and the fact that
+validation stands at 1 of 3. It also says what is solid, because that is true too.
 
 ## Layout
 
@@ -259,7 +261,7 @@ uv run mypy physics app     # strict on physics/, lenient elsewhere
 uv run pytest -v
 ```
 
-Expect `222 passed`. `validation/` is deliberately outside `testpaths` — it runs real
+Expect `228 passed`. `validation/` is deliberately outside `testpaths` — it runs real
 measured cases and is invoked on purpose:
 
 ```bash
@@ -367,13 +369,37 @@ free allowance.
 month** at 6.1 vCPU-s each, with a real vCPU rather than a tenth of one. Billing has to be
 enabled, so a card is on file; set a budget alert and the free tier keeps it at zero.
 
+Build and push explicitly — **`--source` cannot be used here.** It only auto-detects a
+Dockerfile in the *source root*, and this one is at `backend/Dockerfile` while its build
+context has to be the repository root, because `docs/VALIDATION.json` lives outside
+`backend/`. Point `--source` at the root and Cloud Build finds no Dockerfile, falls through
+to buildpacks, finds no Python project there either, and fails.
+
 ```bash
 # from the repository root — the Dockerfile needs it as build context
-gcloud run deploy satalite-api --source . --region us-central1   --memory 1Gi --cpu 1 --concurrency 2 --max-instances 4 --min-instances 0   --timeout 120 --allow-unauthenticated   --set-env-vars ALLOWED_ORIGINS=https://your-frontend.vercel.app   --set-secrets FORTYGUARD_API_KEY=fortyguard-key:latest
+IMAGE=us-central1-docker.pkg.dev/$PROJECT/satalite/api:v1
+gcloud auth configure-docker us-central1-docker.pkg.dev
+docker build -f backend/Dockerfile -t "$IMAGE" .
+docker push "$IMAGE"
+
+gcloud run deploy satalite-api --image "$IMAGE" --region us-central1 \
+  --memory 1Gi --cpu 1 --concurrency 2 --max-instances 4 --min-instances 0 \
+  --timeout 120 --allow-unauthenticated \
+  --set-env-vars ALLOWED_ORIGINS=https://your-frontend.vercel.app \
+  --set-secrets FORTYGUARD_API_KEY=fortyguard-key:latest
 ```
 
 `--concurrency 2` matters. The solve is CPU-bound and single-threaded, so the default of
 80 queues requests behind each other on one vCPU until they all time out.
+
+**No credit card?** Cloud Run needs billing enabled even to stay at zero. The card-free
+option is Vercel's Python runtime, which happens to fit this repo almost unchanged: it
+looks for an entrypoint at `app/main.py` with a top-level `app`, reads dependencies from
+`pyproject.toml`, defaults to Python 3.12, allows a 500 MB bundle and a 300 s request. It
+costs you the live FortyGuard fetch — the filesystem is read-only, and `cached_call`
+writes *after* the API returns, so a live day would spend 4220 credits and then fail to
+save. Cached days, and every precomputed route, work fine. Full walkthrough of both paths
+in [`docs/FINALE.md`](docs/FINALE.md).
 
 Deploy the backend first, build the frontend with `NEXT_PUBLIC_API_URL` pointing at it —
 it is inlined at **build** time — then redeploy the backend with the real Vercel origin in

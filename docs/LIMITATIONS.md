@@ -174,6 +174,131 @@ the daily minimum is inferred as `2*mean - max`, forcing a symmetric diurnal swi
 real weather does not have. That reconstruction is not varied by the ensemble, so its error
 sits outside the band rather than inside it.
 
+## 9. Time to peak runs late, and it is a bias rather than scatter
+
+Seven instrumented ALDOT mass concrete elements from Auburn University report 930-860R
+(*Temperature Control Requirements for the Construction of Mass Concrete Members*) were run
+through `POST /api/simulate` at dx = 20 mm over 168 h, with hourly ambient taken from the
+Open-Meteo historical archive at each site's coordinates. Nothing in this codebase has been
+fitted to any of them.
+
+Error on time to peak core temperature, predicted minus measured:
+
+| Element | measured | predicted | error |
+|---|---|---|---|
+| Albertville bent cap | 20 h | 34.7 h | +14.7 h |
+| Harpersville crashwall | 27 h | 29.3 h | +2.3 h |
+| Scottsboro pedestal | 45 h | 53.2 h | +8.2 h |
+| Scottsboro bent cap | 27 h | 33.0 h | +6.0 h |
+| Elba bent cap | 18 h | 30.0 h | +12.0 h |
+| Birmingham column | 30 h | 33.2 h | +3.2 h |
+| Brewton bent cap | 27 h | 41.2 h | +14.2 h |
+
+**Mean +8.7 h, and all seven errors are positive.** `docs/VALIDATION-CASES.md` sets the
+acceptance criterion for time to peak at ±8 h; four of the seven miss it.
+
+The peak *temperature* on the same seven runs is not biased in the same way — errors are
+−3.8, −7.8, +1.9, +9.5, +4.7, +6.0 and −4.1 °C, four positive and three negative, mean
++0.9 °C with a mean absolute error of 5.40 °C. So the model gets roughly the right peak at
+roughly the wrong time. That is a shape error in the early-age curve, which is the same
+diagnosis as item 8 above, reached from a second and independent dataset — and reached here
+with *measured* hourly weather, so the `2*mean - max` reconstruction blamed in item 8 cannot
+be the whole of it.
+
+Which numbers it moves: `peak_core_time_h` directly, and `strip_time_h` through it, because
+a curve that rises late accumulates equivalent age late. It does not move
+`peak_core_temp_c` by a consistent amount in a consistent direction.
+
+Two caveats on the runs themselves. The Auburn mixes are Type **I/II** cement, which
+`MixSpec` does not accept — `H_CEM_BY_TYPE` carries `I`, `II`, `II/V` and `V` — so `"I"`
+(510 J/g) was substituted; `"II"` moves the Albertville peak by −0.9 °C. And the ambient is
+Open-Meteo rather than FortyGuard, because the FortyGuard archive begins 2021-01-01 and
+these placements are 2015–2016. This validates the physics, not the hyperlocal data path.
+
+## 10. The core-to-surface differential reads far too high, and the flag saturates
+
+Measured against the same seven ALDOT elements as item 9, the predicted maximum
+core-to-surface differential exceeds the measured one on every single case:
+
+| Element | measured max dT | predicted, free surface | error |
+|---|---|---|---|
+| Albertville bent cap | 22.2 °C | 48.2 °C | +26.0 |
+| Harpersville crashwall | 23.3 °C | 47.7 °C | +24.4 |
+| Scottsboro pedestal | 37.8 °C | 61.7 °C | +23.9 |
+| Scottsboro bent cap | 27.8 °C | 58.9 °C | +31.1 |
+| Elba bent cap | 11.7 °C | 46.3 °C | +34.6 |
+| Birmingham column | 10.6 °C | 46.3 °C | +35.7 |
+| Brewton bent cap | 21.1 °C | 36.4 °C | +15.3 |
+
+`CRACK_LIMIT_C` is 19.4 °C, so this predicts a breach on every one of them - including
+Birmingham and Elba, which measured barely half the limit. A flag that fires on
+everything carries no information, and `season-analysis.json` shows the consequence in
+its headline: `pct_days_breaching_cracking` is **100.0% at both 04:00 and 14:00**.
+
+### Part of it was the measuring point, and that part is fixed
+
+`surface_temp_c` is the mean **true free surface**, reconstructed from the cell centre.
+ACI 301's 35 degF is written against a thermocouple cast a few inches under a face, and
+the free surface at 4 a.m. is much colder than that reading. The two are different
+physical quantities and the flag was comparing one against the other's limit.
+
+The solver now also reports `surface_probe_temp_c` at `Element.surface_probe_depth_m`
+(default 0.050 m), with `max_core_probe_diff_c` and `max_anywhere_probe_diff_c`, and
+**the cracking flag is evaluated on those**. The free-surface pair is still reported: it
+is the strict upper bound on the gradient, and dropping it would hide how much of the
+disagreement is probe placement.
+
+### Most of it was not, and that part is unfixed
+
+Sweeping the depth on four of the elements above:
+
+| Element | measured | free surface | 25 mm | 50 mm | 100 mm | 150 mm |
+|---|---|---|---|---|---|---|
+| Birmingham column | 10.6 | 46.3 | 42.9 | 40.7 | 34.7 | 29.5 |
+| Elba bent cap | 11.7 | 46.3 | 43.2 | 41.2 | 35.9 | 31.1 |
+| Albertville bent cap | 22.2 | 48.2 | 45.4 | 43.6 | 38.7 | 34.2 |
+| Scottsboro pedestal | 37.8 | 61.7 | 59.0 | 57.5 | 53.1 | 49.6 |
+
+The sensor depth is worth about **5 °C at 50 mm and about 17 °C even at 150 mm** - the
+6 in depth DSO-12-02 instrumented at - against a disagreement of 24 to 36 °C. On
+Birmingham the model still reads 29.5 °C at 150 mm against a measured 10.6 °C.
+
+So probe placement was a real defect and it was not the main one. Peak core temperature
+on these same runs is roughly right (mean absolute error 5.40 °C, item 9), so the core is
+not the problem: **the modelled surface runs far too cold.** That points at the boundary -
+the convective film, the sky radiation deficit, the formwork resistance, or the
+evaporative term - and it points the same way as the late-peak bias in item 9, which is
+also what an over-cooled element would produce. It is not diagnosed further here, and
+nothing in this build corrects it.
+
+How much the fix is worth depends entirely on how thick the section is, because the
+sensor depth is a fraction of the half-thickness. On a 2 m bent cap 50 mm is a twentieth
+of it and the differential barely moves - which is why the table above hardly shifts. On
+the studio's own default element, a 300 mm slab, 50 mm is a third of it and the effect is
+large: the probe differential is 15.40 °C against 29.03 °C at the free surface, so the
+nominal probe now sits **under** the limit and only the hottest-point differential
+(20.22 °C) trips it.
+
+`season-analysis.json` is built on that same 300 mm slab, and rebuilding it after the flag
+moved changed the headline outright:
+
+| | free surface | surface sensor |
+|---|---|---|
+| `pct_days_breaching_cracking` at 04:00 | 100.0% | **0.0%** |
+| `pct_days_breaching_cracking` at 14:00 | 100.0% | **50.0%** |
+| `delta_14_minus_04` | 0.0 | **50.0** |
+
+A statistic that read 100% at both placement hours said nothing at all. The same 30 days
+against the sensor separate the two hours completely, which is the comparison the season
+replay exists to make. Nothing about the weather, the element or the solver changed - only
+the point the limit is read at. That is how much the measuring point was worth on a thin
+section, and it is the strongest argument that the old comparison was simply wrong.
+
+Which numbers it moves: `breaches.cracking`, `breaches.cracking_tripped_by`, and through
+`n_breaches` the pour-window ranking in `best_candidate`. Read the cracking flag as
+conservative, and read a cracking breach on a thick section as close to uninformative
+until the surface is understood.
+
 ---
 
 ## What is solid
