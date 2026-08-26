@@ -409,6 +409,147 @@ it is inlined at **build** time — then redeploy the backend with the real Verc
 Most of the studio never touches the solver: the season replay, the validation report and
 the ensemble band are served straight from disk.
 
+## One real FortyGuard call
+
+This is the request that bought the demo day, and the response it came back with. Nothing
+here is illustrative — the response below is read straight out of
+`backend/data/cache/heatmap-73ed3878b2fa10b340a54c677a84397e16526f30862c61b9d176b7bcfdd9ba47.json`,
+which is committed on purpose so the demo runs with no network and no credits.
+
+**The request.** One heatmap over downtown Phoenix for 2025-07-15, at 100 m:
+
+```bash
+curl -X POST https://api.fortyguard.com/v1/heatmap \
+  -H "api-key: $FORTYGUARD_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "polygon_aoi": {
+      "type": "FeatureCollection",
+      "features": [{
+        "type": "Feature",
+        "properties": {},
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [[
+            [-112.08673519715168, 33.46131041281569],
+            [-112.06844426969921, 33.46131041281569],
+            [-112.06844426969921, 33.44790559096451],
+            [-112.08673519715168, 33.44790559096451],
+            [-112.08673519715168, 33.46131041281569]
+          ]]
+        }
+      }]
+    },
+    "date_time": { "start_date": "2025-07-15", "filter_type": 3 },
+    "granularity": 100,
+    "analytic_type": "tcm"
+  }'
+```
+
+Auth is an **`api-key` header, not `Authorization: Bearer`** — that is the first thing to
+get wrong. `filter_type: 3` is one whole day, and it returns per-tile min, mean **and**
+max in a single call; asking for the three separately would cost three times 4220 credits
+for the same three numbers.
+
+**The submission returns a task, not a heatmap.** Every analysis endpoint is async:
+
+```json
+{ "data": { "activity_id": "4de0ef74-3555-4df5-a5a8-215cf9d87a3e" } }
+```
+
+Then poll `GET /v1/status/{activity_id}` (same `api-key` header) every 3 s until
+`data.status` reaches `succeeded`/`completed`, at which point `data.result` carries the
+payload. `create_heatmap(..., wait=True)` does that loop for you and hands back
+`{"activity_id": ..., "result": ...}`, which is the shape written to disk.
+
+**The response.** 221 tiles at 100 m over 2.53 km², abridged to one tile and the stats
+block — everything shown is verbatim:
+
+```json
+{
+  "activity_id": "4de0ef74-3555-4df5-a5a8-215cf9d87a3e",
+  "result": {
+    "map_data": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "id": "0",
+          "type": "Feature",
+          "properties": {
+            "tile_id": 0,
+            "min_temperature": 32.7982,
+            "average_temperature": 37.0027,
+            "max_temperature": 40.2827
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [[
+              [-112.08639937386151, 33.44991068739647],
+              [-112.08532986929018, 33.44992005425784],
+              [-112.08534085966070, 33.45080229334947],
+              [-112.08641037505697, 33.45079292617626],
+              [-112.08639937386151, 33.44991068739647]
+            ]]
+          }
+        }
+        // ... 220 more tiles
+      ]
+    },
+    "stats_data": {
+      "temperature_stats": {
+        "minimum": 36.9076,
+        "maximum": 37.0069,
+        "mean": 36.94892262443439,
+        "standard_deviation": 0.03269454825820848
+      }
+    }
+  }
+}
+```
+
+**Those numbers are CELSIUS.** The vendored client's docstring says `tcm` tiles are
+Fahrenheit and it is wrong — 32.8–40.3 is a Phoenix day in July in °C (91–104 °F); read as
+Fahrenheit they would be 0.4–4.6 °C in the middle of an Arizona summer. This is checked in
+`app/services/fg_client.py` and it is the single unit error most likely to produce
+confidently wrong output here.
+
+Note also what `stats_data.temperature_stats` describes: it is the spread of the **mean**
+field across the 221 tiles, 36.9076 to 37.0069 — the 0.10 °C figure quoted further up.
+
+**What the solver actually receives.** `app/services/season.py::day_record` reduces those
+221 features to a tile-mean triple, and those three numbers are the whole of what
+`physics.season_analysis.build_ambient` learns about the block:
+
+```json
+{
+  "date": "2025-07-15",
+  "day_of_year": 196,
+  "t_min_c": 32.77782805429864,
+  "t_mean_c": 36.94892262443439,
+  "t_max_c": 40.20462081447964,
+  "n_tiles": 221
+}
+```
+
+That reduction is why the Map view exists — it draws the 221 tiles the three numbers came
+from, and picking one cell re-solves from that cell's own triple instead of the mean.
+
+To reproduce it without spending anything, with the repo set up as above:
+
+```bash
+cd backend
+uv run python -c "
+from app.services.season import DOWNTOWN_PHOENIX, day_params, day_record
+from app.services.fg_client import fetch_heatmap
+print(day_record('2025-07-15', fetch_heatmap(day_params(DOWNTOWN_PHOENIX, '2025-07-15'))))
+"
+```
+
+It prints the triple above and no call leaves the machine — `cached_call` finds the file
+and returns it (under the server's logging config the same hit reads
+`cache hit heatmap-73ed3878....json`). Delete that file and the identical command costs
+**4220 credits**.
+
 ## Notes
 
 - **Units are Celsius everywhere.** The vendored client's docstring claims tcm tiles are
