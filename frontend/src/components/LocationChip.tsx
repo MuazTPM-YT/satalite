@@ -174,8 +174,16 @@ export default function LocationChip({ active, durationHours, onApply }: Props) 
                     <span className={cx("relative inline-flex h-2 w-2 rounded-full", dot)} />
                 </span>
                 <MapPin className="h-3.5 w-3.5 shrink-0 text-text-muted" strokeWidth={2} />
-                <span className="hidden truncate text-[12px] font-medium text-text-secondary lg:inline">
+                {/* The cell is DERIVED from tileId, never stored in the label.
+                    Appending it to the label on each pick meant picking three cells
+                    read "Phoenix, AZ · tile 114 · tile 114 · tile 16" - the place named
+                    once and the cell named three times, only the last of which was
+                    true. One source of truth cannot drift from itself. */}
+                <span className="hidden min-w-0 truncate text-[12px] font-medium text-text-secondary lg:inline">
                     {active?.label ?? "Location"}
+                    {active?.reduction === "tile" && active.tileId && (
+                        <span className="text-text-muted"> · tile {active.tileId}</span>
+                    )}
                 </span>
             </button>
             {tip.node}

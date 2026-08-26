@@ -590,15 +590,12 @@ export default function HeatMapView({ location, durationHours, onApply }: Props)
                     allow_live: next.cached === false,
                     reduce: "tile",
                 });
-                // A pick is always on a measured cell, so this is the place the chip
-                // already names - only the cell has changed. The cell is named too,
-                // because that is the number the curve was actually built from. A
-                // response that fell back to the AOI mean carries no id and says so by
-                // not adding one.
-                const label = response.tile_id
-                    ? `${location.label} · tile ${response.tile_id}`
-                    : location.label;
-                onApply(response, label);
+                // The PLACE, unchanged. A pick is always on a measured cell inside the
+                // AOI the chip already names, so only the cell moved - and the cell is
+                // named by the chip from tile_id, not spliced into the label here.
+                // Splicing it appended a suffix per pick, so three picks read
+                // "Phoenix, AZ · tile 114 · tile 114 · tile 16".
+                onApply(response, location.label);
                 setPick(null);
             } catch (err: unknown) {
                 setPick({
