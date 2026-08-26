@@ -1250,7 +1250,7 @@ Then confirm, in a fresh browser profile:
 cd backend
 uv run ruff check .
 uv run mypy physics app          # strict on physics/, lenient elsewhere
-uv run pytest -v                 # expect 222 passed
+uv run pytest -v                 # expect 228 passed
 uv run pytest validation/ -m validation   # regenerates docs/VALIDATION.json + .md
 
 cd ../frontend
