@@ -544,18 +544,56 @@ function StrengthTrack({ sim, xIn, tick_hs, now_h, max_h, hover, hoverIdx, setHo
 // The cracking limit is a GAP, not a level, so it cannot share the temperature axis -
 // 19.4 °C plotted next to a 60 °C core would read as a threshold the core is nowhere
 // near. It gets its own axis, in °C of differential.
-function DifferentialTrack({ sim, xIn, tick_hs, now_h, max_h, hover, setHover, onZoom, tall }: TrackProps) {
+function DifferentialTrack({
+  sim,
+  xIn,
+  tick_hs,
+  now_h,
+  max_h,
+  hover,
+  hoverIdx,
+  setHover,
+  onZoom,
+  tall,
+}: TrackProps) {
   const g = tall ? FULL : DOCK;
   const x = xIn(g);
   const limit_c = sim.breaches.cracking_limit_c;
-  const D_MAX =
-    Math.ceil((Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c) * 1.2) / 5) * 5;
-  const y = (d: number) => g.MT + ((D_MAX - d) / (D_MAX || 1)) * (g.H - g.MT - g.MB);
+
+  // The differential at the probe, over time.
+  //
+  // This panel used to say "maxima only - no series in the response" and draw three
+  // horizontal lines. The series was there all along: physics/solver.py computes
+  // max_core_surface_diff_c as max(core_arr - surface_arr), and BOTH arrays ship in the
+  // response. So this is not a new measurement, it is the series the scalar was reduced
+  // from - and its maximum is that scalar, exactly, which is what test_studio_live.ts
+  // asserts.
+  //
+  // Drawing it turns "the gradient peaked at 29.03" into "and here is when, how long it
+  // stayed over ACI 207, and when it came back down", which is the question the limit is
+  // actually asked. A number cannot answer it; a curve can.
+  const diff_c = sim.core_temp_c.map((c, i) => c - (sim.surface_temp_c[i] ?? c));
+
+  // The axis has to hold NEGATIVES. On the demo day 84 of 433 samples are below zero,
+  // down to -4.29 °C: in the afternoon the sun drives the surface hotter than the core,
+  // so the gradient inverts and heat flows inward. An axis floored at zero silently drew
+  // a fifth of the series below the frame. The sign is physical, so zero is ruled.
+  const lo = Math.min(0, ...diff_c);
+  const hi = Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c);
+  const D_MAX = Math.ceil((hi * 1.2) / 5) * 5;
+  const D_MIN = Math.floor(lo / 5) * 5;
+  const span = D_MAX - D_MIN || 1;
+  const y = (d: number) => g.MT + ((D_MAX - d) / span) * (g.H - g.MT - g.MB);
 
   const ticks: number[] = [];
-  const stepD = D_MAX > 30 ? 20 : 10;
-  for (let d = 0; d <= D_MAX; d += stepD) ticks.push(d);
+  const stepD = span > 40 ? 20 : 10;
+  for (let d = Math.ceil(D_MIN / stepD) * stepD; d <= D_MAX; d += stepD) ticks.push(d);
 
+  const path = diff_c
+    .map((d, i) => `${i === 0 ? "M" : "L"}${x(sim.times_h[i]).toFixed(1)} ${y(d).toFixed(1)}`)
+    .join(" ");
+
+  const at = hoverIdx ?? null;
   const toHour = useHourFromPointer(max_h, g);
 
   return (
@@ -566,25 +604,54 @@ function DifferentialTrack({ sim, xIn, tick_hs, now_h, max_h, hover, setHover, o
       onHover={(e) => setHover(toHour(e))}
       onLeave={() => setHover(null)}
       readout={
-        <span className="text-text-muted">maxima only — no series in the response</span>
+        at !== null ? (
+          <>
+            <span style={{ color: CORE }}>{(diff_c[at] ?? 0).toFixed(2)}</span>
+            <span className="text-text-muted"> @ {sim.times_h[at]?.toFixed(1)} h</span>
+          </>
+        ) : (
+          <span className="text-text-muted">
+            peak {sim.max_core_surface_diff_c.toFixed(2)} °C at the probe
+          </span>
+        )
       }
     >
       <Frame ticks={ticks} y={y} fmt={(v) => String(v)} tick_hs={tick_hs} x={x} g={g} />
 
+      {/* Zero, drawn only when the series actually crosses it. Below this line the
+          surface is HOTTER than the core and the gradient has inverted, which is a
+          different physical state, not a smaller number. */}
+      {D_MIN < 0 && (
+        <line
+          x1={g.ML}
+          y1={y(0)}
+          x2={g.W - g.MR}
+          y2={y(0)}
+          stroke="var(--draft-line)"
+          strokeWidth={g.stroke / 2}
+        />
+      )}
+
+      {/* The hottest cell ANYWHERE against the surface. This one really has no series -
+          the per-step maximum over the whole section is not in the response - so it
+          stays a level, and it is the conservative number of the two. */}
       <Measured
         y={y(sim.max_anywhere_surface_diff_c)}
         label={`max anywhere ${sim.max_anywhere_surface_diff_c.toFixed(2)}`}
         g={g}
       />
-      <Measured
-        y={y(sim.max_core_surface_diff_c)}
-        color={CORE}
-        label={`max core ${sim.max_core_surface_diff_c.toFixed(2)}`}
-        g={g}
-      />
       <Threshold y={y(limit_c)} label={`cracking ${limit_c} °C · ACI 207`} g={g} />
 
+      <path
+        d={path}
+        fill="none"
+        stroke={CORE}
+        strokeWidth={g.stroke}
+        strokeLinejoin="round"
+      />
+
       <Cursors x={x} now_h={now_h} hover={hover} g={g} />
+      {at !== null && <Dot cx={x(sim.times_h[at])} cy={y(diff_c[at] ?? 0)} fill={CORE} g={g} />}
     </Track>
   );
 }
