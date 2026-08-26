@@ -137,13 +137,34 @@ def is_phoenix(lat: float, lon: float) -> bool:
     )
 
 
+# Half-width of a generated AOI, and therefore the grid its centres are snapped to.
+#
+# Sized to match the cached Phoenix polygon (about 1.7 x 1.5 km). Area does not change
+# the price; it was chosen small so a whole season of cached responses stays committable.
+AOI_HALF_DEG = 0.0067
+
+
+# the AOI centre a point belongs to, snapped to a grid one AOI wide.
+#
+# WITHOUT this, every distinct coordinate is its own polygon, its own cache key and its
+# own 4220 credits - so nudging a pour twenty metres down the street re-buys the day, and
+# picking a spot on the map costs money every single click. Snapping means one grid cell
+# is one purchased day, and every point inside it is then free forever.
+#
+# The consequence is honest and visible: the tiles a point resolves to cover the snapped
+# cell, not a box centred on the point, so the marker can sit anywhere inside the field
+# rather than in the middle of it. That was already true of the demo site, which sits in
+# the corner of the season AOI.
+def snap_to_aoi(value: float) -> float:
+    step = AOI_HALF_DEG * 2
+    return round(round(value / step) * step, 6)
+
+
 # a small AOI centred on a point, in the same shape season.py's polygon uses.
 #
-# Sized to match the cached Phoenix polygon (about 1.7 x 1.5 km) rather than picked for
-# looks: area does not change the price, and a small AOI keeps a cached response small
-# enough to commit. Latitude is not corrected for in the longitude half-width, which
-# makes the box narrower in the far north - harmless, since the reducer averages tiles.
-def aoi_polygon(lat: float, lon: float, half_deg: float = 0.0067) -> dict[str, Any]:
+# Latitude is not corrected for in the longitude half-width, which makes the box narrower
+# in the far north - harmless, since the tiles inside it are what get read.
+def aoi_polygon(lat: float, lon: float, half_deg: float = AOI_HALF_DEG) -> dict[str, Any]:
     west, east = lon - half_deg, lon + half_deg
     south, north = lat - half_deg, lat + half_deg
     return {
@@ -169,7 +190,9 @@ def aoi_polygon(lat: float, lon: float, half_deg: float = 0.0067) -> dict[str, A
 
 # the AOI a point resolves to. Phoenix reuses the season polygon so its cached days hit.
 def polygon_for(lat: float, lon: float) -> dict[str, Any]:
-    return DOWNTOWN_PHOENIX if is_phoenix(lat, lon) else aoi_polygon(lat, lon)
+    if is_phoenix(lat, lon):
+        return DOWNTOWN_PHOENIX
+    return aoi_polygon(snap_to_aoi(lat), snap_to_aoi(lon))
 
 
 # is this site-day already on disk? NEVER calls the API - that is the entire point.

@@ -15,6 +15,7 @@ import LeftPanel from "@/components/LeftPanel";
 import type { IfcUiState } from "@/components/LeftPanel";
 import dynamic from "next/dynamic";
 import Section2D from "@/components/Section2D";
+import HeatMapView from "@/components/HeatMapView";
 import ChecksPanel from "@/components/ChecksPanel";
 import ProbeCard from "@/components/ProbeCard";
 import TimeScrubber from "@/components/TimeScrubber";
@@ -494,6 +495,11 @@ export default function StudioPage() {
         placementHour: response.resolved_placement_hour,
         source: response.source,
         mode: response.mode,
+        // which measured triple the curve was shaped from. A point picked on the map
+        // asks for its own tile; a city asks for the AOI mean. The backend says which
+        // it actually used, and the chip repeats it rather than assuming.
+        reduction: response.reduction,
+        tileId: response.tile_id,
       });
       commit();
     },
@@ -525,7 +531,16 @@ export default function StudioPage() {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative flex min-h-0 flex-1">
-            {!run && solveError ? (
+            {/* The map draws the MEASUREMENT, not the solve, so it is reachable
+                whether or not a run has landed - a failed solve is exactly when a
+                reader wants to look at the weather it was given. */}
+            {viewMode === "map" ? (
+              <HeatMapView
+                location={location}
+                durationHours={config.cure_window_h}
+                onApply={handleLocationApply}
+              />
+            ) : !run && solveError ? (
               <div className="flex flex-1 items-center justify-center p-8">
                 <div className="max-w-lg rounded-xl border border-status-red/30 bg-status-red-dim p-5 text-center">
                   <p className="text-sm font-medium text-status-red">Could not load a solve</p>
@@ -751,10 +766,14 @@ export default function StudioPage() {
           </div>
 
           {/* The scopes dock belongs to the run, not to one viewer: mounting it in 2D
-              only meant the 3D view silently had no thermal history at all. */}
-          {run && <HistoryChart sim={run.result} frameIndex={frameIndex} />}
+              only meant the 3D view silently had no thermal history at all. The map is
+              the exception, and not by omission - a day's heatmap is one spatial field
+              with no time axis at all, so a transport under it would scrub nothing. */}
+          {run && viewMode !== "map" && <HistoryChart sim={run.result} frameIndex={frameIndex} />}
 
-          <TimeScrubber times_h={frameTimes} frameIndex={frameIndex} onTimeChange={handleTimeChange} />
+          {viewMode !== "map" && (
+            <TimeScrubber times_h={frameTimes} frameIndex={frameIndex} onTimeChange={handleTimeChange} />
+          )}
 
           {/* Status bar. Where the solve came from and what it is keyed to, always on
               screen, the way a drafting application keeps its coordinate readout. */}
@@ -783,7 +802,11 @@ export default function StudioPage() {
               <span>no run loaded</span>
             )}
             <span className="ml-auto uppercase tracking-[0.08em]">
-              {viewMode === "3d" ? "3D · perspective" : "2D · orthographic"}
+              {viewMode === "map"
+                ? "map · web mercator"
+                : viewMode === "3d"
+                  ? "3D · perspective"
+                  : "2D · orthographic"}
             </span>
           </footer>
         </div>

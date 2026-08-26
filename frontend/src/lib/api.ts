@@ -487,6 +487,15 @@ export interface AmbientRequest {
     duration_hours?: number;
     /** the money switch. false refuses an uncached day and reports its price instead. */
     allow_live?: boolean;
+    /**
+     * Which measured triple shapes the diurnal curve.
+     *
+     * "aoi_mean" (the default, and what every precomputed artifact was built with)
+     * averages every tile in the AOI. "tile" uses the one tile the lat/lon falls in,
+     * which is the hyperlocal answer and the whole point of picking a spot on the map.
+     * A point outside every tile falls back to the mean, and the response says so.
+     */
+    reduce?: "aoi_mean" | "tile";
 }
 
 export interface AmbientResponse {
@@ -500,6 +509,11 @@ export interface AmbientResponse {
     mode: "archive" | "forecast";
     source: "cached" | "live";
     credits_spent: number;
+    // Which reducer produced the triple below, echoed rather than assumed. A request for
+    // "tile" whose point fell outside every tile comes back "aoi_mean" with a null id.
+    reduction: "aoi_mean" | "tile";
+    tile_id: string | null;
+    n_tiles: number;
     day_of_year: number;
     t_min_c: number;
     t_mean_c: number;
@@ -527,4 +541,56 @@ export function ambientQuote(lat: number, lon: number, date: string): Promise<Am
 // allow_live was not set - that refusal carries the credit price in its message.
 export function buildAmbient(request: AmbientRequest): Promise<AmbientResponse> {
     return post<AmbientResponse>("/api/ambient", request);
+}
+
+// ---------------------------------------------------------------- heatmap
+
+/** One FortyGuard tile: the ground it covers, and what the day did inside it. */
+export interface HeatmapTile {
+    tile_id: string;
+    /** closed [lon, lat] ring, degrees. A rotated quadrilateral, not a bounding box. */
+    ring_lonlat: [number, number][];
+    // null when the upstream tile carries no value for that field. Never draw a null.
+    t_min_c: number | null;
+    t_mean_c: number | null;
+    t_max_c: number | null;
+}
+
+/**
+ * The measured temperature field a site-day's ambient was reduced from.
+ *
+ * SPATIAL, not temporal: one min/mean/max triple per tile for the whole day, so the
+ * axis runs across the AOI and never across hours.
+ *
+ * t_min_c / t_mean_c / t_max_c are the AOI reduction - the tile mean of each field,
+ * which is the exact triple the solve's ambient was built from.
+ */
+export interface HeatmapResponse {
+    resolved_lat_deg: number;
+    resolved_lon_deg: number;
+    resolved_date: string;
+    coverage: string;
+    mode: "archive" | "forecast";
+    source: "cached";
+    credits_spent: number;
+    granularity_m: number;
+    day_of_year: number;
+    t_min_c: number;
+    t_mean_c: number;
+    t_max_c: number;
+    n_tiles: number;
+    /** [west, south, east, north] degrees */
+    bbox_lonlat: [number, number, number, number];
+    tiles: HeatmapTile[];
+}
+
+/**
+ * The measured field for a site-day. CACHED ONLY - it cannot spend a credit.
+ *
+ * 409 when the day is not on disk, and that refusal names the price. The location
+ * picker is the one control allowed to buy a day; once it has, this is free forever.
+ */
+export function heatmap(lat: number, lon: number, date: string): Promise<HeatmapResponse> {
+    const q = new URLSearchParams({ lat: String(lat), lon: String(lon), date });
+    return apiFetch<HeatmapResponse>(`/api/heatmap?${q.toString()}`);
 }

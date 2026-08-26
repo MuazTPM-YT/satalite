@@ -15,6 +15,7 @@ import {
   Grid2x2,
   ListChecks,
   Loader2,
+  Map,
   Play,
   Ruler,
   Settings2,
@@ -29,7 +30,7 @@ import { Select } from "@/components/fields";
 import { UNIT_OPTIONS, type LengthUnit } from "@/lib/units";
 import type { AmbientResponse } from "@/lib/api";
 
-export type ViewMode = "2d" | "3d";
+export type ViewMode = "2d" | "3d" | "map";
 
 // what each abbreviation means, spelled out in the list. A two-letter option in a
 // styled dropdown has room for its own name; a native <select> never did.
@@ -59,9 +60,13 @@ interface TopBarProps {
   onLocationApply: (response: AmbientResponse, label: string) => void;
 }
 
+// 2D and 3D draw the SOLVE. Map draws the measurement it was built from - the same
+// day's temperature field over the ground it was measured on, which is where the
+// hyperlocal claim is either visible or it is not.
 const VIEW_OPTIONS: { id: ViewMode; label: string; icon: Icon }[] = [
   { id: "2d", label: "2D View", icon: Grid2x2 },
   { id: "3d", label: "3D View", icon: Box },
+  { id: "map", label: "Map", icon: Map },
 ];
 
 // launcher icon, accessible name, and what the palette actually answers

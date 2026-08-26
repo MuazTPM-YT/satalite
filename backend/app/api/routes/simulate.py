@@ -21,7 +21,13 @@ from app.services.location import (
     polygon_for,
     require_us,
 )
-from app.services.season import CREDITS_PER_CALL, cached_day, day_params, day_record
+from app.services.season import (
+    CREDITS_PER_CALL,
+    cached_day,
+    day_params,
+    day_record,
+    tile_record,
+)
 from app.services.simulate import (
     best_candidate,
     run_bands,
@@ -161,7 +167,24 @@ async def ambient(request: AmbientRequest) -> AmbientResponse:
         )
         payload = await fetch_heatmap_async(day_params(polygon, request.date))
 
-    record = day_record(request.date, payload)
+    # WHICH triple the curve is shaped from, and never a silent choice.
+    #
+    # A point on the map asks for the tile it sits in; a city asks for the AOI mean. A
+    # "tile" request whose point lands outside every tile falls back to the mean rather
+    # than reaching for the nearest one, and the response carries the reducer that was
+    # actually used so the studio can say which answer it is showing.
+    record = None
+    if request.reduce == "tile":
+        record = tile_record(request.date, payload, request.lat, request.lon)
+        if record is None:
+            log.info(
+                "reduce=tile asked for at (%.4f, %.4f) but the point is outside every "
+                "tile on %s - falling back to the AOI mean",
+                request.lat, request.lon, request.date,
+            )
+    if record is None:
+        record = day_record(request.date, payload)
+
     day = DayWeather(
         date=record["date"],
         day_of_year=record["day_of_year"],
@@ -190,6 +213,9 @@ async def ambient(request: AmbientRequest) -> AmbientResponse:
         mode=mode,
         source="cached" if cached else "live",
         credits_spent=0 if cached else CREDITS_PER_CALL,
+        reduction="tile" if "tile_id" in record else "aoi_mean",
+        tile_id=record.get("tile_id"),
+        n_tiles=record["n_tiles"],
         day_of_year=record["day_of_year"],
         t_min_c=record["t_min_c"],
         t_mean_c=record["t_mean_c"],

@@ -32,6 +32,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the template. `.env*` is Next's default and it swallowed the one file the
+# README tells you to copy in setup step 2, so a fresh clone had nothing to copy FROM.
+# The template holds no secrets - it is comments and localhost defaults.
+!.env.local.example
 
 # vercel
 .vercel

@@ -283,6 +283,78 @@ def day_record(day: str, payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# is a lon/lat point inside a tile's ring? ray casting, in degrees.
+#
+# The tiles are a rotated grid - a projected grid a fraction of a degree off north - so
+# a bounding-box test picks the wrong tile along every edge. The half-open crossing rule
+# `(y0 > lat) != (y1 > lat)` gives a shared edge to exactly one of the two tiles that
+# meet on it, so a point never resolves to two tiles or to none.
+def point_in_ring(lon: float, lat: float, ring: Sequence[Sequence[float]]) -> bool:
+    inside = False
+    j = len(ring) - 1
+    for i in range(len(ring)):
+        x_i, y_i = float(ring[i][0]), float(ring[i][1])
+        x_j, y_j = float(ring[j][0]), float(ring[j][1])
+        if (y_i > lat) != (y_j > lat) and lon < (x_j - x_i) * (lat - y_i) / (y_j - y_i) + x_i:
+            inside = not inside
+        j = i
+    return inside
+
+
+# the tile a point falls in, or None when it falls outside every one of them.
+def tile_at(payload: dict[str, Any], lat: float, lon: float) -> dict[str, Any] | None:
+    for feature in fg_tiles(payload):
+        geometry = feature.get("geometry")
+        if not geometry or geometry.get("type") != "Polygon":
+            continue
+        if point_in_ring(lon, lat, geometry["coordinates"][0]):
+            return feature
+    return None
+
+
+# ONE TILE's own min/mean/max, for a pour at a stated point.
+#
+# day_record averages every tile in the AOI, which is the right reducer for the season
+# replay: it replays one standard element at one site, so it needs one number per field
+# per day. It is the wrong reducer for a point. The whole claim of this project is that
+# air temperature varies street by street, and averaging 221 tiles is exactly the step
+# that throws that variation away - 0.1 C of it in the daily mean on the demo day, and
+# 0.37 C in the daily minimum.
+#
+# So a pour at a stated point can be solved against the tile it actually sits in. Same
+# fields, same units, same shape as day_record; the caller says which it wants and the
+# response says which it got, because a curve built from one tile and a curve built from
+# 221 must never be mistaken for each other.
+#
+# Returns None when the point is outside every tile - the caller then falls back to the
+# AOI mean and reports that it did, rather than quietly inventing a nearest tile.
+def tile_record(day: str, payload: dict[str, Any], lat: float, lon: float) -> dict[str, Any] | None:
+    feature = tile_at(payload, lat, lon)
+    if feature is None:
+        return None
+    props = feature["properties"]
+    fields = {
+        "t_min_c": "min_temperature",
+        "t_mean_c": "average_temperature",
+        "t_max_c": "max_temperature",
+    }
+    values: dict[str, Any] = {}
+    for out_name, api_name in fields.items():
+        value = props.get(api_name)
+        # A tile missing one of the three cannot shape a diurnal curve, and substituting
+        # the AOI mean for the missing one would blend two reducers inside a single day.
+        if value is None:
+            return None
+        values[out_name] = float(value)
+    return {
+        "date": day,
+        "day_of_year": date.fromisoformat(day).timetuple().tm_yday,
+        **values,
+        "n_tiles": 1,
+        "tile_id": str(props["tile_id"]),
+    }
+
+
 # cached heatmaps in, the daily records season_exposure wants out. never calls the API.
 #
 # A missing day is an error, not a gap to skip over. Quietly returning 40 days when 92
