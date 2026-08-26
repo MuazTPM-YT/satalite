@@ -417,6 +417,22 @@ the ensemble band are served straight from disk.
   parameters. Quota is limited, so the cache is load-bearing — nothing calls the API twice
   for identical parameters.
 
+## AI tools used
+
+Written with [Claude Code](https://claude.com/claude-code) (Anthropic) as the primary
+assistant: implementation, refactoring, test scaffolding and this documentation. The
+repository was started from an empty directory on 18 August 2026. The only code not
+written here is the vendored FortyGuard client credited below, and the stock
+`create-next-app` scaffold under `frontend/`.
+
+What the assistant was *not* allowed to decide: every physics constant in
+`physics/constants.py` carries the standard it came from (ASTM C1074, USBR DSO-12-02,
+Schindler & Folliard 2005, ACI 207/305/347), and the five golden tests in
+`backend/tests/test_golden.py` check the solver against closed-form arithmetic and exact
+identities rather than against any number this code produced. Where a constant is
+provisional or a limit is unmeasured, `docs/LIMITATIONS.md` says so and says which number
+it moves.
+
 ## Credit
 
 The FortyGuard API client in `backend/vendor/fortyguard/` is vendored unmodified from
