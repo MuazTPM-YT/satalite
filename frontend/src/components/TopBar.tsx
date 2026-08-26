@@ -1,9 +1,28 @@
 // Command bar. Mark and wordmark left, the view switcher dead-centre, and the
 // panel launchers plus units grouped into one pill on the right.
 //
-// The switcher is absolutely positioned so it is centred on the BAR, not on
-// whatever space the wordmark and the right-hand pill happen to leave - otherwise
-// it drifts every time the backend URL in the health chip changes length.
+// The switcher must be centred on the BAR, not on whatever space the wordmark and
+// the right-hand pill happen to leave - otherwise it drifts every time the health
+// chip or the location label changes length. It used to get that by being absolutely
+// positioned, which centred it correctly and then let the right-hand group slide
+// straight over the top of it: a long location label pushed the launcher pill left
+// until it covered the word "Map".
+//
+// A three-track grid gives the same centring without the overlap. The side tracks are
+// minmax(0, 1fr) - EQUAL, so the middle track lands dead-centre, and floored at zero so
+// a wide right-hand group shrinks its own track rather than growing across the middle
+// one.
+//
+// Equal tracks are also why this waits for 2xl. The wordmark needs about 150 px and the
+// launchers, Solve, location and health chip need about 610; symmetric tracks hand both
+// the same, so anything narrower than roughly 1550 px reserves half a bar for a wordmark
+// and starts scrolling the units control out of the pill. Below 2xl the centred copy is
+// hidden and the switcher moves into that pill instead - which is what the bar already
+// did on narrow windows, and it cannot overlap anything because there is no second copy.
+//
+// Bar-centring and a full toolbar are mutually exclusive under ~1550 px. Given the
+// choice, the toolbar wins: a switcher slightly off-centre is a nicety, a units control
+// scrolled out of reach is a control.
 "use client";
 
 import {
@@ -151,9 +170,16 @@ export default function TopBar({
   );
 
   return (
-    <header className="relative z-50 flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border-default bg-bg-surface px-4">
+    <header
+      className={cx(
+        "relative z-50 h-14 shrink-0 items-center gap-4 border-b border-border-default",
+        "bg-bg-surface px-4",
+        "flex justify-between",
+        "2xl:grid 2xl:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]",
+      )}
+    >
       {/* left: mark + wordmark */}
-      <div className="z-10 flex min-w-0 items-center gap-2.5">
+      <div className="flex min-w-0 items-center gap-2.5">
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-blue-dim">
           <Box className="h-4 w-4 text-accent-blue" strokeWidth={2} />
         </span>
@@ -163,8 +189,8 @@ export default function TopBar({
         </span>
       </div>
 
-      {/* centre: view switcher */}
-      <div className="pointer-events-auto absolute left-1/2 top-1/2 z-0 hidden -translate-x-1/2 -translate-y-1/2 lg:block">
+      {/* centre: view switcher. A grid item now, so it owns its own track. */}
+      <div className="hidden 2xl:block">
         <Segmented
           value={viewMode}
           options={VIEW_OPTIONS}
@@ -174,13 +200,13 @@ export default function TopBar({
       </div>
 
       {/* right: launchers, units, backend reachability */}
-      <div className="z-10 flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center justify-end gap-2">
         {/* Scrolls rather than disappearing. It used to be `hidden md:flex`, which on a
             narrow window left no view switcher, no palette launchers and no way back to
             a palette once it was closed - the studio simply stopped having controls. */}
         <div className="no-scrollbar flex min-w-0 items-center gap-0.5 overflow-x-auto rounded-xl bg-elevate-1 p-1 ring-1 ring-inset ring-hairline">
-          {/* the switcher moves in here below lg, where the centred copy is hidden */}
-          <div className="shrink-0 lg:hidden">
+          {/* the switcher moves in here below 2xl, where the centred copy is hidden */}
+          <div className="shrink-0 2xl:hidden">
             <Segmented
               value={viewMode}
               options={VIEW_OPTIONS}
@@ -189,7 +215,7 @@ export default function TopBar({
               size="sm"
             />
           </div>
-          <div className="shrink-0 lg:hidden">
+          <div className="shrink-0 2xl:hidden">
             <ToolbarDivider />
           </div>
 
