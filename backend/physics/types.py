@@ -56,6 +56,12 @@ class Element:
     placement_temp_c: float = 20.0
     formwork: str = "plywood_18mm"
     on_ground: bool = False
+    # how deep under the face a surface sensor is taken to sit, metres. A CHOICE, not a
+    # constant, and it has to match whatever the governing spec says - ACI 207 says only
+    # "a few inches below the nearest surface", ALDOT 930-860R instrumented at 1 in and
+    # USBR DSO-12-02 at 6 in. 50 mm (2 in) is the common DOT thermal-control-plan value
+    # and is the default for that reason alone. Echoed back in every response.
+    surface_probe_depth_m: float = 0.050
     # where the reported core temperature is sampled, metres from the section origin.
     # None means the section centroid. A LOCATION, never a cell: the number has to be a
     # property of the element, comparable to a thermocouple that sat at a known point.
@@ -85,6 +91,11 @@ class SolveResult:
     t_e_h_frames: FloatArray       # equivalent age, same shape
     core_temp_c: FloatArray
     surface_temp_c: FloatArray
+    # temperature a surface sensor would read: the mean over cells one
+    # Element.surface_probe_depth_m step inward from every exposed face. This is the
+    # series a spec's core-to-surface limit is written against; surface_temp_c is the
+    # true free surface and is colder.
+    surface_probe_temp_c: FloatArray
     peak_core_temp_c: float
     peak_core_time_h: float
     max_core_surface_diff_c: float
@@ -95,6 +106,15 @@ class SolveResult:
     # hottest cell anywhere in the section, over the whole run. What DEF actually cares
     # about - the nominal centre is not where the element is hottest.
     max_core_temp_anywhere_c: float
+    # the same two differentials measured against the surface SENSOR rather than the free
+    # surface. These are what the cracking flag is evaluated on, because ACI 301's 35 degF
+    # is written against an embedded reading. The free-surface pair above is kept and
+    # still reported: it is the strict upper bound on the gradient, and dropping it would
+    # hide how much of the difference is probe placement.
+    max_core_probe_diff_c: float
+    max_anywhere_probe_diff_c: float
+    # echoed so a reader never has to infer which depth produced the numbers above.
+    surface_probe_depth_m: float
     # where core_temp_c was sampled. Echoed so a reader never has to infer it.
     probe_xy_m: tuple[float, float]
     dt_s: float

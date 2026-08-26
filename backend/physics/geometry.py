@@ -96,6 +96,44 @@ class Section:
             np.array([1.0], dtype=np.float64),
         )
 
+    # cells a surface sensor would sit in: one step of `depth_m` inward from every
+    # EXPOSED face, along that face's own normal.
+    #
+    # This exists because the free surface and a sensor are not the same place. A
+    # thermocouple cannot be cast AT the face; specs put it a few inches under one, and
+    # the core-to-surface limit those specs write is a difference against THAT reading.
+    # Comparing a core against the true free surface instead answers a question no code
+    # asks, and answers it high - the face at 4am is far colder than 50 mm inside it.
+    #
+    # Steps along face_tags' own normals rather than a distance transform: the normal is
+    # already stored, and "50 mm in from the face the sensor was fixed to" is what the
+    # spec means, which is not the same as "50 mm from the nearest concrete edge" once a
+    # section has a re-entrant corner. A step that lands outside the mask - a section
+    # thinner than twice the depth - falls back to the boundary cell itself rather than
+    # reading a cell with no concrete in it.
+    def surface_probe_cells(self, depth_m: float) -> tuple[IntArray, IntArray]:
+        if depth_m < 0.0:
+            raise ValueError("depth_m must not be negative")
+        steps = int(round(depth_m / self.dx_m))
+        ny, nx = self.mask.shape
+
+        rows: list[int] = []
+        cols: list[int] = []
+        # (direction, row step, col step). Inward is the OPPOSITE of the face normal:
+        # an UP face is looked at from below, so the sensor is at a lower row.
+        inward = ((UP, -1, 0), (DOWN, 1, 0), (LEFT, 0, 1), (RIGHT, 0, -1))
+        for direction, dr, dc in inward:
+            face_rows, face_cols = np.nonzero(self.face_tags[direction] == EXPOSED)
+            probe_rows = np.clip(face_rows + dr * steps, 0, ny - 1)
+            probe_cols = np.clip(face_cols + dc * steps, 0, nx - 1)
+            inside = self.mask[probe_rows, probe_cols]
+            rows.extend(np.where(inside, probe_rows, face_rows).tolist())
+            cols.extend(np.where(inside, probe_cols, face_cols).tolist())
+
+        if not rows:
+            return np.empty(0, dtype=np.int64), np.empty(0, dtype=np.int64)
+        return np.asarray(rows, dtype=np.int64), np.asarray(cols, dtype=np.int64)
+
     # where a stencil actually samples, metres. exact for bilinear, honest for the
     # nearest-cell fallback - the metadata must not claim a point that was not read.
     def stencil_xy_m(

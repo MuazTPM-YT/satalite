@@ -69,9 +69,9 @@ export default function PourWindowTable({ candidates, best_offset_h }: PourWindo
                     <Cell value={c.max_core_temp_anywhere_c.toFixed(1)} over={c.breaches.def_tripped_by === "max_anywhere" || c.breaches.def_tripped_by === "both"} />
                   </td>
                   <td className="whitespace-nowrap py-1.5 pr-3 font-mono tabular-nums text-text-primary">
-                    <Cell value={c.max_core_surface_diff_c.toFixed(1)} over={c.breaches.cracking_tripped_by === "probe" || c.breaches.cracking_tripped_by === "both"} />
+                    <Cell value={c.max_core_probe_diff_c.toFixed(1)} over={c.breaches.cracking_tripped_by === "probe" || c.breaches.cracking_tripped_by === "both"} />
                     <span className="text-text-muted"> / </span>
-                    <Cell value={c.max_anywhere_surface_diff_c.toFixed(1)} over={c.breaches.cracking_tripped_by === "max_anywhere" || c.breaches.cracking_tripped_by === "both"} />
+                    <Cell value={c.max_anywhere_probe_diff_c.toFixed(1)} over={c.breaches.cracking_tripped_by === "max_anywhere" || c.breaches.cracking_tripped_by === "both"} />
                   </td>
                   <td className="whitespace-nowrap py-1.5 pr-3 font-mono">
                     <Cell value={c.peak_evaporation_kg_m2_h.toFixed(3)} over={c.breaches.evaporation} />

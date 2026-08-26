@@ -87,6 +87,13 @@ export interface ElementConfig {
   /** hours to slide the start of the run along the ambient series */
   start_offset_h: number;
   t_ref_c: number;
+  /**
+   * How deep under the face the surface sensor sits, metres. The cracking check reads
+   * this depth, not the free surface, because ACI 301's limit is written against an
+   * embedded thermocouple. Carried through the round trip like dx_m and t_ref_c so the
+   * studio reopens on exactly the scenario an artifact was solved for.
+   */
+  surface_probe_depth_m: number;
 }
 
 // default dims for a shape, straight off its own spec.
@@ -115,6 +122,7 @@ export const DEFAULT_ELEMENT_CONFIG: ElementConfig = {
   cure_window_h: 72,
   start_offset_h: 0,
   t_ref_c: 20,
+  surface_probe_depth_m: 0.05,
 };
 
 // config in, the element half of the request out. Dims are clamped on the way through,
@@ -130,6 +138,7 @@ export function toElementSpec(c: ElementConfig): ElementSpec {
     // which is an insulated base and biases the core HIGH. Not offered as an input.
     on_ground: false,
     probe_xy_m: null,
+    surface_probe_depth_m: c.surface_probe_depth_m,
   };
 }
 
@@ -222,6 +231,7 @@ export function configFromRequest(
     cure_window_h: request.duration_hours ?? base.cure_window_h,
     start_offset_h: 0,
     t_ref_c: request.t_ref_c ?? base.t_ref_c,
+    surface_probe_depth_m: el.surface_probe_depth_m ?? base.surface_probe_depth_m,
   };
 }
 

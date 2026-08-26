@@ -122,6 +122,13 @@ def solve(
     )
     probe_xy_m = section.stencil_xy_m(probe_rows, probe_cols, probe_w)
 
+    # where a thermocouple would actually sit. Empty only for a fully sealed section,
+    # where there is no exposed face to measure in from; the free surface collapses onto
+    # the cell centre there anyway, so the boundary cells are the honest fallback.
+    sprobe_rows, sprobe_cols = section.surface_probe_cells(element.surface_probe_depth_m)
+    if sprobe_rows.size == 0:
+        sprobe_rows, sprobe_cols = boundary_rows, boundary_cols
+
     # 0 outside the mask, not nan: the hydration and maturity terms are evaluated over
     # the whole array and nan would poison the in-place source assembly. Frames are
     # nan-filled at record time, which is what the API and the tests actually see.
@@ -159,6 +166,7 @@ def solve(
     core_c: list[float] = []
     max_any_c: list[float] = []
     surface_c: list[float] = []
+    sprobe_c: list[float] = []
     dt_h = dt_s / 3600.0
 
     for i in range(n_steps):
@@ -212,6 +220,7 @@ def solve(
             core_c.append(float(np.dot(temp_c[probe_rows, probe_cols], probe_w)))
             max_any_c.append(float(temp_c[mask].max()))
             surface_c.append(float(surf_temp_c.mean()))
+            sprobe_c.append(float(temp_c[sprobe_rows, sprobe_cols].mean()))
 
         # the maturity clock and the hydration heat share one rate multiplier evaluation.
         rate = maturity.rate_multiplier(temp_c, t_ref_c)
@@ -248,10 +257,14 @@ def solve(
     # this sample meaning something different from all the others. surface_state is the
     # single definition of the reconstruction, and it is the one that seals a sealed face.
     surface_c.append(float(surface_state(temp_c, n_steps - 1, q_face_w_m2)[2].mean()))
+    # a plain cell read, so unlike the free surface it carries no film reconstruction and
+    # no one-step lag - the final state is sampled exactly as every earlier frame was.
+    sprobe_c.append(float(temp_c[sprobe_rows, sprobe_cols].mean()))
 
     core_arr = np.asarray(core_c, dtype=np.float64)
     max_any_arr = np.asarray(max_any_c, dtype=np.float64)
     surface_arr = np.asarray(surface_c, dtype=np.float64)
+    sprobe_arr = np.asarray(sprobe_c, dtype=np.float64)
     times_arr = np.asarray(frame_times_h, dtype=np.float64)
     peak_i = int(np.argmax(core_arr))
 
@@ -261,11 +274,15 @@ def solve(
         t_e_h_frames=np.asarray(frames_te, dtype=np.float64),
         core_temp_c=core_arr,
         surface_temp_c=surface_arr,
+        surface_probe_temp_c=sprobe_arr,
         peak_core_temp_c=float(core_arr[peak_i]),
         peak_core_time_h=float(times_arr[peak_i]),
         max_core_surface_diff_c=float(np.max(core_arr - surface_arr)),
         max_anywhere_surface_diff_c=float(np.max(max_any_arr - surface_arr)),
         max_core_temp_anywhere_c=float(np.max(max_any_arr)),
+        max_core_probe_diff_c=float(np.max(core_arr - sprobe_arr)),
+        max_anywhere_probe_diff_c=float(np.max(max_any_arr - sprobe_arr)),
+        surface_probe_depth_m=element.surface_probe_depth_m,
         probe_xy_m=probe_xy_m,
         dt_s=dt_s,
         outline_m=section.outline_m,

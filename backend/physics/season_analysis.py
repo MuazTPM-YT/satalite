@@ -142,6 +142,10 @@ class DayOutcome:
     peak_core_time_h: float
     max_core_surface_diff_c: float
     max_anywhere_surface_diff_c: float
+    # the same two measured against the surface SENSOR rather than the free surface.
+    # The cracking count is taken from these; see season_exposure.
+    max_core_probe_diff_c: float
+    max_anywhere_probe_diff_c: float
     max_core_temp_anywhere_c: float
     peak_evaporation_kg_m2_h: float
     strip_time_h: float
@@ -247,6 +251,8 @@ def _run_day(job: tuple[DayWeather, int, Element, Mix, float, dict[str, Any]]) -
         peak_core_time_h=result.peak_core_time_h,
         max_core_surface_diff_c=result.max_core_surface_diff_c,
         max_anywhere_surface_diff_c=result.max_anywhere_surface_diff_c,
+        max_core_probe_diff_c=result.max_core_probe_diff_c,
+        max_anywhere_probe_diff_c=result.max_anywhere_probe_diff_c,
         max_core_temp_anywhere_c=result.max_core_temp_anywhere_c,
         peak_evaporation_kg_m2_h=float(
             np.max(evaporation_series_kg_m2_s(result, ambient)) * 3600.0
@@ -370,11 +376,22 @@ def _summarise(rows: list[DayOutcome], def_limit_c: float) -> dict[str, Any]:
         "pct_days_breaching_def": pct(
             [o.max_core_temp_anywhere_c > def_limit_c for o in rows]
         ),
-        # hottest point again, same reason as DEF above. The probe-based differential
+        # hottest point again, same reason as DEF above. The core-probe differential
         # reads about 4.5 C low, so counting days on it alone undercounts cracking.
+        #
+        # Measured against the surface SENSOR, not the free surface: CRACK_LIMIT_C comes
+        # from ACI 301, which writes it against a thermocouple cast a few inches under a
+        # face, and the free surface is colder than that reading.
+        #
+        # On the free surface this read 100% at BOTH placement hours, which is not a
+        # season statistic - it is a flag that fires on everything. Against the sensor it
+        # reads 0% at 04:00 and 50% at 14:00, which is the comparison this whole file
+        # exists to make. The element here is a 300 mm slab, so 50 mm is a third of the
+        # half-thickness and the reducer moves a long way; on a 2 m section it barely
+        # moves at all. LIMITATIONS.md item 10 has the depth sweep and the caveat.
         "pct_days_breaching_cracking": pct(
             [
-                max(o.max_core_surface_diff_c, o.max_anywhere_surface_diff_c) > CRACK_LIMIT_C
+                max(o.max_core_probe_diff_c, o.max_anywhere_probe_diff_c) > CRACK_LIMIT_C
                 for o in rows
             ]
         ),

@@ -79,6 +79,7 @@ const scenario: SimulationRequest = {
     formwork: "plywood_18mm",
     on_ground: false,
     probe_xy_m: null,
+    surface_probe_depth_m: 0.05,
   },
   mix: {
     mix_id: "standard",

@@ -80,18 +80,27 @@ def test_def_threshold_rejects_percent_inputs() -> None:
 def test_api_breach_check_uses_the_unconditional_limit() -> None:
     from app.services.simulate import to_breaches
 
-    assert to_breaches(50.0, 50.0, 5.0, 5.0, 0.1, 20.0).def_threshold_c == DEF_LIMIT_C
+    assert to_breaches(
+        50.0, 50.0, max_diff_c=5.0, max_anywhere_diff_c=5.0,
+        peak_evap_kg_m2_h=0.1, placement_temp_c=20.0,
+    ).def_threshold_c == DEF_LIMIT_C
 
 
 # def_risk trips on the hottest point in the section, not only on the nominal probe.
 def test_def_risk_trips_on_the_hottest_point_not_only_the_probe() -> None:
     from app.services.simulate import to_breaches
 
-    cool_probe = to_breaches(DEF_LIMIT_C - 4.0, DEF_LIMIT_C + 0.1, 5.0, 5.0, 0.1, 20.0)
+    cool_probe = to_breaches(
+        DEF_LIMIT_C - 4.0, DEF_LIMIT_C + 0.1, max_diff_c=5.0, max_anywhere_diff_c=5.0,
+        peak_evap_kg_m2_h=0.1, placement_temp_c=20.0,
+    )
     assert cool_probe.def_risk
     assert cool_probe.def_tripped_by == "max_anywhere"
 
-    neither = to_breaches(DEF_LIMIT_C - 4.0, DEF_LIMIT_C, 5.0, 5.0, 0.1, 20.0)
+    neither = to_breaches(
+        DEF_LIMIT_C - 4.0, DEF_LIMIT_C, max_diff_c=5.0, max_anywhere_diff_c=5.0,
+        peak_evap_kg_m2_h=0.1, placement_temp_c=20.0,
+    )
     assert not neither.def_risk
     assert neither.def_tripped_by == "none"
 
@@ -102,17 +111,24 @@ def test_cracking_trips_on_the_hottest_point_not_only_the_probe() -> None:
     from app.services.simulate import to_breaches
 
     cool_probe = to_breaches(
-        50.0, 50.0, CRACK_LIMIT_C - 4.0, CRACK_LIMIT_C + 0.1, 0.1, 20.0
+        50.0, 50.0, max_diff_c=CRACK_LIMIT_C - 4.0,
+        max_anywhere_diff_c=CRACK_LIMIT_C + 0.1,
+        peak_evap_kg_m2_h=0.1, placement_temp_c=20.0,
     )
     assert cool_probe.cracking
     assert cool_probe.cracking_tripped_by == "max_anywhere"
 
-    neither = to_breaches(50.0, 50.0, CRACK_LIMIT_C - 4.0, CRACK_LIMIT_C, 0.1, 20.0)
+    neither = to_breaches(
+        50.0, 50.0, max_diff_c=CRACK_LIMIT_C - 4.0, max_anywhere_diff_c=CRACK_LIMIT_C,
+        peak_evap_kg_m2_h=0.1, placement_temp_c=20.0,
+    )
     assert not neither.cracking
     assert neither.cracking_tripped_by == "none"
 
     both = to_breaches(
-        50.0, 50.0, CRACK_LIMIT_C + 0.1, CRACK_LIMIT_C + 4.0, 0.1, 20.0
+        50.0, 50.0, max_diff_c=CRACK_LIMIT_C + 0.1,
+        max_anywhere_diff_c=CRACK_LIMIT_C + 4.0,
+        peak_evap_kg_m2_h=0.1, placement_temp_c=20.0,
     )
     assert both.cracking
     assert both.cracking_tripped_by == "both"
