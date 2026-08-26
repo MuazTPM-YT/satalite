@@ -22,6 +22,13 @@ H_CEM_DEFAULT = 500.0         # J/g when the cement type is unknown. USBR DSO-12
 # heat per unit cement. These are the type means; the ensemble samples around them.
 H_CEM_BY_TYPE = {
     "I": 510.0,      # highest C3A
+    # Most US general-purpose cement is sold as I/II, and refusing the designation forced
+    # every such mix to be relabelled before it could be solved at all. Placed between I
+    # and II the way II/V sits between II and V, rather than collapsed onto either end.
+    # The competing argument is that a I/II is bound by Type II's C3A ceiling and should
+    # therefore read a flat 500; the two differ by 1%, which is about 0.1 degC on peak
+    # core, and the ensemble samples wider than that. Send "II" if you mean Type II.
+    "I/II": 505.0,
     "II": 500.0,     # confirmed against the Stony Gorge field rise
     "II/V": 470.0,   # low C3A
     "V": 450.0,      # lowest
