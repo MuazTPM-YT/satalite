@@ -9,11 +9,14 @@
 
 import { useMemo } from "react";
 import { buildLegendGradient } from "@/lib/thermalColormap";
+import { cx } from "@/components/ui";
 
 interface ThermalLegendProps {
   // the fixed colour-scale bounds. undefined means no field was returned.
   min_c?: number;
   max_c?: number;
+  /** what the bar is measuring, when it is not simply the section's temperature. */
+  caption?: string;
   // draw the DEF limit marker across the bar
   defLimit_c?: number;
   // the real spread in the frame on screen, shown so a reader can see how much of the
@@ -27,6 +30,7 @@ const BAR_H = 168;
 export default function ThermalLegend({
   min_c,
   max_c,
+  caption = "\u00b0C",
   defLimit_c,
   frameMin_c,
   frameMax_c,
@@ -51,12 +55,18 @@ export default function ThermalLegend({
   // four evenly spaced graduations, top to bottom
   const ticks = [0, 1, 2, 3].map((i) => max_c - (span * i) / 3);
 
+  // Decimals follow the span, because the same bar serves two very different ranges.
+  // A cure runs across tens of degrees and wants whole numbers. The measured air field
+  // over one AOI spans a tenth of a degree, and rounded to whole numbers every
+  // graduation on the bar reads "37" - a scale that says nothing about its own scale.
+  const dp = span >= 20 ? 0 : span >= 2 ? 1 : 2;
+
   const hasFrame = frameMin_c !== undefined && frameMax_c !== undefined;
 
   return (
     <div className="pointer-events-auto flex flex-col gap-2 rounded-xl border border-hairline bg-bg-surface/85 p-2.5 shadow-2xl shadow-black/40 backdrop-blur-xl">
       <span className="text-center text-[9px] font-semibold uppercase tracking-[0.08em] text-text-secondary">
-        °C
+        {caption}
       </span>
 
       <div className="flex items-stretch gap-1.5">
@@ -86,16 +96,19 @@ export default function ThermalLegend({
         )}
 
         <div
-          className="relative w-7 shrink-0 font-mono text-[9px] tabular-nums text-text-muted"
+          className={cx(
+            "relative shrink-0 font-mono text-[9px] tabular-nums text-text-muted",
+            dp === 2 ? "w-9" : "w-7",
+          )}
           style={{ height: BAR_H }}
         >
           {ticks.map((t, i) => (
             <span
-              key={t}
+              key={i}
               className="absolute left-0 -translate-y-1/2"
               style={{ top: `${(i / 3) * 100}%` }}
             >
-              {t.toFixed(0)}
+              {t.toFixed(dp)}
             </span>
           ))}
         </div>
@@ -111,7 +124,7 @@ export default function ThermalLegend({
         {hasFrame && (
           <span className="flex items-center gap-1 whitespace-nowrap font-mono text-[9px] tabular-nums text-text-muted">
             <span className="h-1.5 w-0.5 shrink-0 rounded-full bg-text-primary" />
-            {frameMin_c!.toFixed(1)}–{frameMax_c!.toFixed(1)}
+            {frameMin_c!.toFixed(Math.max(dp, 1))}–{frameMax_c!.toFixed(Math.max(dp, 1))}
           </span>
         )}
       </div>

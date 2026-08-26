@@ -50,6 +50,16 @@ export interface ActiveLocation {
     // "stated" is the artifact's own day: three numbers written down, not observed.
     source: "cached" | "live" | "stated";
     mode: "archive" | "forecast";
+    /**
+     * Which measured triple the solve on screen is running against.
+     *
+     * "tile" means one 100 m tile picked on the map; "aoi_mean" means the average of
+     * every tile in the AOI. They are different answers to the same day - over the demo
+     * AOI the daily minimum spreads 0.37 °C between tiles - so the chip names which one
+     * rather than leaving a reader to assume.
+     */
+    reduction?: "aoi_mean" | "tile";
+    tileId?: string | null;
 }
 
 type Mode = "preset" | "coords";
@@ -125,6 +135,11 @@ export default function LocationChip({ active, durationHours, onApply }: Props) 
                     Latitude drives solar declination, sunset hour angle and daylength.
                     {active.source === "stated" &&
                         " This day's min/mean/max were written down, not observed."}
+                </span>
+                <span className="mt-1 block text-text-secondary">
+                    {active.reduction === "tile"
+                        ? `Solved against tile ${active.tileId} alone — the 100 m cell this point sits in.`
+                        : "Solved against the AOI mean — every tile of the day averaged. Pick a point in the Map view to use one tile instead."}
                 </span>
             </>
         ),

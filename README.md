@@ -148,6 +148,90 @@ Only one site-day ships in the container — Phoenix, 2025-07-15, the demo day �
 the one selection that is free. Every other preset and every typed coordinate will quote
 4220 and wait for you to confirm.
 
+## Seeing the day the solve was given
+
+The **Map** view, third in the view switcher, draws the measured temperature field over
+the ground it was measured on: the day's FortyGuard heatmap, 221 tiles at 100 m, on a
+pannable basemap with the pour site marked.
+
+It is there because the reduction in between throws almost everything away. `/api/ambient`
+hands `physics.season_analysis.build_ambient` three numbers — the tile-mean min, mean and
+max — and those three are the whole of what the solver learns about a 2.5 km² city block.
+The card on the map names that triple and the spread it came from, so the flattening is
+visible rather than implied. On the demo day the daily mean spreads 0.10 °C across the
+221 tiles, and the daily max 0.17 °C.
+
+**Click a cell to pour there.** The cell you pick is ringed, the chip in the command bar
+names it (`Phoenix, AZ · tile 123`), and the cure re-solves — because `POST /api/ambient`
+takes `reduce: "tile"` and shapes the diurnal curve from that one 100 m cell's own
+min/mean/max instead of the average of all 221. That is the hyperlocal claim actually
+wired to the solver rather than asserted.
+
+Be honest about the size of it: over this AOI — one downtown city block — the two most
+different cells are 0.37 °C apart in daily minimum and that moves peak core temperature by
+0.048 °C. Real, measurable, and small, because 2.5 km² is small. The response echoes
+`reduction` and `tile_id` so a reader always knows which of the two answers is on screen,
+and a point that lands outside every tile falls back to the AOI mean and says so.
+
+The default stays `aoi_mean`: every precomputed artifact on disk was built with it, and
+silently switching would move numbers that are already written down.
+
+Three controls, and the middle one is the one to read first:
+
+- **Min / Mean / Max** — a `filter_type=3` day carries all three per tile, so switching
+  costs nothing and asks a different question. Max is the one the placement limit is read
+  against.
+- **Stretch / Absolute** — Stretch takes the selected field's own range, which is the only
+  way the spatial pattern is visible at a tenth of a degree; the legend then prints two
+  decimals so nobody reads it as forty. Absolute spans the whole day, all three fields, so
+  one colour means one temperature.
+- **Dark / Light / Satellite** — Esri basemaps (Dark Gray Canvas, Light Gray Canvas, World
+  Imagery), no API key, attributed on the map because that is the licence condition. Each
+  is two layers: cartography under the field, lettering over it, so street names stay
+  readable through the heat. This was CARTO, which now stamps `API KEY REQUIRED` across
+  every tile it serves without one.
+
+Each basemap declares the deepest zoom it *really* holds — the Canvas services stop at 16
+and the imagery at 19, and past that they answer 200 with a blank placeholder. Beyond the
+cap the tiles below are scaled up rather than requested, so zooming in to pick one cell
+makes the streets soft instead of making them disappear.
+
+### Pointing the map at your own tiles
+
+`frontend/src/lib/basemap.ts` is the whole tile-source layer, and a deployment can replace
+it without touching code — set `NEXT_PUBLIC_MAP_TILE_URL` and `NEXT_PUBLIC_MAP_ATTRIBUTION`
+(plus optional `NEXT_PUBLIC_MAP_MAX_ZOOM` and `NEXT_PUBLIC_MAP_LABEL`) and the source
+appears first in the switcher and becomes the default. See `frontend/.env.local.example`.
+
+The url is a **template** — `{z}`, `{x}`, `{y}` in whatever order your provider uses — so
+a keyed provider works by putting the key in it. `NEXT_PUBLIC_*` is inlined at build time,
+so it is read by `next build`, not at runtime.
+
+**Attribution is required, and a bad value is refused rather than half-applied.** Every
+provider worth using makes attribution a licence condition, so a source configured without
+it does not load: the map falls back to the built-in Esri basemaps and the console names
+the missing piece. The url is checked for the three placeholders and for an `https://`,
+`http://` or `/` prefix before it is ever put in an `<img src>`.
+
+**The map cannot spend a credit.** `GET /api/heatmap` reads the cache and nothing else: a
+site-day that is not on disk comes back as a 409 naming the 4220, with a pointer to the
+location control, which is the one thing in the app allowed to buy a day. So the map is
+free to open as often as you like, and any day the picker has fetched is on it afterwards.
+
+Picking a cell cannot spend one either, silently. Every click is priced first through
+`/api/ambient/quote`, which never calls FortyGuard; a free pick applies immediately, and
+one that would cost credits waits for a second, explicit press on a button carrying the
+number — the same two-click rule as the location picker. Clicks land only on measured
+cells: bare ground is not a pick, so a stray click can neither re-solve nor buy anything.
+
+AOI centres are **snapped to a grid one AOI wide** (`snap_to_aoi`). Without it every
+distinct coordinate is its own polygon, its own cache key and its own 4220 credits, so
+nudging a pour twenty metres down the street would re-buy the day. Phoenix still resolves
+to the committed season polygon, which is what keeps the one shipped day free.
+
+The projection is `frontend/src/lib/mercator.ts` — Web Mercator and slippy-map tile cover,
+no map library, checked against the spec's own worked tile indices in `test_mercator.ts`.
+
 ## The mix
 
 `MixSpec.cementitious_kg_m3` is **total cementitious content** — cement plus fly ash plus
@@ -175,7 +259,7 @@ uv run mypy physics app     # strict on physics/, lenient elsewhere
 uv run pytest -v
 ```
 
-Expect `203 passed`. `validation/` is deliberately outside `testpaths` — it runs real
+Expect `222 passed`. `validation/` is deliberately outside `testpaths` — it runs real
 measured cases and is invoked on purpose:
 
 ```bash
@@ -202,6 +286,8 @@ npx tsx src/lib/test_probe.ts             # the probe stencil, against the backe
 npx tsx src/lib/test_extrude.ts           # the extrusion carries no gradient along z
 npx tsx src/lib/test_stats.ts             # Wilson interval at 0/n and n/n
 npx tsx src/lib/test_location.ts          # US coverage bounds, archive/forecast window
+npx tsx src/lib/test_mercator.ts          # the map projection, against the slippy-map spec
+npx tsx src/lib/test_basemap.ts           # the tile-source override, and what it refuses
 ```
 
 The `*_live.ts` ones need the backend up, and are how the frontend proves its claims
@@ -212,6 +298,7 @@ npx tsx src/lib/test_studio_live.ts       # the studio opens on the artifact's s
 npx tsx src/lib/test_probe_live.ts        # viewer and solver agree on the same point
 npx tsx src/lib/test_shapes_live.ts       # all eight shapes, vertex for vertex
 npx tsx src/lib/test_ensemble_live.ts     # nominal under the limit, tail across it
+npx tsx src/lib/test_heatmap_live.ts      # the map's field, and that it never spends
 ```
 
 ## Precomputed answers
