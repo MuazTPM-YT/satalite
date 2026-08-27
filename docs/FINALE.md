@@ -4,8 +4,9 @@ Everything needed to ship this: how to deploy it for nothing, what real-world so
 prove it works, what the competition looks like, what to say on camera, and what to check
 before pressing submit.
 
-Written 2026-08-27. Every number in Section 1 and Section 2.2 was **measured on this
-machine against this commit**, not estimated. Where something was not measured, it says so.
+Written 2026-08-27, re-measured against this commit the same day. Every number in
+Section 0, Section 1 and Section 2.2 was **measured on this machine**, not estimated.
+Where something was not measured, or could not be verified, it says so.
 
 ---
 
@@ -27,36 +28,46 @@ machine against this commit**, not estimated. Where something was not measured, 
 Three facts that shape everything below.
 
 **1. The product is CPU-bound, and that is the whole deployment problem.**
-One deterministic solve of the shipped demo scenario is **6.4–6.9 s of wall time on one
-real core** (measured: three consecutive runs at 6.475 s, 6.686 s, 6.420 s). Peak RSS of
-the server process reached **266 MB** (`VmHWM: 272,784 kB`). Everything else the app does —
-the season replay, the validation report, the precomputed ensemble, the heatmap — is a
-**disk read that returns in under 6 ms**. So the hosting question is only ever "does this
-platform give me one real CPU core for ten seconds", and the answer separates the free
-tiers cleanly.
+One deterministic solve of the shipped demo scenario is **6.14 s of wall time on one real
+core** through `POST /api/simulate` (measured: four consecutive warm runs at 6.154, 6.135,
+6.130 and 6.149 s; dt = 10 s, 25,920 steps, a 30 × 300 grid, 433 recorded frames). Peak
+RSS of the uvicorn worker after those runs and one `?fields=true` run was **285 MiB**
+(`VmHWM: 291,388 kB`). Everything else the app does — the season replay, the validation
+report, the precomputed ensemble, the heatmap — is a **disk read that returns in under
+11 ms**. So the hosting question is only ever "does this platform give me one real CPU
+core for ten seconds", and the answer separates the free tiers cleanly.
+
+Every timing in this document is that same measurement: wall time of the HTTP route on
+one core of this machine, warm, not CPU-seconds and not an in-process call. Quoting one
+method everywhere is the only way the free-tier arithmetic below stays honest.
 
 **2. Most of the studio never touches the solver.** Measured response times on a warm
 instance:
 
 | Route | Status | Bytes | Time |
 |---|---|---|---|
-| `GET /api/health` | 200 | 33 | 0.9 ms |
-| `GET /api/validation` | 200 | 7,553 | 1.1 ms |
-| `GET /api/season-analysis` | 200 | 2,005 | 0.8 ms |
-| `GET /api/demo-ensemble` | 200 | 170,203 | 6.0 ms |
-| `GET /api/heatmap?lat=33.45&lon=-112.07&date=2025-07-15` | 200 | 46,144 | 5.1 ms |
-| `GET /api/ambient/quote?...` | 200 | 91 | 0.8 ms |
-| `POST /api/simulate` | 200 | 38,887 | **6.48 s** |
-| `POST /api/simulate?fields=true&fields_stride_h=1.0` | 200 | **3,921,008** | **6.92 s** |
-| `POST /api/pour-windows` (1 candidate) | 200 | 601 | 6.34 s |
+| `GET /api/health` | 200 | 33 | 0.8 ms |
+| `GET /api/validation` | 200 | 7,553 | 1.9 ms |
+| `GET /api/season-analysis` | 200 | 2,003 | 1.9 ms |
+| `GET /api/demo-ensemble` | 200 | 170,232 | 10.5 ms |
+| `GET /api/heatmap?lat=33.45&lon=-112.07&date=2025-07-15` | 200 | 46,144 | 5.3 ms |
+| `GET /api/ambient/quote?...` | 200 | 91 | 0.7 ms |
+| `POST /api/simulate` | 200 | 47,013 | **6.15 s** |
+| `POST /api/simulate?fields=true&fields_stride_h=1.0` | 200 | **3,929,134** | **6.59 s** |
+| `POST /api/pour-windows` (1 candidate) | 200 | 699 | 6.13 s |
 
-That 3.92 MB figure matters later — see [1.4](#14-backend-path-b--vercel-python-functions-no-card).
+That 3.93 MB figure matters later — see [1.4](#14-backend-path-b--vercel-python-functions-no-card).
+
+An earlier draft of this table read 38,887 and 3,921,008 bytes on the two `simulate` rows.
+Both grew by **exactly 8,126 bytes**, which is the `surface_probe_temp_c` array — 433
+floats — that the surface-probe fix added to every payload. If you see the old numbers
+quoted anywhere, they predate that commit.
 
 **3. `POST /api/pour-windows` is N solves in one request.** `frontend/src/lib/scenario.ts`
 sets `N_CANDIDATES = 6`, and `candidateOffsets()` returns up to six start hours. With the
 shipped demo ambient (72 h span, 72 h duration) `room = 0`, so it degrades to a single
 candidate and costs one solve. **Shorten the cure window in the left panel and it becomes
-six solves ≈ 39 s in one HTTP request.** Any platform with a request timeout under ~60 s
+six solves ≈ 37 s in one HTTP request.** Any platform with a request timeout under ~60 s
 will 504 on that. Note it before you demo a shortened duration.
 
 ---
@@ -70,7 +81,7 @@ will 504 on that. Note it before you demo a shortened duration.
 | Credit card | **Required** (bill stays $0) | **Not required** | **Not required** |
 | CPU | 1 real vCPU | 1 vCPU | **0.1 vCPU** |
 | RAM | 1 GiB (set) | 2 GB | 512 MB |
-| Solve time | ~6–7 s | ~6–10 s | **~60 s** |
+| Solve time | **6.1 s** | ~6–10 s | **~60 s** |
 | Request timeout | 120 s (you set it) | 300 s | proxy-limited |
 | Cold start | 30–60 s (578 MB image) | ~5–15 s | 30–60 s |
 | Live FortyGuard fetch | **Works** | **Breaks** (read-only FS) | Works |
@@ -118,10 +129,11 @@ becomes a commercial product, that plan does not follow it.
 ### Why this one
 
 Cloud Run's **Always Free** tier is 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million
-requests per month, aggregated per billing account, in Tier 1 regions (`us-central1`,
-`us-east1`, `us-west1`). At 6.5 vCPU-s per solve that is roughly **27,000 free solves a
-month**, on a real core rather than a tenth of one. Memory is the looser constraint: at
-1 GiB provisioned and 6.5 s per request, 360,000 GiB-s buys ~55,000 requests.
+requests per month, applied as a spend-based discount at Tier 1 pricing and aggregated
+per billing account, in Tier 1 regions (`us-central1`, `us-east1`, `us-west1`). At
+6.14 vCPU-s per solve that is roughly **29,300 free solves a month**, on a real core
+rather than a tenth of one. Memory is the looser constraint: at 1 GiB provisioned and
+6.14 s per request, 360,000 GiB-s buys ~58,600 requests.
 
 A realistic judge session — one page load (1 simulate with fields + 1 pour-windows) plus
 some clicking — is on the order of 15–45 vCPU-seconds. You could serve **four thousand
@@ -130,9 +142,9 @@ judges** inside the free tier.
 Billing must be enabled, so a card is on file. Set a budget alert at $1 and it will never
 be touched.
 
-### ⚠️ The `gcloud run deploy --source .` command in the README will not work
+### ⚠️ Why `gcloud run deploy --source .` cannot be used here
 
-`README.md` currently says:
+An earlier `README.md` said:
 
 ```bash
 gcloud run deploy satalite-api --source . --region us-central1 ...
@@ -140,11 +152,12 @@ gcloud run deploy satalite-api --source . --region us-central1 ...
 
 `--source` only auto-detects a Dockerfile **in the source root**. This repo's Dockerfile is
 at `backend/Dockerfile` and its build context must be the repo root (because
-`docs/VALIDATION.json` lives outside `backend/`). Cloud Build will find no root Dockerfile,
-fall back to Google Cloud Buildpacks, find no Python project at the root, and fail.
+`docs/VALIDATION.json` lives outside `backend/`). Cloud Build finds no root Dockerfile,
+falls back to Google Cloud Buildpacks, finds no Python project at the root, and fails.
 
-I have not changed the README — this is a finding, not a fix. Use the two-step below
-instead, which needs no repository change at all.
+**The README has since been corrected** and now carries the explicit build/push pair below,
+together with the reason. The two-step needs no repository change at all — it is simply the
+only form that works with this layout.
 
 ### The commands that do work
 
@@ -207,17 +220,17 @@ YAML
 ### Why each flag is what it is
 
 - **`--concurrency 2`** — the solve is CPU-bound, single-threaded numpy. Cloud Run's
-  default of 80 would queue eighty 6.5-second solves on one vCPU and time every one of them
+  default of 80 would queue eighty 6.1-second solves on one vCPU and time every one of them
   out. Two is enough to overlap a disk-read route behind a solve without starving it.
-- **`--cpu 1`** — Cloud Run's fractional CPU options would turn 6.5 s into 13 s or 26 s.
-- **`--memory 1Gi`** — measured peak RSS is 266 MB. 512Mi would probably hold, but the
-  ensemble path (`?ensemble=true&samples=2000`) allocates far more and OOM on Cloud Run is
-  an instant 500 with a useless log line. 1 GiB costs GiB-seconds, not dollars, inside the
-  free tier.
+- **`--cpu 1`** — Cloud Run's fractional CPU options would turn 6.14 s into 12 s or 25 s.
+- **`--memory 1Gi`** — measured peak RSS is 285 MiB (`VmHWM: 291,388 kB`). 512Mi leaves
+  under 230 MiB of headroom, and the ensemble path (`?ensemble=true&samples=2000`)
+  allocates far more; OOM on Cloud Run is an instant 500 with a useless log line. 1 GiB
+  costs GiB-seconds, not dollars, inside the free tier.
 - **`--max-instances 4`** — a cap on the worst case if the link is shared publicly.
 - **`--min-instances 0`** — this is what keeps it free. It is also what creates the cold
   start; see the [warm-up drill](#19-the-pre-demo-warm-up-drill).
-- **`--timeout 120`** — comfortably above a six-candidate sweep at ~39 s.
+- **`--timeout 120`** — comfortably above a six-candidate sweep at ~37 s.
 
 ### Cold start
 
@@ -242,8 +255,10 @@ repo already happens to match Vercel's conventions.
 - Bundle limit for the Python runtime is **500 MB uncompressed** (not the 250 MB that
   applies to Node). The production venv is ~260 MB. Comfortable.
 - Max duration on **Hobby is 300 s**, default and maximum, with Fluid Compute on by
-  default. A 39 s six-candidate sweep fits with room to spare.
-- Memory/CPU on Hobby: **2 GB / 1 vCPU**. Measured peak RSS 266 MB. Fine.
+  default. A 37 s six-candidate sweep fits with room to spare.
+- Memory/CPU on Hobby: **2 GB / 1 vCPU**. Measured peak RSS 285 MiB. Fine.
+
+All six checked against Vercel's own docs on 2026-08-27.
 
 ### What does not line up, and what to do about it
 
@@ -277,17 +292,23 @@ and then crash with a read-only-filesystem error**, returning a 500 and keeping 
 > If you point `CACHE_DIR` at a path that does *not* exist in the bundle, the app will
 > fail to boot.
 
-**(c) The 4.5 MB request/response body cap.** A Vercel Function's response body is capped
-at **4.5 MB**; over it you get `413 FUNCTION_PAYLOAD_TOO_LARGE`. The studio's first paint
-calls `simulate(request, { fields: true, fields_stride_h: 1.0 })`, and that response
-measured **3,921,008 bytes** for the shipped demo element (a 3000 × 300 mm slab at
+**(c) The 4.5 MB request/response body cap.** A Vercel Function's request or response body
+is capped at **4.5 MB**; over it you get `413 FUNCTION_PAYLOAD_TOO_LARGE`. The studio's
+first paint calls `simulate(request, { fields: true, fields_stride_h: 1.0 })`, and that
+response measured **3,929,134 bytes** for the shipped demo element (a 3000 × 300 mm slab at
 dx = 10 mm → 300 × 30 cells × 73 kept frames, rounded to 2 dp).
 
-**That is 3.74 MB against a 4.5 MB ceiling — 17% headroom.** It passes today. It will not
-pass for a bigger section. Roughly: payload scales with `width × thickness / dx²` and with
-`duration / stride`. A 6 m slab, or the same slab at dx = 7 mm, or a 168 h run, blows
-through it. Gzip does not save you — the same response gzips to 39,652 bytes, but the cap
+**That is 3.93 MB against a 4.5 MB ceiling — 13% headroom.** Both figures are decimal MB,
+which is how Vercel states the cap; quoting the payload as "3.74 MB" reads it as MiB
+against a decimal ceiling and flatters the margin by four points. It passes today. It will
+not pass for a bigger section. Roughly: payload scales with `width × thickness / dx²` and
+with `duration / stride`. A 6 m slab, or the same slab at dx = 7 mm, or a 168 h run, blows
+through it. Gzip does not save you — the same response gzips to 41,635 bytes, but the cap
 is on the uncompressed body.
+
+Vercel's **Large Functions** beta lifts the *bundle* limit to 5 GB on the Python runtime.
+It does nothing for this: the bundle is ~260 MB and comfortable, and the 4.5 MB body cap is
+a separate limit that Large Functions does not move.
 
 Mitigation without touching code: raise `fields_stride_h` (the frontend constant is
 `FIELD_STRIDE_H = 1.0` in `frontend/src/lib/scenario.ts`) or keep `dx_m` at 0.01+ for demo
@@ -341,9 +362,10 @@ Render's free web service is **512 MB RAM and 0.1 CPU**, 750 instance-hours/mont
 workspace, 100 GB bandwidth, 500 build minutes, spinning down after 15 minutes of
 inactivity with a 30–60 s restart. No credit card needed.
 
-Memory is fine (266 MB peak measured against 512 MB). **CPU is not.** 0.1 vCPU is a hard
-cgroup quota, so the measured 6.5 s solve becomes roughly **65 s**, and a six-candidate
-sweep roughly **six and a half minutes**. Both will be perceived as broken.
+Memory just fits — 285 MiB peak measured against 512 MB, so under half the box is free and
+an ensemble run would not have room. **CPU is the disqualifier.** 0.1 vCPU is a hard cgroup
+quota, so the measured 6.14 s solve becomes roughly **61 s**, and a six-candidate sweep
+roughly **six minutes**. Both will be perceived as broken.
 
 What still works perfectly on Render: `/api/health`, `/api/validation`,
 `/api/season-analysis`, `/api/demo-ensemble`, `/api/heatmap`, `/api/ambient/quote` — every
@@ -361,12 +383,14 @@ Dockerfile's `CMD` already honours it.
 
 ## 1.6 What was ruled out, and the evidence
 
+Every row re-checked against the platform's own docs or announcement on **2026-08-27**.
+
 | Platform | Status as of August 2026 | Why not |
 |---|---|---|
-| **Hugging Face Spaces** | Docker SDK is marked **Paid** | Free CPU Basic was withdrawn; Docker and Gradio SDKs now require PRO for personal accounts. Static Spaces remain free, which does not help a Python solver. |
-| **Fly.io** | No free tier for new users | Legacy accounts keep 3 shared-CPU 256 MB VMs; new sign-ups get none, and a card is required. 256 MB would not hold a 266 MB peak anyway. |
-| **Koyeb** | Free Starter tier **closed to new users** | Following the Mistral AI acquisition in early 2026 the platform moved to AI inference and enterprise GPU. Existing users keep their tier. |
-| **Oracle Cloud Always Free** | Alive but **halved** | Ampere A1 allowance cut from 4 OCPU/24 GB to **2 OCPU/12 GB** effective 15 June 2026, enforced from **18 August 2026** with over-entitlement instances terminated, and no public announcement. Still the most raw free compute available, still ARM (the `python:3.12-slim` base and numpy/scipy all have aarch64 wheels, so the image builds), still requires a card and notoriously scarce capacity. Viable if you already have an instance; not something to attempt three days out. |
+| **Hugging Face Spaces** | Docker SDK is marked **Paid** | Free CPU Basic was withdrawn in July 2026; Docker and Gradio SDKs now require PRO for personal accounts, Team or Enterprise for organisations. Static Spaces remain free, which does not help a Python solver. |
+| **Fly.io** | No free tier for new users | Legacy accounts keep 3 shared-CPU 256 MB VMs; new sign-ups get none, and a card is required. 256 MB would not hold a 285 MiB peak anyway. |
+| **Koyeb** | Free Starter tier **closed to new users** | [Mistral AI acquired Koyeb in February 2026](https://techcrunch.com/2026/02/17/mistral-ai-buys-koyeb-in-first-acquisition-to-back-its-cloud-ambitions/); new sign-ups get Pro and above only. Existing customers keep their tier. |
+| **Oracle Cloud Always Free** | Alive but **halved** | Ampere A1 allowance cut from 4 OCPU/24 GB to **2 OCPU/12 GB** (1,500 OCPU-hours, 9,000 GB-hours a month) effective 15 June 2026, enforced from **18 August 2026** with over-entitlement instances terminated, and [no public announcement](https://www.infoq.com/news/2026/07/oracle-cloud-free-tier-limits/). Still the most raw free compute available, still ARM (the `python:3.12-slim` base and numpy/scipy all have aarch64 wheels, so the image builds), still requires a card and notoriously scarce capacity. Viable if you already have an instance; not something to attempt three days out. |
 | **Railway** | $5 first month, then $1/month credit | Services pause when credits run out. A 578 MB image with any traffic will exhaust $1 quickly. |
 | **Cloudflare Workers** | 10 ms CPU per invocation | Off by three orders of magnitude. |
 | **PythonAnywhere free** | WSGI only, restricted outbound | FastAPI is ASGI. |
@@ -520,12 +544,18 @@ crossover effect, measured — and it is why SatAlite explicitly does not claim 
 This is new. It was found, transcribed, and **run against this commit** while writing this
 document, and it is the strongest single piece of evidence you have.
 
-**Source:** *Temperature Control Requirements for the Construction of Mass Concrete
-Members*, Auburn University Highway Research Center, ALDOT Research Report **930-860R**
-(Fannin, Barnes, Schindler et al.). Publicly downloadable.
+**Source:** Gross, E. D., Eiland, A. D., Schindler, A. K. & Barnes, R. W. (**December
+2017**), *Temperature Control Requirements for the Construction of Mass Concrete Members*,
+Auburn University Highway Research Center, ALDOT Research Report **930-860R**. Publicly
+downloadable.
 
 📄 <https://eng.auburn.edu/files/centers/hrc/930-860r-temperature-control.pdf>
 📄 Mirror: <https://rosap.ntl.bts.gov/view/dot/42366>
+
+Every input and expected-output figure in §2.2.1 and §2.2.2 below was checked line by line
+against the report's own Tables 5-1 through 5-20, Table 5-23, Tables 6-1 and 6-2, and
+Appendix Tables B-1 through H-1 on 2026-08-27. Where the report contradicts itself, this
+document says so rather than picking silently.
 
 **What it contains that matters:** seven real Alabama DOT mass-concrete elements,
 instrumented with iButton sensors (precise to ±1.8 °F below 158 °F), with (a) complete mix
@@ -545,14 +575,26 @@ length; SatAlite solves the cross-section, which is correct for prismatic elemen
 | Element | Section (ft) | Section (mm) | SatAlite shape | Cementitious kg/m³ | w/cm | Fly ash | Formwork | T_place °C |
 |---|---|---|---|---|---|---|---|---|
 | Albertville Bent Cap | 6.5 × 6.5 | 1981 × 1981 | `rect_column` | 336.4 | 0.494 | 25% Class F | wood | 29.4 |
-| Harpersville Crashwall | 4 × 10 | 1219 × 3048 | `wall` | 317.4 | 0.499 | 21% Class C | wood | 29.4 |
+| Harpersville Crashwall | 4 × 10 | 1219 × 3048 | `wall` | 317.4 | 0.499 | 21% Class C ¹ | wood | 29.4 |
 | Scottsboro Pedestal | 10 × 12.5 | 3048 × 3810 | `rect_column` | 367.8 | 0.476 | 20% Class F | **steel** | 35.0 |
 | Scottsboro Bent Cap | 6.5 × 7.5 | 1981 × 2286 | `rect_column` | 367.8 | 0.476 | 20% Class F | wood | 35.0 |
 | Elba Bent Cap | 5 × 5.5 | 1524 × 1676 | `rect_column` | 326.3 | 0.500 | 20% Class F | wood | 22.2 |
 | Birmingham Column | 4.5 × 4.5 | 1372 × 1372 | `rect_column` | 356.0 | 0.450 | 20% Class C | wood | 16.1 |
-| Brewton Bent Cap | 6.0 × 6.5 | 1829 × 1981 | `rect_column` | 316.8 | 0.500 | 20% Class F | wood | 23.3 |
+| Brewton Bent Cap | 6.0 × 6.5 | 1829 × 1981 | `rect_column` | 316.8 | 0.500 | 20% Class F ² | wood | 23.3 |
 
-Raw mix proportions, straight from the report's appendices (lb/yd³):
+¹ The report's Table 5-4 says 20%. 110 of 535 pcy is 20.6%, so `fly_ash_frac = 0.206` was
+used and is rounded to 21% here. The 0.6% is worth nothing; the point is to say which.
+
+² **The report contradicts itself on Brewton.** Table 5-20 says Class **F** fly ash and
+Gravel coarse aggregate; Appendix Table H-1, which is the mix ticket, says Class **C** fly
+ash (107 pcy) and #67 **Limestone**. The runs below took Table 5-20's Class F and Appendix
+H-1's limestone, which is the inconsistent pair. Class C would raise `p_fa_cao` in both
+`ultimate_heat_j_per_kg` and the `exp(9.50 · p_fa · p_fa_cao)` term of `tau_hours`, so this
+is not cosmetic — it is the one element of the seven whose ash class is genuinely unknown.
+It is also the element with the best ConcreteWorks agreement, so do not lean on it.
+
+Raw mix proportions, straight from the report's appendices — verified against Appendix
+Tables B-1 through H-1 (lb/yd³):
 
 | Element | Type I/II cement | Fly ash | Water | Coarse agg | Sand |
 |---|---|---|---|---|---|
@@ -562,7 +604,7 @@ Raw mix proportions, straight from the report's appendices (lb/yd³):
 | Scottsboro Bent Cap | 496 | 124 (F) | 295 | 1870 limestone | 1111 |
 | Elba | 440 | 110 (F) | 275 | 1850 river gravel | 1250 |
 | Birmingham | 480 | 120 (C) | 270 | 1910 limestone | 1209 |
-| Brewton | 427 | 107 (F) | 267 | 1852 limestone | 1196 |
+| Brewton | 427 | 107 (C per H-1, F per 5-20) | 267 | 1852 limestone | 1196 |
 
 Placement date/time: Albertville 2015-07-31 06:00 · Harpersville 2015-08-24 10:20 ·
 Scottsboro Pedestal 2015-09-03 10:20 · Scottsboro Bent Cap 2015-09-18 11:00 ·
@@ -603,15 +645,22 @@ the free Open-Meteo archive at each town's coordinates for each placement date (
 | Albertville Bent Cap | 75.6 °C | 71.8 °C | **−3.8 °C** | Good | −5.0 °C | Good |
 | Harpersville Crashwall | 75.6 °C | 67.8 °C | **−7.8 °C** | Acceptable | −6.7 °C | Acceptable |
 | Scottsboro Pedestal | 85.0 °C | 86.9 °C | **+1.9 °C** | **Excellent** | −7.2 °C | Acceptable |
-| Scottsboro Bent Cap | 75.0 °C | 84.5 °C | **+9.5 °C** | Poor | −2.8 °C | Good |
+| Scottsboro Bent Cap | 75.0 °C | 84.5 °C | **+9.5 °C** | Poor | −2.8 °C | **Excellent** |
 | Elba Bent Cap | 52.8 °C | 57.5 °C | **+4.7 °C** | Good | +5.0 °C | Good |
 | Birmingham Column | 43.9 °C | 49.9 °C | **+6.0 °C** | Acceptable | +6.1 °C | Acceptable |
 | Brewton Bent Cap | 67.8 °C | 63.7 °C | **−4.1 °C** | Good | +1.7 °C | **Excellent** |
 
+Classes are Table 6-1's own bands applied to each row: Excellent ±0–5 °F, Good ±5–10 °F,
+Acceptable ±10–15 °F, Poor ≥15 °F. The report's ConcreteWorks column reads −9, −12, −13,
+−5, +9, +11 and +3 °F, and its prose says two of those were Excellent — the −5 and the +3,
+which is Scottsboro Bent Cap and Brewton. An earlier draft of this table marked Scottsboro
+Bent Cap "Good"; it is Excellent, and correcting it makes the benchmark look better than we
+were printing it.
+
 **Mean absolute error on peak core temperature:**
 
 - **SatAlite: 5.40 °C** (worst case 9.5 °C)
-- **ConcreteWorks: 4.93 °C** (worst case 7.2 °C)
+- **ConcreteWorks: 4.93 °C** (worst case 7.2 °C — 62 °F over seven rows, ÷ 7 = 8.857 °F)
 
 **Half a degree apart, across seven real placements spanning July heat to January cold, a
 40 °C range of measured peaks, four member types and two aggregate types.** SatAlite is
@@ -691,8 +740,11 @@ weather, the element or the solver changed; only the point the limit is read at.
 
 ### 2.2.4 Reproducing it — the exact recipe
 
-The runner script used is not in the repo (nothing in the repo was changed). Rebuild it in
-about twenty lines:
+The runner script is not in the repo. The repo itself has changed since these runs — the
+surface-probe fix landed, `H_CEM_BY_TYPE` gained `"I/II"`, and the README's Cloud Run
+command was corrected — but none of those moves the seven peak temperatures below, which
+depend on the core, not on the surface probe, and were run with `"I"` rather than `"I/II"`.
+Rebuild the runner in about twenty lines:
 
 ```python
 import json, urllib.request, urllib.parse, subprocess, datetime
@@ -732,11 +784,18 @@ open("alb.json", "w").write(json.dumps(req))
 
 Three gotchas that cost time the first run:
 
-1. **`cement_type: "I/II"` is rejected with a 422.** `MixSpec` accepts only
-   `['I', 'II', 'II/V', 'V']` or `null`. Every Auburn element is Type **I/II**, which does
-   not exist in `H_CEM_BY_TYPE` (`I` = 510, `II` = 500, `II/V` = 470, `V` = 450 J/g). The
-   runs above used `"I"` (510 J/g); `"II"` moves peak by roughly **−0.9 °C** — measured on
-   Albertville, 71.8 °C vs 70.9 °C. Small, but state which you used.
+1. **`cement_type: "I/II"` used to be a 422, and no longer is.** Every Auburn element is
+   Type **I/II**, and when these runs were made `H_CEM_BY_TYPE` carried only `I` = 510,
+   `II` = 500, `II/V` = 470 and `V` = 450 J/g, so the designation had to be relabelled
+   before the mix would solve at all. `physics/constants.py` now carries
+   **`"I/II": 505.0`**, placed between `I` and `II` the way `II/V` sits between its two,
+   with the competing argument written into the constant's own comment.
+
+   **The runs above predate that and used `"I"` (510 J/g).** The difference is 1% on
+   `H_cem`, which the constant's comment puts at about 0.1 °C on peak core — inside the
+   width the ensemble samples. For reference `"II"` (500 J/g) moves peak by roughly
+   **−0.9 °C**, measured on Albertville: 71.8 °C vs 70.9 °C. Rerun with `"I/II"` if you
+   redo this; either way, state which you used.
 2. **`fly_ash_frac` is a FRACTION 0–1**, not the percentage the studio input box shows.
 3. **Unit conversions are yours to do.** Open-Meteo gives RH in %, wind in km/h. The
    backend wants `rh_frac` 0–1 and `wind_ms` in m/s and *rejects* percentages. It wants
@@ -758,6 +817,60 @@ Three gotchas that cost time the first run:
   outside the FortyGuard archive, which starts 2021-01-01**. That is why the runs above used
   Open-Meteo. Be upfront: this validates the *physics*, not the hyperlocal data path.
 
+### 2.2.6 ⭐ What the report also publishes, and nothing here can use
+
+This is the largest single opportunity in the dataset, and it was missed on the first pass
+through the PDF.
+
+**Appendix Tables B-2 through H-2 publish the measured cement composition of every one of
+the seven elements** — C3S, C2S, C3A, C4AF, SO3, MgO, Na₂O-eq and Blaine fineness, from the
+mill certificate. Appendix Tables B-4 through H-4 add seven days of local weather per site.
+
+That matters because `docs/VALIDATION.json` says, in its own notes on the USBR cases:
+
+> Cement chemistry — C3A, C3S, SO3 and Blaine fineness — is NOT reported in DSO-12-02. This
+> is why the test is coverage and not point error. […] The Schindler-Folliard tau regression
+> is highly sensitive to them: tau moves from 25.8 h to 15.2 h across a plausible SO3 range
+> alone.
+
+**The Auburn dataset does not have that problem, and the runs in §2.2.3 did not use the
+chemistry anyway** — because `MixSpec` has no field for it. A design mix goes down the
+`w_cm` / `fly_ash_frac` branch of `app/services/simulate.py::to_mix`, which calls
+`tau_hours` with the hardcoded generic values in `physics/season_analysis.py`:
+
+```python
+P_FLY_ASH_CAO = 0.06
+P_C3A, P_C3S, P_SO3 = 0.08, 0.55, 0.03
+BLAINE_M2_KG = 380.0
+```
+
+Albertville's mill certificate reads C3A **5.4%**, C3S **60.9%**, SO3 **2.79%**, Blaine
+**448.9 m²/kg** — all four different, and Blaine 18% higher. Measured on this commit:
+
+| | assumed | Albertville measured |
+|---|---|---|
+| `tau_hours` | **17.339 h** | **16.341 h** |
+| `cement_heat_j_per_g` from the Bogue compounds | no Bogue set is assumed at all | **462.2 J/g** |
+
+Blaine alone takes tau to 15.165 h. And 462.2 J/g is against the **510** these runs used
+(Type I) and the **505** now in `H_CEM_BY_TYPE["I/II"]` — **9.4% less heat**.
+
+**Say the honest thing about what that would do, because the two effects point opposite
+ways.** A shorter tau peaks earlier, which is the sign of the undiagnosed +8.7 h late-peak
+bias in `docs/LIMITATIONS.md` §9 — about 1 h of Albertville's 14.7 h error, from measured
+chemistry alone, for nothing. Less cement heat runs the peak colder, and Albertville is
+already 3.8 °C cold, so the **5.40 °C mean absolute error headline would probably get
+worse**, not better. This is a fair test that has not been run, not a fix waiting to be
+applied, and it should be offered to a judge in exactly those words.
+
+`cement_heat_j_per_g` already exists at `physics/equations/hydration.py` and carries the
+seven Bogue coefficients. Nothing on the API path can reach it, because `MixSpec` carries
+no Bogue fields, and its only test (`tests/test_hydration.py`) checks that ordinary portland
+cement lands in the 400–520 J/g literature band rather than pinning a value — so the
+function is plausible, not verified against a measured cement. Wiring four optional numbers
+through `to_mix` is the smallest change with the largest evidentiary return in this repo,
+and it is deliberately **not** in this build.
+
 ## 2.3 The free hourly weather source that makes those cases runnable
 
 **Open-Meteo Historical Weather API.** Free for non-commercial use, **no API key**, hourly
@@ -766,8 +879,8 @@ data back to 1940, worldwide.
 📄 <https://open-meteo.com/en/docs/historical-weather-api>
 🔗 Endpoint: `https://archive-api.open-meteo.com/v1/archive`
 
-Verified working during this write-up: a request for Albertville, AL, 2015-07-31 to
-2015-08-07 returned **HTTP 200, 8,006 bytes, 192 hourly records**, with units reported as
+Re-verified 2026-08-27: the exact request below, for Albertville, AL, 2015-07-31 to
+2015-08-07, returned **HTTP 200, 8,005 bytes, 192 hourly records**, with units reported as
 `°C`, `%`, `km/h`, `%`, `W/m²`.
 
 It supplies **exactly the five arrays `AmbientSpec` needs**:
@@ -798,13 +911,19 @@ That is a concrete, credible "what's next" slide, and it costs nothing.
 
 ## 2.4 Standards and papers — where every constant comes from
 
+Every url in this section and in §2.5 was fetched on **2026-08-27**. Two were dead and are
+corrected here: ACI 306.1 was `ItemID=306110` (404, now `306190`) and TxDOT 0-4563-1 was on
+`ctr.utexas.edu` (404, now the `library.ctr.utexas.edu` copy). One could not be verified at
+all and says so in its own row. `astm.org`, `rosap.ntl.bts.gov`, `eng-tips.com`,
+`giatecscientific.com` and `usbr.gov` refuse a bare crawler and are fine in a browser.
+
 | What it fixes in the code | Source | Link |
 |---|---|---|
 | Hydration model: `α_u`, `H_u`, `τ`, `β` regressions | Schindler, A. K. & Folliard, K. J. (2005), *Heat of Hydration Models for Cementitious Materials*, **ACI Materials Journal 102(1), 24–33** | [ACI abstract](https://www.concrete.org/publications/internationalconcreteabstractsportal.aspx?m=details&id=14246) · [Semantic Scholar](https://www.semanticscholar.org/paper/Heat-of-Hydration-Models-for-Cementitious-Materials-Schindler-Folliard/cbf97cf981ed9fb32bedc18c6aa424f3207c3202) |
 | Maturity / equivalent age, `E = 33500`, datum −10 °C | **ASTM C1074**, *Standard Practice for Estimating Concrete Strength by the Maturity Method* | <https://www.astm.org/c1074-19.html> |
 | Evaporation limit, Uno equation, worked example 0.17 lb/ft²/h | **ACI 305.1-14**, *Specification for Hot Weather Concreting*; ACI 305R guide | [ACI 305.1](https://www.concrete.org/store/productdetail.aspx?ItemID=305114) |
 | 35 °F (19.4 °C) differential limit; 160 °F max in-place | **ACI 301**, *Specifications for Structural Concrete*; **ACI 207.2R**, *Report on Thermal and Volume Change Effects on Cracking of Mass Concrete* | [ACI 207.2R](https://www.concrete.org/store/productdetail.aspx?ItemID=207207) |
-| Cold weather placement | **ACI 306.1** | [ACI 306.1](https://www.concrete.org/store/productdetail.aspx?ItemID=306110) |
+| Cold weather placement | **ACI 306.1** | [ACI SPEC-306.1-90](https://www.concrete.org/store/productdetail.aspx?ItemID=306190) |
 | Formwork removal / strip strength | **ACI 347**, *Guide to Formwork for Concrete* | [ACI 347](https://www.concrete.org/store/productdetail.aspx?ItemID=34714) |
 | DEF threshold 155 °F (68.3 °C), chemistry conditionality | USBR DSO-12-02 (as above) | <https://www.usbr.gov/damsafety/TechDev/DSOTechDev/DSO-12-02.pdf> |
 | DEF field consequences — the Texas precast box-beam case | UT Austin CTR 0-5218-1, *Investigation of the Internal Stresses Caused by Delayed Ettringite Formation* | <https://library.ctr.utexas.edu/ctr-publications/0-5218-1.pdf> |
@@ -814,7 +933,7 @@ That is a concrete, credible "what's next" slide, and it costs nothing.
 | Temperature rise with Class N pozzolan | USBR **DSO-2017-04** | <https://www.usbr.gov/damsafety/TechDev/DSOTechDev/DSO-2017-04.pdf> |
 | Maturity for early opening — a DOT that measured the payoff | Iowa State InTrans, *Maturity Method for Early Opening of Concrete Pavements* (Spring 2025) | <https://www.intrans.iastate.edu/wp-content/uploads/2025/04/maturity_method_for_concrete_pvmt_early_opening_spring_2025_MB.pdf> |
 | Maturity implementation, WSDOT | *Use of the Maturity Method in Accelerated PCCP Construction* | <https://www.wsdot.wa.gov/research/reports/fullreports/698.1.pdf> |
-| Maturity implementation, Louisiana | LTRC FR 584 | <https://www.ltrc.lsu.edu/pdf/2017/FR_584.pdf> |
+| Maturity implementation, Louisiana | LTRC, *Implementation of Maturity for Concrete Strength Measurement and Pay* | <https://rosap.ntl.bts.gov/view/dot/34372> — the `ltrc.lsu.edu/pdf/2017/FR_584.pdf` url that was here refuses connection and the host has moved to `ltrc.la.gov`, where FR 584 could not be confirmed to exist. This is the ROSAP mirror of the same programme; the original is **not** cited because it could not be verified. |
 | FHWA's own maturity guidance | FHWA HIF-19-005, *Utilizing the Maturity Concept for Determining Early Strength* | <https://www.fhwa.dot.gov/pavement/concrete/trailer/resources/hif19005.pdf> |
 | One-page industry explainer of thermal cracking (good for a slide) | NRMCA **CIP 42 — Thermal Cracking** | <https://www.concreteanswers.org/CIPs/CIP42.htm> |
 
@@ -832,7 +951,7 @@ screen, show that sentence too.
 | **ConcreteWorks** | Developed at UT Austin's Concrete Durability Center under TxDOT funding. Mixture proportioning, thermal analysis, cracking probability, chloride service life. Modules for mass concrete shapes, bridge decks, precast beams, pavements. Used by TxDOT, Iowa DOT and others. Free. | **This is the benchmark.** Its published error on your seven Auburn elements is in §2.2.3. | [TxDOT presentation](https://www.dot.state.tx.us/iheep2009/presentations/4A_ConcreteWorks_AndyNaranjo.pdf) · [Iowa DOT adaptation report](https://rosap.ntl.bts.gov/view/dot/54607/dot_54607_DS1.pdf) |
 | **HIPERPAV III** | FHWA's free early-age concrete pavement tool, first released 1996. A **transient one-dimensional finite-difference** temperature model with heat of hydration, conduction, convection including evaporative cooling, solar radiation and irradiation — and automated weather download from the National Weather Service. | Nearly the same physics stack as SatAlite, one dimension fewer, and federally validated. Cite it when a judge asks "is this a real approach?" | [FHWA HIPERPAV](https://www.fhwa.dot.gov/pavement/concrete/hiperpav.cfm) · [User manual FHWA-HRT-14-087](https://www.fhwa.dot.gov/publications/research/infrastructure/pavements/14087/14087.pdf) |
 | **b4cast** | Commercial 3D FE thermal/stress analysis for hardening concrete. Consultant-grade. | The high end. What a large contractor pays a specialist to run. | <https://b4cast.com/> |
-| **Prediction Model for Concrete Behavior** | The UT Austin report ConcreteWorks was built from (TxDOT 0-4563-1). | The provenance chain for ConcreteWorks' physics. | <https://ctr.utexas.edu/wp-content/uploads/pubs/0_4563_1.pdf> |
+| **Prediction Model for Concrete Behavior** | The UT Austin report ConcreteWorks was built from (TxDOT 0-4563-1, Oct 2007, rev. May 2008). | The provenance chain for ConcreteWorks' physics. | <https://library.ctr.utexas.edu/ctr-publications/0-4563-1.pdf> |
 
 ## 2.6 The problem, in practitioners' own words
 
@@ -1139,11 +1258,16 @@ Full-screen the §2.2.3 table.
 
 **Q: "What would you do with another month?"**
 
-> Three things, in order. One: re-run every validation case with **real hourly weather** from
-> the Open-Meteo archive instead of the reconstructed diurnal curve — `docs/LIMITATIONS.md`
-> §8 identifies that reconstruction as the most likely cause of the −26.5 °C error at 12 h,
-> and it is the single largest source of error we have identified. Two: fix the surface-probe
-> definition so the cracking flag is evaluated where ACI 301 means it. Three: replace the
+> Three things, in order. One: accept **measured cement chemistry** on the wire. The Auburn
+> report publishes C3A, C3S, SO3 and Blaine for all seven elements, and we ignored all of it
+> because `MixSpec` has no field for it — we ran the generic 0.08 / 0.55 / 0.03 / 380 against
+> Albertville's real 0.054 / 0.609 / 0.0279 / 448.9. That moves tau from 17.34 h to 16.34 h,
+> which is roughly an hour off our 8.7 h late-peak bias, and it drops cement heat 9.4%, which
+> would probably make our 5.4 °C peak error *worse*. We want to know which. The function that
+> does it, `cement_heat_j_per_g`, is already in the repo and unreachable from the API.
+> Two: re-run every validation case with **real hourly weather** from the Open-Meteo archive
+> instead of the reconstructed diurnal curve — `docs/LIMITATIONS.md` §8 identifies that
+> reconstruction as the most likely cause of the −26.5 °C error at 12 h. Three: replace the
 > invented forecast error band — `provisional_error()` returns σ ramping 0.5 → 2.0 °C with
 > `n_pairs = [0]*12`, zero measured pairs, and it ranks **2nd of 10** parameters on strip
 > time at −5.67 h. The machinery to replace it (`empirical_forecast_error()`) exists and is
@@ -1174,6 +1298,7 @@ the ones that change nothing.**
 | Differential over-reads | "Definition mismatch on the surface probe, plus probable excess surface loss. Explained above." |
 | Forecast band is invented | "σ ramps 0.5 → 2.0 °C with zero measured pairs, and it says so in its own docstring. It ranks 2nd of 10 on strip time." |
 | Spatial variation is small | "0.033 °C over 2.5 km². We measured it, it is 75× smaller than the diurnal swing, so we built the temporal product." |
+| The Auburn runs used generic cement chemistry | "The report publishes the mill certificates and we could not consume them — `MixSpec` has no chemistry field. Our 5.4 °C was scored with assumed C3A, C3S, SO3 and Blaine. Feeding the real ones moves tau an hour earlier and cement heat 9.4% lower, and we do not yet know whether the peak error improves or worsens." |
 
 ## 5.3 Do not volunteer these unless asked
 
@@ -1219,7 +1344,8 @@ ordered so that stopping early still leaves you with a submission.
 
 ## 6.2 Fresh-clone test (the one people skip)
 
-Clone into an empty directory, as a judge would, and run it end to end:
+Clone into an empty directory, as a judge would, and run it end to end. **Run this under
+bash** — the `&` backgrounding and the `cd ../frontend` after it behave differently in fish:
 
 ```bash
 git clone https://github.com/MuazTPM-YT/satalite.git /tmp/satalite-fresh
@@ -1281,10 +1407,22 @@ npx tsx src/lib/test_heatmap_live.ts    # the map's field, and that it never spe
 
 ## 6.4 Secrets and hygiene
 
+**These are bash.** Your login shell is fish, where `<<<` is a syntax error — run them under
+`bash -c '…'`, or use the fish form given below each one.
+
 - [ ] `.env` is gitignored (it is) and **has never been committed**:
       `git log --all --full-history -- .env` returns nothing
-- [ ] `git log -p --all -S"$(cut -d= -f2 <<<"$(grep FORTYGUARD_API_KEY .env)")" | head` finds
-      nothing
+- [ ] the key itself has never been in any commit, on any branch:
+
+      ```bash
+      # bash
+      git log -p --all -S"$(cut -d= -f2 <<<"$(grep FORTYGUARD_API_KEY .env)")" | head
+      ```
+
+      ```fish
+      # fish
+      git log -p --all -S(grep FORTYGUARD_API_KEY .env | cut -d= -f2) | head
+      ```
 - [ ] No key in `README.md`, in any doc, in any screenshot, or **in the demo video** — check
       the browser devtools panel if it was ever open on camera
 - [ ] `frontend/.env.local` is gitignored (it is)
@@ -1338,8 +1476,10 @@ Collected here so none of it is buried in a subsection.
    source `docs/SPEC-00-MASTER.md` §4.6 already planned for.
 
 4. **Time to peak is systematically late by a mean of 8.7 h**, all seven errors positive.
-   This is a bias with a cause, not scatter, and it is not currently in
-   `docs/LIMITATIONS.md`.
+   This is a bias with a cause, not scatter. It is now written up as `docs/LIMITATIONS.md`
+   §9, with the per-element table and the note that peak *temperature* on the same runs is
+   not biased the same way — so the model gets roughly the right peak at roughly the wrong
+   time.
 
 5. **The core–surface differential was evaluated at the wrong point relative to ACI 301 —
    now fixed, and the fix was not enough.** `surface_temp_c` is the mean true free surface;
@@ -1357,27 +1497,64 @@ Collected here so none of it is buried in a subsection.
    sits between its two, with the competing argument written down in the constant's own
    comment. The two candidate values differ by ~0.1 °C on peak core.
 
-7. **A `fields=true` response is 3.74 MB against Vercel's 4.5 MB body cap** — 17% headroom on
-   the shipped demo element, and it scales with `width × thickness / dx²`. If you take Path B,
-   do not demo a large section.
+7. **A `fields=true` response is 3.93 MB against Vercel's 4.5 MB body cap** — 13% headroom on
+   the shipped demo element, both figures decimal, and it scales with
+   `width × thickness / dx²`. If you take Path B, do not demo a large section.
 
 8. **On a read-only filesystem, a live FortyGuard fetch spends the credits and then crashes.**
    `cached_call` writes to disk *after* the API returns. On Vercel that is 4,220 credits gone
    and nothing kept. On Cloud Run it is fine.
 
 9. **`POST /api/pour-windows` can be six solves in one request.** With the shipped demo
-   ambient it degrades to one. Shorten the duration in the left panel and it becomes ~39 s.
+   ambient it degrades to one. Shorten the duration in the left panel and it becomes ~37 s.
    Set your platform timeout accordingly.
 
-10. **Peak RSS measured at 266 MB** (`VmHWM: 272,784 kB`), close to the README's 282 MB claim
-    and comfortably inside Render's 512 MB — which is why Render fails on CPU, not memory.
+10. **Peak RSS measured at 285 MiB** (`VmHWM: 291,388 kB`) on the uvicorn worker, after four
+    `POST /api/simulate` runs and one `?fields=true` run. That is inside Render's 512 MB but
+    not comfortably — which is why Render fails on CPU first, and would fail on memory second
+    if anyone asked it for an ensemble.
 
 11. **The hackathon was postponed and the press coverage was not updated.** Articles still
     name 3–17 August 2026; the real window is 18–30 August. If you cite a date anywhere in
     the submission, cite 30 August.
 
+12. **The Auburn report's authors were wrong in this document, and are now right.** It read
+    "(Fannin, Barnes, Schindler et al.)". The title page is **Eric D. Gross, Andrew D.
+    Eiland, Anton K. Schindler and Robert W. Barnes, December 2017**. There is no Fannin.
+    This is the most-quoted citation in the submission and the one a judge is most likely to
+    open.
+
+13. **One ConcreteWorks accuracy class was wrong, in ConcreteWorks' disfavour.** Scottsboro
+    Bent Cap's −5 °F was printed "Good"; Table 6-1's Excellent band is ±0–5 °F and the
+    report's own prose confirms two Excellents. Corrected to **Excellent** in
+    [§2.2.3](#223--what-satalite-actually-produced). Getting a benchmark wrong in your own
+    favour is the one error a judge will not forgive.
+
+14. **The report contradicts itself on Brewton and this document did not say so.** Table
+    5-20 says Class F fly ash and Gravel; Appendix Table H-1 says Class C and #67 Limestone.
+    The runs used F and limestone, which is the inconsistent pair. Now footnoted in
+    [§2.2.1](#221-the-inputs-ready-to-type-into-the-studio).
+
+15. **The report publishes measured cement chemistry for all seven elements and nothing in
+    this repo can consume it.** Appendix Tables B-2…H-2 carry the full Bogue set and Blaine
+    fineness. `MixSpec` has no chemistry field, so the runs used the generic constants in
+    `physics/season_analysis.py`. On Albertville: tau 17.339 h assumed vs **16.341 h**
+    measured, and `cement_heat_j_per_g` on the real Bogue compounds is **462.2 J/g** against
+    the 510 used — 9.4% less heat. The two effects point opposite ways.
+    [§2.2.6](#226--what-the-report-also-publishes-and-nothing-here-can-use).
+
+16. **Two source links were dead.** ACI 306.1 (`ItemID=306110` → `306190`) and TxDOT
+    0-4563-1 (`ctr.utexas.edu` → `library.ctr.utexas.edu`). A third, LTRC FR 584, could not
+    be verified on any live host and has been replaced by a ROSAP mirror rather than left
+    as an unchecked url.
+
+17. **Section 0.2's byte counts were stale by exactly one field.** Both `simulate` rows grew
+    by **8,126 bytes** — the `surface_probe_temp_c` array, 433 floats — between the draft and
+    this commit. The table is re-measured; the old numbers dated it precisely.
+
 ---
 
 *Every measured number in this document came from running this commit. Every external claim
-carries a link. Where something could not be verified — Reddit thread URLs, the exact
-hackathon dates — it says so instead of guessing.*
+carries a link, and every link was fetched on 2026-08-27. Where something could not be
+verified — Reddit thread URLs, LTRC FR 584, the exact hackathon dates — it says so instead
+of guessing.*

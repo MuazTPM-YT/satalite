@@ -357,17 +357,19 @@ without dropping a feature — scipy is 152 MB and numpy 67 MB of the 260 MB ven
 ### Deploying it free
 
 The frontend goes on Vercel. For the backend, the binding number is that **one
-deterministic solve is 6.1 s of CPU** (measured: dt = 10 s, 25,920 steps, a 30×300 grid,
-433 recorded frames) with a **282 MB peak RSS**. That rules out the obvious free tiers:
-Render's free instance is 512 MB and **0.1 CPU**, which turns 6.1 s into roughly a minute,
-and it spins down after 15 minutes with a 30–60 s cold start. Hugging Face Spaces now
-requires a paid plan for Docker Spaces. Fly.io requires a card on file with no documented
-free allowance.
+deterministic solve is 6.14 s of wall time on one core** — measured through
+`POST /api/simulate`, four warm runs at 6.154 / 6.135 / 6.130 / 6.149 s, dt = 10 s, 25,920
+steps, a 30×300 grid, 433 recorded frames — with a **285 MiB peak RSS** (`VmHWM:
+291,388 kB` on the uvicorn worker). That rules out the obvious free tiers: Render's free
+instance is 512 MB and **0.1 CPU**, which turns 6.14 s into roughly a minute, and it spins
+down after 15 minutes with a 30–60 s cold start. Hugging Face Spaces now requires a paid
+plan for Docker Spaces. Fly.io requires a card on file with no documented free allowance.
 
 **Google Cloud Run** is the one that works. Its always-free tier is 180,000 vCPU-seconds,
-360,000 GiB-seconds and 2M requests a month in US regions — about **29,500 free solves a
-month** at 6.1 vCPU-s each, with a real vCPU rather than a tenth of one. Billing has to be
-enabled, so a card is on file; set a budget alert and the free tier keeps it at zero.
+360,000 GiB-seconds and 2M requests a month in Tier 1 US regions — about **29,300 free
+solves a month** at 6.14 vCPU-s each, with a real vCPU rather than a tenth of one. Billing
+has to be enabled, so a card is on file; set a budget alert and the free tier keeps it at
+zero.
 
 Build and push explicitly — **`--source` cannot be used here.** It only auto-detects a
 Dockerfile in the *source root*, and this one is at `backend/Dockerfile` while its build
@@ -477,8 +479,8 @@ block — everything shown is verbatim:
           "type": "Feature",
           "properties": {
             "tile_id": 0,
-            "min_temperature": 32.7982,
             "average_temperature": 37.0027,
+            "min_temperature": 32.7982,
             "max_temperature": 40.2827
           },
           "geometry": {
@@ -573,6 +575,76 @@ Schindler & Folliard 2005, ACI 207/305/347), and the five golden tests in
 identities rather than against any number this code produced. Where a constant is
 provisional or a limit is unmeasured, `docs/LIMITATIONS.md` says so and says which number
 it moves.
+
+## Sources
+
+Everything SatAlite is built on or measured against. Every link here was fetched on
+2026-08-27. Standards behind a paywall link to the publisher's page, not to a copy.
+
+### Temperature data
+
+| Source | What it gives us | Link |
+|---|---|---|
+| **FortyGuard tOS Enterprise API** | Hyperlocal air temperature 2 m above ground, 100 m tiles, US only. The heatmap the demo day comes from. Archive from 2021-01-01, forecast to +12 h. | <https://fortyguard.com> |
+| **Open-Meteo Historical Weather API** | Free, no key, hourly back to 1940, worldwide. Supplies the five arrays `AmbientSpec` needs, and the **wind** and **hourly GHI** FortyGuard does not carry at all. Used for the Alabama validation runs, whose 2015–2016 dates predate the FortyGuard archive. | <https://open-meteo.com/en/docs/historical-weather-api> |
+
+### Ground truth — measured concrete, not modelled
+
+| Source | What it gives us | Link |
+|---|---|---|
+| **USBR DSO-12-02** — Bartojay, K. (2012), *Thermal Properties of Reinforced Structural Mass Concrete*, US Bureau of Reclamation. **Public domain.** | The three cases in `backend/validation/cases/`, run by `pytest validation/ -m validation` and served at `/api/validation`. Also the DEF threshold and the in-situ vs fog-cured strength comparison. | <https://www.usbr.gov/damsafety/TechDev/DSOTechDev/DSO-12-02.pdf> |
+| **ALDOT 930-860R** — Gross, E. D., Eiland, A. D., Schindler, A. K. & Barnes, R. W. (December 2017), *Temperature Control Requirements for the Construction of Mass Concrete Members*, Auburn University Highway Research Center. | Seven instrumented Alabama DOT mass-concrete elements: mix proportions, mill certificates, placement conditions, measured peak temperature and differential — **and a published ConcreteWorks accuracy assessment on the same seven**. Nothing in this codebase has ever been fitted to them. Behind `docs/LIMITATIONS.md` §9 and §10. | <https://eng.auburn.edu/files/centers/hrc/930-860r-temperature-control.pdf> · [ROSAP mirror](https://rosap.ntl.bts.gov/view/dot/42366) |
+
+### Physics and standards — where every constant comes from
+
+| What it fixes in the code | Source | Link |
+|---|---|---|
+| Hydration model: the `α_u`, `H_u`, `τ` and `β` regressions in `physics/equations/hydration.py` | Schindler, A. K. & Folliard, K. J. (2005), *Heat of Hydration Models for Cementitious Materials*, **ACI Materials Journal 102(1), 24–33** | [ACI abstract](https://www.concrete.org/publications/internationalconcreteabstractsportal.aspx?m=details&id=14246) |
+| Maturity and equivalent age: `EA_BASE = 33500`, datum −10 °C, the 20 °C slope breakpoint | **ASTM C1074**, *Standard Practice for Estimating Concrete Strength by the Maturity Method* | <https://www.astm.org/c1074-19.html> |
+| Evaporation limit and the Uno equation, checked against the standard's own 0.17 lb/ft²/h worked example | **ACI 305.1-14**, *Specification for Hot Weather Concreting*; ACI 305R guide | [ACI 305.1](https://www.concrete.org/store/productdetail.aspx?ItemID=305114) |
+| `CRACK_LIMIT_C = 19.4` (35 °F) and the 160 °F in-place maximum | **ACI 301**, *Specifications for Structural Concrete*; **ACI 207.2R**, *Report on Thermal and Volume Change Effects on Cracking of Mass Concrete* | [ACI 207.2R](https://www.concrete.org/store/productdetail.aspx?ItemID=207207) |
+| Cold-weather placement | **ACI 306.1** | [ACI SPEC-306.1-90](https://www.concrete.org/store/productdetail.aspx?ItemID=306190) |
+| `STRIP_FRACTION = 0.75`, formwork removal | **ACI 347**, *Guide to Formwork for Concrete* | [ACI 347](https://www.concrete.org/store/productdetail.aspx?ItemID=34714) |
+| `DEF_LIMIT_C = 68.3` (155 °F) and the chemistry conditionality in `physics/limits.py` | USBR DSO-12-02 (above) | <https://www.usbr.gov/damsafety/TechDev/DSOTechDev/DSO-12-02.pdf> |
+
+**Read this next to that table.** `docs/LIMITATIONS.md` closes by noting that
+`physics/constants.py` names the *standard* a group of constants came from but not the page,
+table or equation for each individual number, and that two carry PROVISIONAL markers rather
+than citations: `BETA_DEFAULT = 0.9` ("eqn [11] SO3 exponent sign unconfirmed") and
+`PLACEMENT_MAX_C = 32.0` ("ACI 305, often project-specific"). Anyone auditing a single
+constant has to find it in the source themselves.
+
+### Prior art we measure against
+
+| Tool | What it is | Link |
+|---|---|---|
+| **ConcreteWorks** | The benchmark. TxDOT-funded, built at UT Austin's Concrete Durability Center; free; used by TxDOT, Iowa DOT and others. Its published error on the seven ALDOT elements is what SatAlite's 5.40 °C is quoted against. | [TxDOT presentation](https://www.dot.state.tx.us/iheep2009/presentations/4A_ConcreteWorks_AndyNaranjo.pdf) |
+| **TxDOT 0-4563-1**, *Prediction Model for Concrete Behavior* (Oct 2007, rev. May 2008) | The UT Austin report ConcreteWorks was built from — the provenance chain for its physics. | <https://library.ctr.utexas.edu/ctr-publications/0-4563-1.pdf> |
+| **HIPERPAV III** | FHWA's free early-age pavement tool: transient 1D finite difference with hydration, convection, solar and evaporative cooling. Nearly the same physics stack, one dimension fewer, federally validated. | [FHWA](https://www.fhwa.dot.gov/pavement/concrete/hiperpav.cfm) · [manual FHWA-HRT-14-087](https://www.fhwa.dot.gov/publications/research/infrastructure/pavements/14087/14087.pdf) |
+| **b4cast** | Commercial 3D FE thermal and stress analysis of hardening concrete. The consultant-grade end of the market. | <https://b4cast.com/> |
+
+Further reading behind the framing — DEF field cases, GDOT and DOT maturity programmes,
+industry explainers, and practitioner threads — is collected in
+[`docs/FINALE.md`](docs/FINALE.md) §2.4–2.6 rather than repeated here.
+
+### Software
+
+Backend, from `backend/pyproject.toml`: **FastAPI**, **uvicorn**, **pydantic** and
+**pydantic-settings**, **numpy**, **scipy**, **requests**, **python-dotenv**; **pytest**,
+**ruff**, **mypy**, **httpx** and **PyYAML** for development; built and run with
+[**uv**](https://docs.astral.sh/uv/) and **hatchling**.
+
+Frontend, from `frontend/package.json`: **Next.js 16** (App Router) on **React 19**,
+**TypeScript**, **Tailwind CSS 4**, **three.js** via **@react-three/fiber** and
+**@react-three/drei**, **web-ifc** for IFC import, **lucide-react**, **react-rnd**, and
+**ESLint**. Scaffolded with stock `create-next-app`.
+
+### Map tiles
+
+The map view uses **Esri** basemaps — *Dark Gray Canvas*, *Light Gray Canvas* and *World
+Imagery* — with no API key. **Attribution is a licence condition**, which is why it is drawn
+on the map and why `frontend/src/lib/basemap.ts` refuses a custom tile source that does not
+supply one. See [Pointing the map at your own tiles](#pointing-the-map-at-your-own-tiles).
 
 ## Credit
 
