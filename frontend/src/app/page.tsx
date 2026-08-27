@@ -1,11 +1,16 @@
 // Studio page. Owns the inputs, turns them into a request, and hands the solved run
 // to every panel.
 //
-// The inputs DRIVE the solve. Changing a dimension, a mix number or the cure window
-// re-runs /api/simulate and everything on screen follows - so the one thing this file
-// has to get right is that nothing is ever drawn from a request that has not been
-// solved. `stale` says when the boxes and the drawing have parted company, and the
-// drawing keeps showing the last real answer until a new one lands.
+// Nothing on this page solves by itself. Editing a dimension, a mix number, the cure
+// window or the location changes the REQUEST and nothing else; /api/simulate runs only
+// when the reader presses Solve. A solve is six seconds of one CPU core, so the reader
+// finishes typing and then asks for it - the panel is never re-solving under a hand
+// still on a slider.
+//
+// That makes `stale` the load-bearing state: it says the boxes and the drawing have
+// parted company, and it is what turns both Solve buttons blue. The drawing keeps
+// showing the last real answer until a new one lands, so nothing on screen is ever
+// drawn from a request that has not been solved.
 "use client";
 
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
@@ -97,10 +102,6 @@ const PANEL_GEO: Record<PanelId, PanelGeometry & { minW: number; minH: number }>
   validation: { x: 120, y: 30, w: 860, h: 800, minW: 600, minH: 360 },
 };
 
-// how long after a slider is released before the solve fires. Long enough to coalesce
-// a flurry of commits, short enough that it still reads as a response to the drag.
-const SOLVE_DEBOUNCE_MS = 350;
-
 interface Run {
   request: SimulationRequest;
   result: SimulationResult;
@@ -187,17 +188,15 @@ export default function StudioPage() {
   // Drop a response whose request has already been superseded. Without this, releasing
   // two sliders in quick succession can land the slower answer last.
   const solveSeq = useRef(0);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Time is preserved across solves rather than reset: re-solving is a comparison, and
   // being thrown back to t=0 (or to a different peak) hides what actually changed.
   const holdTime_h = useRef<number | null>(null);
 
   // Solve whatever the inputs currently describe.
   //
-  // Re-created on every input change, which is exactly right: the debounce timer and
-  // the Solve button both capture the callback at the moment they fire, so they always
-  // send the request that was on screen then - not the one that existed when some
-  // earlier render defined the callback.
+  // Re-created on every input change, which is exactly right: the Solve button captures
+  // the callback at the moment it is pressed, so it always sends the request that is on
+  // screen then - not the one that existed when some earlier render defined it.
   const runSolve = useCallback(async () => {
     if (!request || !requestKey) return;
     const seq = ++solveSeq.current;
@@ -216,33 +215,9 @@ export default function StudioPage() {
     }
   }, [request, requestKey]);
 
-  // The debounce has to fire the LATEST runSolve, not the one that existed when the
-  // edit was committed.
-  //
-  // Handing `runSolve` straight to setTimeout looked equivalent and was not: an edit
-  // calls onChange and onCommit in the same handler, so the timer was armed with the
-  // callback from the render BEFORE the state change - and 350 ms later it solved the
-  // config the user had just moved away from. A shape change re-solved the old shape
-  // and then reported itself stale, which is exactly what it was.
-  const runSolveRef = useRef(runSolve);
-  useEffect(() => {
-    runSolveRef.current = runSolve;
-  }, [runSolve]);
-
-  // A committed edit — a slider released, a field left, a dropdown chosen.
-  const commit = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => void runSolveRef.current(), SOLVE_DEBOUNCE_MS);
-  }, []);
-
-  const solveNow = useCallback(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    void runSolveRef.current();
-  }, []);
-
-  useEffect(() => () => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-  }, []);
+  // The one place a solve is asked for. `runSolve` returns a promise and both buttons
+  // want a plain handler, so the void is here rather than at each call site.
+  const solveNow = useCallback(() => void runSolve(), [runSolve]);
 
   /* ── loads ────────────────────────────────────────────────────────────────── */
 
@@ -282,8 +257,9 @@ export default function StudioPage() {
     };
   }, []);
 
-  // first solve, once there is weather to solve against. Guarded on `run` so this
-  // fires exactly once — every later solve comes from a commit or the Solve button.
+  // The ONE solve this page runs on its own, once there is weather to solve against.
+  // The studio has to open on something real - every panel reads a run, and there is no
+  // placeholder to draw. Every later solve comes from the Solve button.
   const bootstrapped = useRef(false);
   useEffect(() => {
     if (!ambient || bootstrapped.current) return;
@@ -484,6 +460,10 @@ export default function StudioPage() {
   // here - there is no second copy of the solar geometry in TypeScript. Changing it
   // changes the request key, which is what makes the precomputed ensemble band disclaim
   // itself: that band was computed for one fixed scenario and this is no longer it.
+  //
+  // Applying a location does NOT solve. It is an input like any other - and the most
+  // expensive one to get wrong, because the reader usually sets the site and the date
+  // and the mix together before asking for an answer.
   const handleLocationApply = useCallback(
     (response: AmbientResponse, label: string) => {
       setAmbient(response.ambient);
@@ -501,9 +481,8 @@ export default function StudioPage() {
         reduction: response.reduction,
         tileId: response.tile_id,
       });
-      commit();
     },
-    [commit],
+    [],
   );
 
   // reading the probe is the moment the palette is worth opening
@@ -622,7 +601,6 @@ export default function StudioPage() {
                   defaults={scenarioConfig}
                   onChange={updateConfig}
                   onDimChange={updateDim}
-                  onCommit={commit}
                   units={units}
                   ifc={ifcUi}
                   onImportIfc={handleImportIfc}

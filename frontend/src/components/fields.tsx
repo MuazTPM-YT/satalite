@@ -95,7 +95,6 @@ interface ScrubBoxProps {
   step: number;
   decimals: number;
   onChange: (next: number) => void;
-  onCommit?: () => void;
   disabled?: boolean;
   width?: string;
   ariaLabel?: string;
@@ -121,7 +120,6 @@ function ScrubBox({
   step,
   decimals,
   onChange,
-  onCommit,
   disabled,
   // six characters of mono at 12px plus padding. "19.685" ft is a real value and
   // a box that clips its own last digit is worse than one that is a little wide.
@@ -142,7 +140,6 @@ function ScrubBox({
     // an unparseable draft snaps back to the live value rather than writing NaN.
     if (Number.isFinite(parsed)) onChange(clamp(quantize(parsed, step), min, max));
     setDraft(null);
-    onCommit?.();
   };
 
   const nudge = (steps: number) => {
@@ -180,7 +177,6 @@ function ScrubBox({
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
     setScrubbing(false);
-    onCommit?.();
   };
 
   return (
@@ -230,8 +226,6 @@ export interface ScrubFieldProps {
   label: string;
   value: number;
   onChange: (next: number) => void;
-  /** fired when a drag or an edit finishes — the moment a solve is worth kicking off */
-  onCommit?: () => void;
   min: number;
   max: number;
   step?: number;
@@ -258,7 +252,6 @@ export function ScrubField({
   label,
   value,
   onChange,
-  onCommit,
   min,
   max,
   step = 1,
@@ -303,7 +296,6 @@ export function ScrubField({
         step={step}
         decimals={dp}
         onChange={onChange}
-        onCommit={onCommit}
         disabled={disabled}
       />
 
@@ -323,7 +315,6 @@ export function ScrubField({
         onClick={() => {
           if (resetTo === undefined) return;
           onChange(resetTo);
-          onCommit?.();
           reset.hide();
         }}
         className={cx(
