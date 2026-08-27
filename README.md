@@ -400,8 +400,7 @@ looks for an entrypoint at `app/main.py` with a top-level `app`, reads dependenc
 `pyproject.toml`, defaults to Python 3.12, allows a 500 MB bundle and a 300 s request. It
 costs you the live FortyGuard fetch — the filesystem is read-only, and `cached_call`
 writes *after* the API returns, so a live day would spend 4220 credits and then fail to
-save. Cached days, and every precomputed route, work fine. Full walkthrough of both paths
-in [`docs/FINALE.md`](docs/FINALE.md).
+save. Cached days, and every precomputed route, work fine.
 
 Deploy the backend first, build the frontend with `NEXT_PUBLIC_API_URL` pointing at it —
 it is inlined at **build** time — then redeploy the backend with the real Vercel origin in
@@ -623,9 +622,23 @@ constant has to find it in the source themselves.
 | **HIPERPAV III** | FHWA's free early-age pavement tool: transient 1D finite difference with hydration, convection, solar and evaporative cooling. Nearly the same physics stack, one dimension fewer, federally validated. | [FHWA](https://www.fhwa.dot.gov/pavement/concrete/hiperpav.cfm) · [manual FHWA-HRT-14-087](https://www.fhwa.dot.gov/publications/research/infrastructure/pavements/14087/14087.pdf) |
 | **b4cast** | Commercial 3D FE thermal and stress analysis of hardening concrete. The consultant-grade end of the market. | <https://b4cast.com/> |
 
-Further reading behind the framing — DEF field cases, GDOT and DOT maturity programmes,
-industry explainers, and practitioner threads — is collected in
-[`docs/FINALE.md`](docs/FINALE.md) §2.4–2.6 rather than repeated here.
+### Further reading behind the framing
+
+Not wired to a constant, but this is the literature the problem statement rests on.
+
+| Topic | Source | Link |
+|---|---|---|
+| DEF in the field — the Texas precast box-beam case | UT Austin CTR 0-5218-1, *Investigation of the Internal Stresses Caused by Delayed Ettringite Formation* | <https://library.ctr.utexas.edu/ctr-publications/0-5218-1.pdf> |
+| DEF and ASR field survey | UT Austin CTR 0-4085-1 | <https://library.ctr.utexas.edu/ctr-publications/0-4085-1.pdf> |
+| Mass concrete thermal management, and what cooling costs | GDOT Research Project 19-04 Phase II, *Investigation and Guidelines for Best Practices of Mass Concrete Construction Management* | <https://rosap.ntl.bts.gov/view/dot/64459/dot_64459_DS1.pdf> |
+| Alternative thermal property models | USBR **DSO-2017-05**, *Comparison of Thermal Property Models for Concrete* | <https://www.usbr.gov/damsafety/TechDev/DSOTechDev/DSO-2017-05.pdf> |
+| Temperature rise with Class N pozzolan | USBR **DSO-2017-04** | <https://www.usbr.gov/damsafety/TechDev/DSOTechDev/DSO-2017-04.pdf> |
+| Maturity for early opening — a DOT that measured the payoff | Iowa State InTrans, *Maturity Method for Early Opening of Concrete Pavements* (Spring 2025) | <https://www.intrans.iastate.edu/wp-content/uploads/2025/04/maturity_method_for_concrete_pvmt_early_opening_spring_2025_MB.pdf> |
+| Maturity in practice, WSDOT | *Use of the Maturity Method in Accelerated PCCP Construction* | <https://www.wsdot.wa.gov/research/reports/fullreports/698.1.pdf> |
+| Maturity in practice, Louisiana | LTRC, *Implementation of Maturity for Concrete Strength Measurement and Pay* | <https://rosap.ntl.bts.gov/view/dot/34372> |
+| FHWA's own maturity guidance | FHWA HIF-19-005, *Utilizing the Maturity Concept for Determining Early Strength* | <https://www.fhwa.dot.gov/pavement/concrete/trailer/resources/hif19005.pdf> |
+| One-page industry explainer of thermal cracking | NRMCA **CIP 42 — Thermal Cracking** | <https://www.concreteanswers.org/CIPs/CIP42.htm> |
+| Why the 35 °F limit is argued over — MnDOT relaxes it to 45 °F after 48 h and 60 °F after 7 days | *Mass Concrete Specifications: Two States' Perspectives*, Concrete Bridge Views | <https://concretebridgeviews.com/2016/03/mass-concrete-specifications-two-states-perspectives/> |
 
 ### Software
 
