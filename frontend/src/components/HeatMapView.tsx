@@ -1081,8 +1081,8 @@ function FieldCard({
                     </>
                 ) : (
                     <p className="text-[10px] leading-snug text-text-muted">
-                        Hover a cell for its min, mean and max. Click to pour there — the
-                        cure re-solves against it.
+                        Hover a cell for its min, mean and max. Click to pour there, then
+                        press Solve to run the cure against it.
                     </p>
                 )}
             </div>

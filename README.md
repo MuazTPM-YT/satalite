@@ -164,9 +164,10 @@ visible rather than implied. On the demo day the daily mean spreads 0.10 °C acr
 221 tiles, and the daily max 0.17 °C.
 
 **Click a cell to pour there.** The cell you pick is ringed, the chip in the command bar
-names it (`Phoenix, AZ · tile 123`), and the cure re-solves — because `POST /api/ambient`
-takes `reduce: "tile"` and shapes the diurnal curve from that one 100 m cell's own
-min/mean/max instead of the average of all 221. That is the hyperlocal claim actually
+names it (`Phoenix, AZ · tile 123`), and the studio's weather becomes that cell's —
+because `POST /api/ambient` takes `reduce: "tile"` and shapes the diurnal curve from that
+one 100 m cell's own min/mean/max instead of the average of all 221. Press **Solve** to
+run the cure against it; nothing in the studio solves on its own. That is the hyperlocal claim actually
 wired to the solver rather than asserted.
 
 Be honest about the size of it: over this AOI — one downtown city block — the two most
@@ -224,7 +225,8 @@ Picking a cell cannot spend one either, silently. Every click is priced first th
 `/api/ambient/quote`, which never calls FortyGuard; a free pick applies immediately, and
 one that would cost credits waits for a second, explicit press on a button carrying the
 number — the same two-click rule as the location picker. Clicks land only on measured
-cells: bare ground is not a pick, so a stray click can neither re-solve nor buy anything.
+cells: bare ground is not a pick, so a stray click can neither move the weather nor buy
+anything.
 
 AOI centres are **snapped to a grid one AOI wide** (`snap_to_aoi`). Without it every
 distinct coordinate is its own polygon, its own cache key and its own 4220 credits, so
@@ -533,7 +535,8 @@ field across the 221 tiles, 36.9076 to 37.0069 — the 0.10 °C figure quoted fu
 ```
 
 That reduction is why the Map view exists — it draws the 221 tiles the three numbers came
-from, and picking one cell re-solves from that cell's own triple instead of the mean.
+from, and picking one cell hands the next solve that cell's own triple instead of the
+mean.
 
 To reproduce it without spending anything, with the repo set up as above:
 

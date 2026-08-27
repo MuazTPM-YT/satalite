@@ -75,7 +75,9 @@ export type TrackId = "temperature" | "strength" | "differential";
 const TRACK_TITLE: Record<TrackId, string> = {
   temperature: "Temperature",
   strength: "Strength fraction",
-  differential: "Core–surface differential",
+  // Named for the sensor it is read at, because that is the depth ACI 301's limit is
+  // written against and the depth the flag uses.
+  differential: "Core–probe differential",
 };
 
 const TRACK_UNIT: Record<TrackId, string> = {
@@ -560,26 +562,36 @@ function DifferentialTrack({
   const x = xIn(g);
   const limit_c = sim.breaches.cracking_limit_c;
 
-  // The differential at the probe, over time.
+  // The differential at the PROBE, over time - which is the one the cracking flag is
+  // evaluated on.
   //
-  // This panel used to say "maxima only - no series in the response" and draw three
-  // horizontal lines. The series was there all along: physics/solver.py computes
-  // max_core_surface_diff_c as max(core_arr - surface_arr), and BOTH arrays ship in the
-  // response. So this is not a new measurement, it is the series the scalar was reduced
-  // from - and its maximum is that scalar, exactly, which is what test_studio_live.ts
-  // asserts.
+  // This drew `core - surface_temp_c` while calling itself "at the probe", and the two
+  // are different physical quantities: surface_temp_c is the reconstructed true free
+  // face, surface_probe_temp_c is a sensor at ElementSpec.surface_probe_depth_m. On the
+  // studio's own default element that is 29.03 against 15.40 °C, and ACI 301's limit is
+  // written against the embedded sensor - so the chart was drawing the free-surface
+  // curve against a threshold that does not apply to it, and Checks, which reads
+  // max_core_probe_diff_c, disagreed with the picture beside it.
   //
-  // Drawing it turns "the gradient peaked at 29.03" into "and here is when, how long it
-  // stayed over ACI 207, and when it came back down", which is the question the limit is
-  // actually asked. A number cannot answer it; a curve can.
-  const diff_c = sim.core_temp_c.map((c, i) => c - (sim.surface_temp_c[i] ?? c));
+  // The free surface is still worth a level: it is the strict upper bound on the
+  // gradient, and dropping it hides how much of the disagreement is probe placement.
+  // It is labelled as itself now instead of borrowing the probe's name.
+  //
+  // Both arrays ship in the response, so this is not a new measurement - it is the
+  // series max_core_probe_diff_c was reduced from, and its maximum is that scalar.
+  const diff_c = sim.core_temp_c.map((c, i) => c - (sim.surface_probe_temp_c[i] ?? c));
 
   // The axis has to hold NEGATIVES. On the demo day 84 of 433 samples are below zero,
   // down to -4.29 °C: in the afternoon the sun drives the surface hotter than the core,
   // so the gradient inverts and heat flows inward. An axis floored at zero silently drew
   // a fifth of the series below the frame. The sign is physical, so zero is ruled.
   const lo = Math.min(0, ...diff_c);
-  const hi = Math.max(limit_c, sim.max_anywhere_surface_diff_c, sim.max_core_surface_diff_c);
+  const hi = Math.max(
+    limit_c,
+    sim.max_anywhere_surface_diff_c,
+    sim.max_anywhere_probe_diff_c,
+    sim.max_core_probe_diff_c,
+  );
   const D_MAX = Math.ceil((hi * 1.2) / 5) * 5;
   const D_MIN = Math.floor(lo / 5) * 5;
   const span = D_MAX - D_MIN || 1;
@@ -611,7 +623,7 @@ function DifferentialTrack({
           </>
         ) : (
           <span className="text-text-muted">
-            peak {sim.max_core_surface_diff_c.toFixed(2)} °C at the probe
+            peak {sim.max_core_probe_diff_c.toFixed(2)} °C at the probe
           </span>
         )
       }
@@ -632,12 +644,22 @@ function DifferentialTrack({
         />
       )}
 
-      {/* The hottest cell ANYWHERE against the surface. This one really has no series -
+      {/* The hottest cell ANYWHERE against the probe. This one really has no series -
           the per-step maximum over the whole section is not in the response - so it
-          stays a level, and it is the conservative number of the two. */}
+          stays a level, and it is the conservative number of the two. Together with the
+          curve it is the pair the cracking flag reads. */}
+      <Measured
+        y={y(sim.max_anywhere_probe_diff_c)}
+        label={`max anywhere ${sim.max_anywhere_probe_diff_c.toFixed(2)}`}
+        g={g}
+      />
+
+      {/* The free face, which no limit is written against but which bounds the gradient
+          from above. Kept so the gap between it and the curve stays visible - that gap
+          IS the probe-placement correction, and it is large on a thin section. */}
       <Measured
         y={y(sim.max_anywhere_surface_diff_c)}
-        label={`max anywhere ${sim.max_anywhere_surface_diff_c.toFixed(2)}`}
+        label={`free surface ${sim.max_anywhere_surface_diff_c.toFixed(2)}`}
         g={g}
       />
       <Threshold y={y(limit_c)} label={`cracking ${limit_c} °C · ACI 207`} g={g} />

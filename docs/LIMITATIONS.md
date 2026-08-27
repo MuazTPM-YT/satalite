@@ -183,6 +183,16 @@ through `POST /api/simulate` at dx = 20 mm over 168 h, with hourly ambient taken
 Open-Meteo historical archive at each site's coordinates. Nothing in this codebase has been
 fitted to any of them.
 
+The report names towns rather than coordinates, so the runs used town centres, listed here
+because without them nothing below can be re-run: Albertville 34.2676 / −86.2088,
+Harpersville 33.3448 / −86.4394, Scottsboro 34.6723 / −86.0344 (both elements), Elba
+31.4165 / −86.0688, Birmingham 33.5186 / −86.8104, Brewton 31.1052 / −87.0722, all on
+America/Chicago. Re-run against this commit on 2026-08-27 these reproduce every peak core
+temperature to within 0.01 °C and every differential to within 0.06 °C, except Birmingham,
+which lands 0.13 to 0.26 °C low at every probe depth and +0.1 h late — a uniform offset with
+the peak temperature unmoved, which is a slightly wrong site coordinate rather than a
+different model.
+
 Error on time to peak core temperature, predicted minus measured:
 
 | Element | measured | predicted | error |
@@ -254,7 +264,12 @@ Measured against the same seven ALDOT elements as item 9 — same report, same r
 caveats including the assumed cement chemistry — the predicted maximum core-to-surface
 differential exceeds the measured one on every single case:
 
-| Element | measured max dT | predicted, free surface | error |
+The predicted column is **`max_core_surface_diff_c`**: the hottest core cell against the
+mean free surface. The response carries three other differentials and they are not
+interchangeable — `max_anywhere_surface_diff_c` runs about 0.4 °C higher on these same runs
+because it takes the hottest cell anywhere rather than the core.
+
+| Element | measured max dT | predicted `max_core_surface_diff_c` | error |
 |---|---|---|---|
 | Albertville bent cap | 22.2 °C | 48.2 °C | +26.0 |
 | Harpersville crashwall | 23.3 °C | 47.7 °C | +24.4 |
@@ -284,7 +299,9 @@ disagreement is probe placement.
 
 ### Most of it was not, and that part is unfixed
 
-Sweeping the depth on four of the elements above:
+Sweeping the depth on four of the elements above. The free-surface column is
+`max_core_surface_diff_c` and every depth column is `max_core_probe_diff_c` at that
+`surface_probe_depth_m`:
 
 | Element | measured | free surface | 25 mm | 50 mm | 100 mm | 150 mm |
 |---|---|---|---|---|---|---|

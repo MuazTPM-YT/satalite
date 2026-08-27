@@ -24,6 +24,11 @@ export const FORMWORK_OPTIONS = [
 export const CEMENT_OPTIONS = [
   { id: "", label: "Unknown", note: "500 J/g default" },
   { id: "I", label: "Type I", note: "510 J/g · highest C₃A" },
+  // Most US general-purpose cement is sold as I/II, and every element in the Auburn
+  // ALDOT 930-860R dataset is one. physics.constants.H_CEM_BY_TYPE has carried it at
+  // 505 J/g since that dataset was run; this list had not caught up, so the only way
+  // to solve a real I/II mix from the studio was to mislabel it.
+  { id: "I/II", label: "Type I/II", note: "505 J/g · general purpose" },
   { id: "II", label: "Type II", note: "500 J/g" },
   { id: "II/V", label: "Type II/V", note: "470 J/g · low C₃A" },
   { id: "V", label: "Type V", note: "450 J/g · lowest" },

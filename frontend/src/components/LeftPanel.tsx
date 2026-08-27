@@ -40,8 +40,6 @@ export interface LeftPanelProps {
   onChange: <K extends keyof ElementConfig>(key: K, value: ElementConfig[K]) => void;
   /** one dimension of the current shape, in millimetres */
   onDimChange: (key: string, value_mm: number) => void;
-  /** a drag or an edit finished — the moment worth re-solving on */
-  onCommit: () => void;
   units: LengthUnit;
   ifc: IfcUiState;
   onImportIfc: (file: File) => void;
@@ -123,7 +121,6 @@ export default function LeftPanel({
   defaults,
   onChange,
   onDimChange,
-  onCommit,
   units,
   ifc,
   onImportIfc,
@@ -200,10 +197,7 @@ export default function LeftPanel({
           hint="physics.geometry.SHAPES — what the solver can rasterise"
           value={config.shape}
           options={SHAPE_DEFS.map((s) => ({ id: s.id, label: s.label }))}
-          onChange={(v) => {
-            onChange("shape", v);
-            onCommit();
-          }}
+          onChange={(v) => onChange("shape", v)}
         />
         <p className="mb-1.5 pl-[80px] text-[10px] leading-snug text-text-muted">
           {shapeDef.note}
@@ -221,7 +215,6 @@ export default function LeftPanel({
             step={dimStep}
             resetTo={toDisp(dimDefaults[d.key] ?? d.default_mm)}
             onChange={(v) => onDimChange(d.key, fromDisp(v))}
-            onCommit={onCommit}
           />
         ))}
 
@@ -245,20 +238,14 @@ export default function LeftPanel({
           hint="physics.equations.boundary.FORMWORK_R"
           value={config.formwork}
           options={FORMWORK_OPTIONS.map((f) => ({ id: f.id, label: f.label, note: f.note }))}
-          onChange={(v) => {
-            onChange("formwork", v);
-            onCommit();
-          }}
+          onChange={(v) => onChange("formwork", v)}
         />
         <SelectField
           label="Grid"
           hint="dx_m — cell pitch. The biggest lever on solve time."
           value={String(config.dx_m)}
           options={GRID_OPTIONS.map((g) => ({ id: g.id, label: g.label, note: g.note }))}
-          onChange={(v) => {
-            onChange("dx_m", Number(v));
-            onCommit();
-          }}
+          onChange={(v) => onChange("dx_m", Number(v))}
         />
 
         {/* IFC import */}
@@ -315,20 +302,14 @@ export default function LeftPanel({
           hint="physics.strength_model.GRADE_PARAMS — calibrated grades only"
           value={config.grade}
           options={GRADE_OPTIONS.map((g) => ({ id: g.id, label: g.label, note: g.note }))}
-          onChange={(v) => {
-            onChange("grade", v);
-            onCommit();
-          }}
+          onChange={(v) => onChange("grade", v)}
         />
         <SelectField
           label="Mix basis"
           hint="What goes on the wire: the backend's standard mix, or the rows below"
           value={config.mix_id}
           options={MIX_BASIS_OPTIONS.map((m) => ({ id: m.id, label: m.label, note: m.note }))}
-          onChange={(v) => {
-            onChange("mix_id", v);
-            onCommit();
-          }}
+          onChange={(v) => onChange("mix_id", v)}
         />
         {!designing && (
           <p className="mb-1.5 pl-[80px] text-[10px] leading-snug text-text-muted">
@@ -342,10 +323,7 @@ export default function LeftPanel({
           disabled={!designing}
           value={config.cement_type}
           options={CEMENT_OPTIONS.map((c) => ({ id: c.id, label: c.label, note: c.note }))}
-          onChange={(v) => {
-            onChange("cement_type", v);
-            onCommit();
-          }}
+          onChange={(v) => onChange("cement_type", v)}
         />
         <ScrubField
           label="Content"
@@ -358,7 +336,6 @@ export default function LeftPanel({
           resetTo={defaults.cementitious_kg_m3}
           disabled={!designing}
           onChange={(v) => onChange("cementitious_kg_m3", v)}
-          onCommit={onCommit}
         />
         <ScrubField
           label="w/cm"
@@ -370,7 +347,6 @@ export default function LeftPanel({
           resetTo={defaults.wcm}
           disabled={!designing}
           onChange={(v) => onChange("wcm", v)}
-          onCommit={onCommit}
         />
         <ScrubField
           label="Fly ash"
@@ -383,7 +359,6 @@ export default function LeftPanel({
           resetTo={defaults.fly_ash_pct}
           disabled={!designing}
           onChange={(v) => onChange("fly_ash_pct", v)}
-          onCommit={onCommit}
         />
         <ScrubField
           label="Placement"
@@ -397,7 +372,6 @@ export default function LeftPanel({
           step={0.5}
           resetTo={defaults.placement_temp_c}
           onChange={(v) => onChange("placement_temp_c", v)}
-          onCommit={onCommit}
         />
 
         {/* ── POUR ────────────────────────────────────────────────────────── */}
@@ -413,7 +387,6 @@ export default function LeftPanel({
           step={1}
           resetTo={defaults.cure_window_h}
           onChange={(v) => onChange("cure_window_h", v)}
-          onCommit={onCommit}
         />
         <ScrubField
           label="Start offset"
@@ -426,7 +399,6 @@ export default function LeftPanel({
           resetTo={0}
           disabled={maxOffset_h === 0}
           onChange={(v) => onChange("start_offset_h", v)}
-          onCommit={onCommit}
         />
         <ScrubField
           label="t_ref"
@@ -438,7 +410,6 @@ export default function LeftPanel({
           step={0.5}
           resetTo={defaults.t_ref_c}
           onChange={(v) => onChange("t_ref_c", v)}
-          onCommit={onCommit}
         />
 
         <p className="mt-2 rounded-lg border border-border-default bg-elevate-1 px-2.5 py-2 text-[10px] leading-relaxed text-text-muted">
