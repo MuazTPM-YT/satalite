@@ -29,3 +29,6 @@ backend/data/cache/*
 
 # os
 .DS_Store
+
+# personal submission playbook. not part of the repo.
+docs/FINALE.md

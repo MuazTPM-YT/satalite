@@ -176,8 +176,9 @@ sits outside the band rather than inside it.
 
 ## 9. Time to peak runs late, and it is a bias rather than scatter
 
-Seven instrumented ALDOT mass concrete elements from Auburn University report 930-860R
-(*Temperature Control Requirements for the Construction of Mass Concrete Members*) were run
+Seven instrumented ALDOT mass concrete elements from Gross, Eiland, Schindler & Barnes
+(December 2017), *Temperature Control Requirements for the Construction of Mass Concrete
+Members*, Auburn University Highway Research Center, ALDOT report **930-860R**, were run
 through `POST /api/simulate` at dx = 20 mm over 168 h, with hourly ambient taken from the
 Open-Meteo historical archive at each site's coordinates. Nothing in this codebase has been
 fitted to any of them.
@@ -209,16 +210,49 @@ Which numbers it moves: `peak_core_time_h` directly, and `strip_time_h` through 
 a curve that rises late accumulates equivalent age late. It does not move
 `peak_core_temp_c` by a consistent amount in a consistent direction.
 
-Two caveats on the runs themselves. The Auburn mixes are Type **I/II** cement, which
-`MixSpec` does not accept — `H_CEM_BY_TYPE` carries `I`, `II`, `II/V` and `V` — so `"I"`
-(510 J/g) was substituted; `"II"` moves the Albertville peak by −0.9 °C. And the ambient is
-Open-Meteo rather than FortyGuard, because the FortyGuard archive begins 2021-01-01 and
-these placements are 2015–2016. This validates the physics, not the hyperlocal data path.
+Three caveats on the runs themselves.
+
+The Auburn mixes are Type **I/II** cement. When these runs were made `H_CEM_BY_TYPE` carried
+only `I`, `II`, `II/V` and `V`, so `"I"` (510 J/g) was substituted; `"II"` moves the
+Albertville peak by −0.9 °C. `H_CEM_BY_TYPE` has since gained **`"I/II" = 505.0`**, so the
+designation now solves directly — but the numbers above were produced with 510 and have not
+been re-run at 505. The difference is 1% on `H_cem`, about 0.1 °C on peak core.
+
+The ambient is Open-Meteo rather than FortyGuard, because the FortyGuard archive begins
+2021-01-01 and these placements are 2015–2016. This validates the physics, not the
+hyperlocal data path.
+
+**And the cement chemistry was assumed when the report measures it.** Appendix Tables B-2
+through H-2 of 930-860R publish the full Bogue set — C3S, C2S, C3A, C4AF, SO3, MgO — and the
+Blaine fineness, per element, from the mill certificate. `MixSpec` carries no field for any
+of it, so a design mix goes down the `w_cm` / `fly_ash_frac` branch of
+`app/services/simulate.py::to_mix` and `tau_hours` is called with the generic constants in
+`physics/season_analysis.py`: `P_C3A = 0.08`, `P_C3S = 0.55`, `P_SO3 = 0.03`,
+`BLAINE_M2_KG = 380.0`. Albertville's certificate reads 0.054, 0.609, 0.0279 and 448.9.
+
+Measured on this commit, that substitution is worth:
+
+| | assumed | Albertville measured |
+|---|---|---|
+| `tau_hours` | 17.339 h | **16.341 h** (Blaine alone: 15.165 h) |
+| `cement_heat_j_per_g` on the measured Bogue compounds | — | **462.2 J/g**, against the 510 used |
+
+The two effects pull against each other. A shorter tau peaks earlier, which is the direction
+of the bias this item is about — roughly 1 h of Albertville's 14.7 h, for free. But 462.2
+against 510 is 9.4% less heat, which runs the peak colder, and Albertville is already 3.8 °C
+cold. So the late-peak bias would narrow and the 5.40 °C peak error would probably widen.
+Neither has been run. `cement_heat_j_per_g` already exists in
+`physics/equations/hydration.py` and is reachable from nothing on the API path; wiring four
+optional numbers through `MixSpec` is the experiment, and it is not in this build.
+
+The same appendices also publish seven days of local weather per site, which is a second,
+independent check on the Open-Meteo series used here. That has not been run either.
 
 ## 10. The core-to-surface differential reads far too high, and the flag saturates
 
-Measured against the same seven ALDOT elements as item 9, the predicted maximum
-core-to-surface differential exceeds the measured one on every single case:
+Measured against the same seven ALDOT elements as item 9 — same report, same runs, same
+caveats including the assumed cement chemistry — the predicted maximum core-to-surface
+differential exceeds the measured one on every single case:
 
 | Element | measured max dT | predicted, free surface | error |
 |---|---|---|---|
