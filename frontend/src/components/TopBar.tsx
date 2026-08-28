@@ -40,6 +40,7 @@ import {
   Settings2,
   Waves,
 } from "lucide-react";
+import Image from "next/image";
 import type { PanelId } from "@/components/PanelId";
 import HealthProbe from "@/components/HealthProbe";
 import LocationChip, { type ActiveLocation } from "@/components/LocationChip";
@@ -180,9 +181,16 @@ export default function TopBar({
     >
       {/* left: mark + wordmark */}
       <div className="flex min-w-0 items-center gap-2.5">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent-blue-dim">
-          <Box className="h-4 w-4 text-accent-blue" strokeWidth={2} />
-        </span>
+        {/* The mark ships its own dark ground, so it needs no tinted plate behind it -
+            just the same 28px corner-rounded square the plate used to be. */}
+        <Image
+          src="/logo.png"
+          alt=""
+          width={28}
+          height={28}
+          priority
+          className="h-7 w-7 shrink-0 rounded-lg"
+        />
         <span className="truncate text-[15px] font-semibold tracking-tight text-text-primary">
           SatAlite
           <span className="hidden font-normal text-text-muted sm:inline"> Studio</span>

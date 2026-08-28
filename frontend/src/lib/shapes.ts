@@ -47,8 +47,8 @@ export const SHAPE_DEFS: ShapeDef[] = [
     label: "Slab",
     note: "Sides are symmetry planes — a strip of a wider pour, so width cannot change the answer.",
     dims: [
-      { key: "width", label: "Width", min_mm: 300, max_mm: 12000, default_mm: 3000 },
-      { key: "thickness", label: "Thickness", min_mm: 50, max_mm: 2000, default_mm: 300 },
+      { key: "width", label: "Width", min_mm: 300, max_mm: 100000, default_mm: 3000 },
+      { key: "thickness", label: "Thickness", min_mm: 50, max_mm: 100000, default_mm: 300 },
     ],
   },
   {
@@ -56,8 +56,8 @@ export const SHAPE_DEFS: ShapeDef[] = [
     label: "Wall",
     note: "Both faces formed, top exposed.",
     dims: [
-      { key: "thickness", label: "Thickness", min_mm: 100, max_mm: 2000, default_mm: 300 },
-      { key: "height", label: "Height", min_mm: 300, max_mm: 8000, default_mm: 2400 },
+      { key: "thickness", label: "Thickness", min_mm: 100, max_mm: 100000, default_mm: 300 },
+      { key: "height", label: "Height", min_mm: 300, max_mm: 100000, default_mm: 2400 },
     ],
   },
   {
@@ -65,23 +65,23 @@ export const SHAPE_DEFS: ShapeDef[] = [
     label: "Rectangular column",
     note: "Four formed faces. Equal width and depth gives a square.",
     dims: [
-      { key: "width", label: "Width", min_mm: 150, max_mm: 3000, default_mm: 400 },
-      { key: "height", label: "Depth", min_mm: 150, max_mm: 3000, default_mm: 400 },
+      { key: "width", label: "Width", min_mm: 150, max_mm: 100000, default_mm: 400 },
+      { key: "height", label: "Depth", min_mm: 150, max_mm: 100000, default_mm: 400 },
     ],
   },
   {
     id: "circular_column",
     label: "Circular column",
     note: "Rasterised from a 128-segment circle.",
-    dims: [{ key: "diameter", label: "Diameter", min_mm: 150, max_mm: 3000, default_mm: 600 }],
+    dims: [{ key: "diameter", label: "Diameter", min_mm: 150, max_mm: 100000, default_mm: 600 }],
   },
   {
     id: "beam",
     label: "Rectangular beam",
     note: "Formed sides and soffit, top exposed.",
     dims: [
-      { key: "width", label: "Width", min_mm: 150, max_mm: 2000, default_mm: 300 },
-      { key: "height", label: "Depth", min_mm: 200, max_mm: 3000, default_mm: 600 },
+      { key: "width", label: "Width", min_mm: 150, max_mm: 100000, default_mm: 300 },
+      { key: "height", label: "Depth", min_mm: 200, max_mm: 100000, default_mm: 600 },
     ],
   },
   {
@@ -89,10 +89,10 @@ export const SHAPE_DEFS: ShapeDef[] = [
     label: "T-section",
     note: "Flange on top. Soffits under it are tagged formed, not ground.",
     dims: [
-      { key: "flange_width", label: "Flange width", min_mm: 200, max_mm: 4000, default_mm: 900 },
-      { key: "flange_thickness", label: "Flange depth", min_mm: 50, max_mm: 800, default_mm: 150 },
-      { key: "web_width", label: "Web width", min_mm: 80, max_mm: 2000, default_mm: 300 },
-      { key: "height", label: "Total depth", min_mm: 200, max_mm: 3000, default_mm: 750 },
+      { key: "flange_width", label: "Flange width", min_mm: 200, max_mm: 100000, default_mm: 900 },
+      { key: "flange_thickness", label: "Flange depth", min_mm: 50, max_mm: 100000, default_mm: 150 },
+      { key: "web_width", label: "Web width", min_mm: 80, max_mm: 100000, default_mm: 300 },
+      { key: "height", label: "Total depth", min_mm: 200, max_mm: 100000, default_mm: 750 },
     ],
   },
   {
@@ -100,10 +100,10 @@ export const SHAPE_DEFS: ShapeDef[] = [
     label: "I-section",
     note: "Symmetric double-tee. Top flange exposed, everything else formed.",
     dims: [
-      { key: "flange_width", label: "Flange width", min_mm: 200, max_mm: 3000, default_mm: 600 },
-      { key: "flange_thickness", label: "Flange depth", min_mm: 50, max_mm: 600, default_mm: 120 },
-      { key: "web_width", label: "Web width", min_mm: 80, max_mm: 1500, default_mm: 180 },
-      { key: "height", label: "Total depth", min_mm: 300, max_mm: 3000, default_mm: 800 },
+      { key: "flange_width", label: "Flange width", min_mm: 200, max_mm: 100000, default_mm: 600 },
+      { key: "flange_thickness", label: "Flange depth", min_mm: 50, max_mm: 100000, default_mm: 120 },
+      { key: "web_width", label: "Web width", min_mm: 80, max_mm: 100000, default_mm: 180 },
+      { key: "height", label: "Total depth", min_mm: 300, max_mm: 100000, default_mm: 800 },
     ],
   },
   {
@@ -111,9 +111,9 @@ export const SHAPE_DEFS: ShapeDef[] = [
     label: "L-section",
     note: "Ledger beam. The upstand is one leg thickness wide.",
     dims: [
-      { key: "width", label: "Width", min_mm: 200, max_mm: 3000, default_mm: 600 },
-      { key: "height", label: "Height", min_mm: 200, max_mm: 3000, default_mm: 600 },
-      { key: "leg_thickness", label: "Leg thickness", min_mm: 50, max_mm: 1000, default_mm: 150 },
+      { key: "width", label: "Width", min_mm: 200, max_mm: 100000, default_mm: 600 },
+      { key: "height", label: "Height", min_mm: 200, max_mm: 100000, default_mm: 600 },
+      { key: "leg_thickness", label: "Leg thickness", min_mm: 50, max_mm: 100000, default_mm: 150 },
     ],
   },
 ];
