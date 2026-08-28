@@ -224,7 +224,7 @@ export default function LeftPanel({
           unit={units}
           value={Number(toDisp(config.length_mm).toFixed(4))}
           min={toDisp(500)}
-          max={toDisp(30000)}
+          max={toDisp(1000000)}
           step={dimStep}
           resetTo={toDisp(defaults.length_mm)}
           onChange={(v) => onChange("length_mm", fromDisp(v))}
