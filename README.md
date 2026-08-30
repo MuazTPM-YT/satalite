@@ -367,11 +367,17 @@ instance is 512 MB and **0.1 CPU**, which turns 6.14 s into roughly a minute, an
 down after 15 minutes with a 30–60 s cold start. Hugging Face Spaces now requires a paid
 plan for Docker Spaces. Fly.io requires a card on file with no documented free allowance.
 
+That 6.14 s is a local single-core baseline, and **a deployed vCPU is slower**. Measured
+against the live Cloud Run service, same request, four warm sequential runs: 18.33 / 17.57
+/ 18.25 / 12.40 s. The spread is not noise — requests land on different instances on
+different physical hosts, so plan against the **slow** end, not the mean. Everything below
+is sized from 18 s, not from 6.14 s.
+
 **Google Cloud Run** is the one that works. Its always-free tier is 180,000 vCPU-seconds,
-360,000 GiB-seconds and 2M requests a month in Tier 1 US regions — about **29,300 free
-solves a month** at 6.14 vCPU-s each, with a real vCPU rather than a tenth of one. Billing
-has to be enabled, so a card is on file; set a budget alert and the free tier keeps it at
-zero.
+360,000 GiB-seconds and 2M requests a month in Tier 1 US regions — **9,800 to 14,500 free
+solves a month** at the 12.4–18.3 vCPU-s a solve actually costs there, with a real vCPU
+rather than a tenth of one. Billing has to be enabled, so a card is on file; set a budget
+alert and the free tier keeps it at zero.
 
 Build and push explicitly — **`--source` cannot be used here.** It only auto-detects a
 Dockerfile in the *source root*, and this one is at `backend/Dockerfile` while its build
@@ -387,14 +393,33 @@ docker build -f backend/Dockerfile -t "$IMAGE" .
 docker push "$IMAGE"
 
 gcloud run deploy satalite-api --image "$IMAGE" --region us-central1 \
-  --memory 1Gi --cpu 1 --concurrency 2 --max-instances 4 --min-instances 0 \
-  --timeout 120 --allow-unauthenticated \
+  --memory 1Gi --cpu 1 --concurrency 1 --max-instances 4 --min-instances 0 \
+  --timeout 300 --allow-unauthenticated \
   --set-env-vars ALLOWED_ORIGINS=https://your-frontend.vercel.app \
   --set-secrets FORTYGUARD_API_KEY=fortyguard-key:latest
 ```
 
-`--concurrency 2` matters. The solve is CPU-bound and single-threaded, so the default of
-80 queues requests behind each other on one vCPU until they all time out.
+**`--concurrency 1` and `--timeout 300` are both load-bearing, and both were learned the
+hard way.** The solve is CPU-bound and single-threaded, so the default concurrency of 80
+queues requests behind each other on one vCPU until they all time out. But 2 is wrong for
+the same reason 80 is: `POST /api/pour-windows` runs one deterministic solve per candidate
+hour, and the studio sends six. Measured on the live service:
+
+| what | concurrency 2, timeout 120 | concurrency 1, timeout 300 |
+| --- | --- | --- |
+| one caller, 6 candidates | 68.0 s → 200 | 68.0 s → 200 |
+| two callers at once | 67.2 s → 200, **120.5 s → 504** | 149.6 s → 200, 154.2 s → 200 |
+
+At concurrency 2 the second caller shares the vCPU, doubles to past 120 s, and Cloud Run
+returns a gateway timeout — two people opening the demo at the same time is enough. At
+concurrency 1 the second caller gets its own instance instead, and both finish. Note they
+finish in 150 s, not in 68 s: a second instance is not a second machine's worth of speed,
+and two concurrent sweeps still cost about twice as long as one. Concurrency 1 buys
+correctness under load, not parallelism — which is exactly why the timeout has to be 300.
+
+120 s was marginal even alone: six candidates on a slow instance is 6 × 18.3 = 110 s. The
+longest legal request is longer still — `duration_hours` accepts up to 336 h, roughly 4.7×
+the 72 h baseline — so 300 s is the number, not 120.
 
 **No credit card?** Cloud Run needs billing enabled even to stay at zero. The card-free
 option is Vercel's Python runtime, which happens to fit this repo almost unchanged: it
@@ -403,6 +428,14 @@ looks for an entrypoint at `app/main.py` with a top-level `app`, reads dependenc
 costs you the live FortyGuard fetch — the filesystem is read-only, and `cached_call`
 writes *after* the API returns, so a live day would spend 4220 credits and then fail to
 save. Cached days, and every precomputed route, work fine.
+
+**Cloud Run's filesystem is in-memory and dies with the instance.** Every precomputed
+route still works, because those artefacts are baked into the image — but a live
+`allow_live=true` fetch spends 4220 credits, writes the day to a disk that does not
+survive the next scale-to-zero, and the identical request costs 4220 again afterwards.
+`POST /api/ambient` refuses to go live unless asked, which is the guard; on Cloud Run,
+treat every live day as bought once and gone. To keep one, fetch it locally and rebuild
+the image with the file committed, the way the demo day already is.
 
 Deploy the backend first, build the frontend with `NEXT_PUBLIC_API_URL` pointing at it —
 it is inlined at **build** time — then redeploy the backend with the real Vercel origin in
